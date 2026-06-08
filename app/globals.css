@@ -1,5 +1,4 @@
 @tailwind base;
-@tailwind components;
 @tailwind utilities;
 
 :root {
@@ -20,6 +19,7 @@ body {
   overflow-x: hidden;
 }
 
+/* ── Glassmorphism base ────────────────────────────────────────────────────── */
 .glass {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -29,84 +29,136 @@ body {
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.1);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.35),
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 -1px 0 rgba(0,0,0,0.2) inset;
+  border-radius: 18px;
+}
+
+/* Elevated card variant — slightly more prominent */
+.glass-card-elevated {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    0 8px 48px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255,255,255,0.12) inset;
+  border-radius: 20px;
 }
 
 .glass-hover {
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
 }
 .glass-hover:hover {
   background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.15), inset 0 1px 0 rgba(255,255,255,0.15);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.12), inset 0 1px 0 rgba(255,255,255,0.12);
   transform: translateY(-1px);
 }
 
+/* ── Background orbs ───────────────────────────────────────────────────────── */
 .orb {
   position: fixed;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(90px);
   pointer-events: none;
   z-index: 0;
-  opacity: 0.6;
+  opacity: 0.55;
 }
-
 .orb-1 {
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(59,130,246,0.35) 0%, transparent 70%);
-  top: -200px; left: -100px;
-  animation: orbFloat 10s ease-in-out infinite;
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(59,130,246,0.32) 0%, transparent 70%);
+  top: -220px; left: -120px;
+  animation: orbFloat 11s ease-in-out infinite;
 }
 .orb-2 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(99,102,241,0.25) 0%, transparent 70%);
-  top: 40%; right: -150px;
-  animation: orbFloat 13s ease-in-out infinite 2s;
+  width: 550px; height: 550px;
+  background: radial-gradient(circle, rgba(99,102,241,0.22) 0%, transparent 70%);
+  top: 40%; right: -180px;
+  animation: orbFloat 14s ease-in-out infinite 2s;
 }
 .orb-3 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(148,163,184,0.2) 0%, transparent 70%);
-  bottom: -100px; left: 30%;
-  animation: orbFloat 9s ease-in-out infinite 5s;
+  width: 450px; height: 450px;
+  background: radial-gradient(circle, rgba(148,163,184,0.16) 0%, transparent 70%);
+  bottom: -120px; left: 30%;
+  animation: orbFloat 10s ease-in-out infinite 5s;
 }
 .orb-4 {
-  width: 300px; height: 300px;
-  background: radial-gradient(circle, rgba(56,189,248,0.2) 0%, transparent 70%);
-  top: 20%; left: 50%;
-  animation: orbFloat 12s ease-in-out infinite 1s;
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(56,189,248,0.18) 0%, transparent 70%);
+  top: 25%; left: 50%;
+  animation: orbFloat 8s ease-in-out infinite 3s;
 }
 
 @keyframes orbFloat {
   0%, 100% { transform: translateY(0px) scale(1); }
-  50% { transform: translateY(-40px) scale(1.08); }
+  50% { transform: translateY(-28px) scale(1.04); }
 }
 
-.trend-up { color: #34d399; }
-.trend-down { color: #f87171; }
-.trend-flat { color: #94a3b8; }
-
-.scrollbar-glass::-webkit-scrollbar { width: 6px; }
-.scrollbar-glass::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
-.scrollbar-glass::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
-
+/* ── Nav pills ─────────────────────────────────────────────────────────────── */
 .nav-pill {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
-  backdrop-filter: blur(16px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
   transition: all 0.2s ease;
+  border-radius: 12px;
+}
+.nav-pill:hover {
+  background: rgba(255,255,255,0.07);
+  color: #e2e8f0;
+  border-color: rgba(255,255,255,0.10);
 }
 .nav-pill.active {
-  background: rgba(59, 130, 246, 0.25);
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.35);
   color: #93c5fd;
+  box-shadow: 0 0 16px rgba(59,130,246,0.15), inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.nav-pill:hover:not(.active) {
-  background: rgba(255,255,255,0.1);
-  border-color: rgba(255,255,255,0.18);
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+.scrollbar-glass::-webkit-scrollbar { width: 5px; }
+.scrollbar-glass::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-glass::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.10);
+  border-radius: 10px;
+}
+.scrollbar-glass::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+/* ── Leaflet overrides ─────────────────────────────────────────────────────── */
+.leaflet-container {
+  background: #080d1a !important;
+  border-radius: 14px;
+}
+.leaflet-popup-content-wrapper {
+  background: rgba(10, 16, 32, 0.92) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  backdrop-filter: blur(16px) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+  color: #e2e8f0 !important;
+}
+.leaflet-popup-tip { background: rgba(10, 16, 32, 0.92) !important; }
+.leaflet-control-zoom a {
+  background: rgba(10,16,32,0.8) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: #94a3b8 !important;
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(30,40,70,0.9) !important;
+  color: #e2e8f0 !important;
+}
+
+/* ── Utilities ─────────────────────────────────────────────────────────────── */
+.shimmer-line {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  height: 1px;
+  width: 100%;
 }
