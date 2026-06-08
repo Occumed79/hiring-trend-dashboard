@@ -9,7 +9,7 @@ CREATE TYPE portal_type AS ENUM (
   'private_companies',
   'federal_agencies',
   'state_agencies',
-  'city_municipal_agencies'
+  'counties_and_cities'
 );
 
 -- ATS providers

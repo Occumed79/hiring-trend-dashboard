@@ -2,8 +2,10 @@ const BASE = 'https://data.usajobs.gov/api/search';
 
 export async function fetchUSAJobsPostings(keywords: string, page: number = 1) {
   const apiKey = process.env.USAJOBS_API_KEY;
-  const email = process.env.USAJOBS_EMAIL;
-  if (!apiKey || !email) return { jobs: [], total: 0 };
+  // Support both USAJOBS_USER_AGENT (new) and USAJOBS_EMAIL (legacy)
+  const userAgent = process.env.USAJOBS_USER_AGENT || process.env.USAJOBS_EMAIL;
+
+  if (!apiKey || !userAgent) return { jobs: [], total: 0 };
 
   try {
     const params = new URLSearchParams({
@@ -14,9 +16,10 @@ export async function fetchUSAJobsPostings(keywords: string, page: number = 1) {
     const res = await fetch(`${BASE}?${params}`, {
       headers: {
         'Authorization-Key': apiKey,
-        'User-Agent': email,
+        'User-Agent': userAgent,
         'Host': 'data.usajobs.gov',
       },
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return { jobs: [], total: 0 };
     const data = await res.json();
@@ -36,11 +39,11 @@ export async function fetchUSAJobsPostings(keywords: string, page: number = 1) {
           location: loc?.LocationName || null,
           city: loc?.CityName || null,
           state: loc?.CountrySubDivisionCode || null,
-          country: loc?.CountryCode || 'US',
+          country: 'US',
           lat: loc?.Latitude ? parseFloat(loc.Latitude) : null,
           lng: loc?.Longitude ? parseFloat(loc.Longitude) : null,
-          is_remote: pos?.PositionRemuneration?.[0]?.Description?.includes('Remote') || false,
-          is_overseas: loc?.CountryCode && loc.CountryCode !== 'United States' ? true : false,
+          is_remote: false,
+          is_overseas: false,
           posted_at: pos?.PublicationStartDate || null,
           raw_data: pos,
         };

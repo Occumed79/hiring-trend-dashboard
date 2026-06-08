@@ -3,13 +3,13 @@ import { useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import PortalView from '@/components/portal/PortalView';
 
-const PORTALS = [
-  { id: 'current_clients', label: 'Current Clients', icon: '🏢' },
-  { id: 'prospects', label: 'Prospects', icon: '🔭' },
-  { id: 'private_companies', label: 'Private Companies', icon: '🏗️' },
-  { id: 'federal_agencies', label: 'Federal Agencies', icon: '🦅' },
-  { id: 'state_agencies', label: 'State Agencies', icon: '🏛️' },
-  { id: 'city_municipal_agencies', label: 'City & Municipal', icon: '🏙️' },
+export const PORTALS = [
+  { id: 'current_clients',    label: 'Current Clients',  icon: '🏢', mapType: 'world' },
+  { id: 'prospects',          label: 'Prospects',        icon: '🔭', mapType: 'world' },
+  { id: 'private_companies',  label: 'Private Companies',icon: '🏗️', mapType: 'usa' },
+  { id: 'federal_agencies',   label: 'Federal Agencies', icon: '🦅', mapType: 'usa' },
+  { id: 'state_agencies',     label: 'State Agencies',   icon: '🏛️', mapType: 'usa' },
+  { id: 'counties_and_cities',label: 'Counties & Cities',icon: '🏙️', mapType: 'usa' },
 ];
 
 export default function Home() {
