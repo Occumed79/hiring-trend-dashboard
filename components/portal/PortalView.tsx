@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react';
 import EntityList from './EntityList';
 import EntityDetail from './EntityDetail';
 import AddEntityModal from './AddEntityModal';
-
-interface Portal { id: string; label: string; icon: string; }
+import type { Portal } from '@/lib/portals';
 
 export default function PortalView({ portal }: { portal: Portal }) {
   const [entities, setEntities] = useState<any[]>([]);
@@ -34,7 +33,6 @@ export default function PortalView({ portal }: { portal: Portal }) {
     <div className="flex h-full">
       {/* Entity list sidebar */}
       <div className="w-72 h-screen sticky top-0 border-r border-white/10 flex flex-col">
-        {/* Header */}
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
@@ -49,7 +47,6 @@ export default function PortalView({ portal }: { portal: Portal }) {
           <p className="text-xs text-slate-500">{entities.length} entities</p>
         </div>
 
-        {/* Entity list */}
         <div className="flex-1 overflow-y-auto scrollbar-glass p-2">
           {loading ? (
             <div className="space-y-2 p-2">
@@ -58,11 +55,7 @@ export default function PortalView({ portal }: { portal: Portal }) {
               ))}
             </div>
           ) : (
-            <EntityList
-              entities={entities}
-              selected={selected}
-              onSelect={setSelected}
-            />
+            <EntityList entities={entities} selected={selected} onSelect={setSelected} />
           )}
         </div>
       </div>
@@ -87,7 +80,7 @@ export default function PortalView({ portal }: { portal: Portal }) {
   );
 }
 
-function EmptyState({ portal, onAdd }: { portal: any; onAdd: () => void }) {
+function EmptyState({ portal, onAdd }: { portal: Portal; onAdd: () => void }) {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-4 text-center">
       <div className="text-6xl opacity-30">{portal.icon}</div>

@@ -1,4 +1,5 @@
 'use client';
+import type { Portal } from "@/lib/portals";
 import { useState, useEffect } from 'react';
 import TrendCard from '@/components/charts/TrendCard';
 import RoleBreakdown from '@/components/charts/RoleBreakdown';
@@ -16,7 +17,7 @@ const USA_MAP_TITLES: Record<string, string> = {
   counties_and_cities: 'County & City Hiring Map — USA',
 };
 
-export default function EntityDetail({ entity, portal }: { entity: any; portal: any }) {
+export default function EntityDetail({ entity, portal }: { entity: any; portal: Portal }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const useWorldMap = WORLD_MAP_PORTALS.has(portal.id);
@@ -97,7 +98,7 @@ export default function EntityDetail({ entity, portal }: { entity: any; portal: 
 }
 
 // Shows which hiring sources are active/disabled for this entity
-function SourceStatus({ entity, portal }: { entity: any; portal: any }) {
+function SourceStatus({ entity, portal }: { entity: any; portal: Portal }) {
   const sources = getPortalSources(portal.id, entity);
 
   return (

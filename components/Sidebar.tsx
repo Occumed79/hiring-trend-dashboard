@@ -1,7 +1,6 @@
 'use client';
 import { useState } from 'react';
-
-interface Portal { id: string; label: string; icon: string; }
+import type { Portal } from '@/lib/portals';
 
 export default function Sidebar({
   portals, activePortal, onSelect

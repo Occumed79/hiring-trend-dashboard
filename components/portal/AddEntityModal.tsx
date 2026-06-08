@@ -1,10 +1,11 @@
 'use client';
+import type { Portal } from '@/lib/portals';
 import { useState } from 'react';
 
 const ATS_PROVIDERS = ['unknown','greenhouse','lever','workday','icims','taleo','smartrecruiters','bamboohr','jobvite','usajobs','other'];
 
 export default function AddEntityModal({ portal, onClose, onAdded }: {
-  portal: any;
+  portal: Portal;
   onClose: () => void;
   onAdded: (entity: any) => void;
 }) {
