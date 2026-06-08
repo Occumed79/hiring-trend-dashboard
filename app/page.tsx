@@ -2,10 +2,10 @@
 import { useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import PortalView from '@/components/portal/PortalView';
-import { PORTALS } from '@/lib/portals';
+import { PORTALS, type Portal } from '@/lib/portals';
 
 export default function Home() {
-  const [activePortal, setActivePortal] = useState(PORTALS[0]);
+  const [activePortal, setActivePortal] = useState<Portal>(PORTALS[0]);
 
   return (
     <div className="flex h-screen overflow-hidden">
