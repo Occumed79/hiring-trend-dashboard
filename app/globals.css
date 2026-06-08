@@ -1,164 +1,248 @@
 @tailwind base;
 @tailwind utilities;
 
+/* ─── Design tokens ────────────────────────────────────────────────────────── */
 :root {
-  --glass-bg: rgba(255, 255, 255, 0.06);
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  --glass-highlight: rgba(255, 255, 255, 0.25);
-  --blue-glow: rgba(59, 130, 246, 0.4);
-  --silver-glow: rgba(148, 163, 184, 0.3);
+  --glass-bg:        rgba(255, 255, 255, 0.055);
+  --glass-border:    rgba(255, 255, 255, 0.13);
+  --glass-shadow:    0 8px 40px rgba(0, 0, 0, 0.45);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --glass-blur:      blur(28px) saturate(180%);
+  --blue-glow:       rgba(59, 130, 246, 0.35);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html { height: 100%; }
+
 body {
-  background: #04070f;
+  background: #03060e;
   color: #e2e8f0;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
   overflow-x: hidden;
+  min-height: 100%;
 }
 
-/* ── Glassmorphism base ────────────────────────────────────────────────────── */
-.glass {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
-}
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.35),
-    0 1px 0 rgba(255,255,255,0.08) inset,
-    0 -1px 0 rgba(0,0,0,0.2) inset;
-  border-radius: 18px;
-}
-
-/* Elevated card variant — slightly more prominent */
-.glass-card-elevated {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  box-shadow:
-    0 8px 48px rgba(0, 0, 0, 0.4),
-    0 1px 0 rgba(255,255,255,0.12) inset;
-  border-radius: 20px;
-}
-
-.glass-hover {
-  transition: all 0.25s ease;
-}
-.glass-hover:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.12), inset 0 1px 0 rgba(255,255,255,0.12);
-  transform: translateY(-1px);
-}
-
-/* ── Background orbs ───────────────────────────────────────────────────────── */
+/* ─── Background orbs ──────────────────────────────────────────────────────── */
 .orb {
   position: fixed;
   border-radius: 50%;
-  filter: blur(90px);
+  filter: blur(100px);
   pointer-events: none;
   z-index: 0;
-  opacity: 0.55;
 }
 .orb-1 {
-  width: 700px; height: 700px;
-  background: radial-gradient(circle, rgba(59,130,246,0.32) 0%, transparent 70%);
-  top: -220px; left: -120px;
-  animation: orbFloat 11s ease-in-out infinite;
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, rgba(56,100,255,0.28) 0%, transparent 65%);
+  top: -300px; left: -200px;
+  animation: orbFloat 12s ease-in-out infinite;
 }
 .orb-2 {
-  width: 550px; height: 550px;
-  background: radial-gradient(circle, rgba(99,102,241,0.22) 0%, transparent 70%);
-  top: 40%; right: -180px;
-  animation: orbFloat 14s ease-in-out infinite 2s;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(99, 80, 220, 0.2) 0%, transparent 65%);
+  top: 35%; right: -200px;
+  animation: orbFloat 15s ease-in-out infinite 3s;
 }
 .orb-3 {
-  width: 450px; height: 450px;
-  background: radial-gradient(circle, rgba(148,163,184,0.16) 0%, transparent 70%);
-  bottom: -120px; left: 30%;
-  animation: orbFloat 10s ease-in-out infinite 5s;
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(100, 160, 230, 0.14) 0%, transparent 65%);
+  bottom: -150px; left: 25%;
+  animation: orbFloat 10s ease-in-out infinite 6s;
 }
 .orb-4 {
-  width: 320px; height: 320px;
-  background: radial-gradient(circle, rgba(56,189,248,0.18) 0%, transparent 70%);
-  top: 25%; left: 50%;
-  animation: orbFloat 8s ease-in-out infinite 3s;
+  width: 350px; height: 350px;
+  background: radial-gradient(circle, rgba(30, 180, 255, 0.16) 0%, transparent 65%);
+  top: 20%; left: 45%;
+  animation: orbFloat 9s ease-in-out infinite 2s;
 }
-
 @keyframes orbFloat {
-  0%, 100% { transform: translateY(0px) scale(1); }
-  50% { transform: translateY(-28px) scale(1.04); }
+  0%,100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-30px) scale(1.05); }
 }
 
-/* ── Nav pills ─────────────────────────────────────────────────────────────── */
+/* ─── Luminous glass system ────────────────────────────────────────────────── */
+
+/* Sidebar base */
+.glass {
+  background: rgba(8, 14, 30, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+}
+
+/* Standard card */
+.glass-card {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.075) 0%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-top-color: rgba(255, 255, 255, 0.22);   /* top highlight */
+  border-left-color: rgba(255, 255, 255, 0.16);  /* left highlight */
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.06) inset,          /* inner top glow */
+    0 -1px 0 rgba(0,0,0,0.3) inset,                /* inner bottom shadow */
+    0 12px 40px rgba(0, 0, 0, 0.45),               /* drop shadow */
+    0 0 0 0.5px rgba(255,255,255,0.07);             /* outer edge */
+  border-radius: 18px;
+}
+
+/* Hero / elevated card */
+.glass-card-hero {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(255, 255, 255, 0.035) 60%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-left-color: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.10) inset,
+    0 -1px 0 rgba(0,0,0,0.25) inset,
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 0.5px rgba(255,255,255,0.08);
+  border-radius: 22px;
+}
+
+/* Metric card — lighter, more luminous */
+.glass-card-metric {
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.26);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.10) inset,
+    0 8px 28px rgba(0, 0, 0, 0.38);
+  border-radius: 16px;
+  transition: all 0.25s ease;
+}
+.glass-card-metric:hover {
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.13) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  border-top-color: rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.14) inset,
+    0 12px 36px rgba(59, 130, 246, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Map card — same glass but with defined height */
+.map-glass-card {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.025) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-top-color: rgba(255, 255, 255, 0.20);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.07) inset,
+    0 12px 40px rgba(0, 0, 0, 0.45);
+  border-radius: 18px;
+  padding: 20px;
+}
+
+/* ─── Map container — CRITICAL: must have explicit height, no overflow-hidden ─ */
+.map-container {
+  height: 340px;
+  width: 100%;
+  border-radius: 12px;
+  background: #080d1a;
+  /* NO overflow:hidden here — it clips Leaflet tiles */
+}
+/* The leaflet root div itself gets the border-radius */
+.map-container .leaflet-container {
+  border-radius: 12px !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+/* ─── Leaflet dark overrides ───────────────────────────────────────────────── */
+.leaflet-container {
+  background: #080d1a !important;
+}
+.leaflet-popup-content-wrapper {
+  background: rgba(8, 14, 30, 0.95) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  backdrop-filter: blur(16px) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+  color: #e2e8f0 !important;
+}
+.leaflet-popup-tip-container { display: none; }
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: none !important;
+}
+.leaflet-control-zoom a {
+  background: rgba(8, 14, 30, 0.85) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  color: #94a3b8 !important;
+  backdrop-filter: blur(8px) !important;
+}
+.leaflet-control-zoom a:hover {
+  background: rgba(20, 30, 60, 0.9) !important;
+  color: #e2e8f0 !important;
+}
+.leaflet-bar { border: none !important; }
+.leaflet-attribution-flag { display: none !important; }
+
+/* ─── Nav pills ────────────────────────────────────────────────────────────── */
 .nav-pill {
   border: 1px solid transparent;
   background: transparent;
-  color: #94a3b8;
+  color: #64748b;
   transition: all 0.2s ease;
   border-radius: 12px;
 }
 .nav-pill:hover {
-  background: rgba(255,255,255,0.07);
-  color: #e2e8f0;
+  background: rgba(255,255,255,0.06);
+  color: #cbd5e1;
   border-color: rgba(255,255,255,0.10);
 }
 .nav-pill.active {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(59, 130, 246, 0.35);
+  background: linear-gradient(135deg, rgba(59,130,246,0.22) 0%, rgba(99,102,241,0.12) 100%);
+  border-color: rgba(96, 165, 250, 0.35);
   color: #93c5fd;
-  box-shadow: 0 0 16px rgba(59,130,246,0.15), inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow:
+    0 0 20px rgba(59,130,246,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
-/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
-.scrollbar-glass::-webkit-scrollbar { width: 5px; }
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+.scrollbar-glass::-webkit-scrollbar { width: 4px; }
 .scrollbar-glass::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-glass::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.09);
   border-radius: 10px;
 }
 .scrollbar-glass::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.16);
 }
 
-/* ── Leaflet overrides ─────────────────────────────────────────────────────── */
-.leaflet-container {
-  background: #080d1a !important;
-  border-radius: 14px;
-}
-.leaflet-popup-content-wrapper {
-  background: rgba(10, 16, 32, 0.92) !important;
-  border: 1px solid rgba(255,255,255,0.14) !important;
-  backdrop-filter: blur(16px) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
-  color: #e2e8f0 !important;
-}
-.leaflet-popup-tip { background: rgba(10, 16, 32, 0.92) !important; }
-.leaflet-control-zoom a {
-  background: rgba(10,16,32,0.8) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-  color: #94a3b8 !important;
-}
-.leaflet-control-zoom a:hover {
-  background: rgba(30,40,70,0.9) !important;
-  color: #e2e8f0 !important;
-}
-
-/* ── Utilities ─────────────────────────────────────────────────────────────── */
-.shimmer-line {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+/* ─── Utility ──────────────────────────────────────────────────────────────── */
+.shimmer-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
   height: 1px;
-  width: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+  pointer-events: none;
 }
