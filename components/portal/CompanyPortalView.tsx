@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import type { Portal } from '@/lib/portals';
-import PortalLanding from './PortalLanding';
+import CompanyLanding from './CompanyLanding';
 import UniversalAddEntityModal from './UniversalAddEntityModal';
 import UniversalCompanyDetail from './UniversalCompanyDetail';
 
@@ -41,7 +41,7 @@ export default function CompanyPortalView({ portal }: { portal: Portal }) {
       {selected ? (
         <UniversalCompanyDetail entity={selected} portal={portal} onBack={() => setSelected(null)} onRemoved={removed} />
       ) : (
-        <PortalLanding portal={portal} entities={entities} loading={loading} onSelectEntity={setSelected} onAddEntity={() => setShowAdd(true)} />
+        <CompanyLanding portal={portal} entities={entities} loading={loading} onSelectEntity={setSelected} onAddEntity={() => setShowAdd(true)} />
       )}
       {showAdd && <UniversalAddEntityModal portal={portal} onClose={() => setShowAdd(false)} onAdded={added} />}
     </>
