@@ -1,5 +1,4 @@
 'use client';
-import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Cell, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 
 const ROLE_COLORS: Record<string, string> = {
   security: '#f87171',
@@ -10,18 +9,13 @@ const ROLE_COLORS: Record<string, string> = {
   engineering: '#818cf8',
   remote: '#c084fc',
   overseas: '#f472b6',
-  other: '#475569',
-};
-
-const ROLE_ICONS: Record<string, string> = {
-  security: '🛡️', logistics: '📦', medical: '🏥', admin: '📋',
-  aviation: '✈️', engineering: '⚙️', remote: '🌐', overseas: '🌍', other: '📌',
+  other: '#64748b',
 };
 
 export default function RoleBreakdown({ roles, loading }: { roles: any; loading: boolean }) {
   const data = roles
     ? Object.entries(roles)
-        .map(([name, value]) => ({ name, value: Number(value), icon: ROLE_ICONS[name] || '📌' }))
+        .map(([name, value]) => ({ name, value: Number(value) }))
         .sort((a, b) => b.value - a.value)
         .filter(d => d.value > 0)
     : [];
@@ -29,7 +23,8 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
   const total = data.reduce((s, d) => s + d.value, 0);
 
   return (
-    <div className="glass-card p-5 h-full">
+    <div className="glass-card luminous-panel p-5 h-full">
+      <div className="shimmer-top" />
       <h3 className="text-sm font-semibold text-slate-200 mb-4">Role Breakdown</h3>
 
       {loading ? (
@@ -43,25 +38,22 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
           No role data yet
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {data.map(item => {
             const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+            const color = ROLE_COLORS[item.name] || ROLE_COLORS.other;
             return (
-              <div key={item.name} className="flex items-center gap-2">
-                <span className="text-xs w-4">{item.icon}</span>
+              <div key={item.name} className="flex items-center gap-3">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 12px ${color}` }} />
                 <div className="flex-1">
-                  <div className="flex justify-between text-[10px] mb-0.5">
+                  <div className="flex justify-between text-[10px] mb-1">
                     <span className="text-slate-300 capitalize">{item.name}</span>
                     <span className="text-slate-500">{item.value} · {pct}%</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-700"
-                      style={{
-                        width: `${pct}%`,
-                        background: ROLE_COLORS[item.name] || '#475569',
-                        boxShadow: `0 0 8px ${ROLE_COLORS[item.name] || '#475569'}66`,
-                      }}
+                      style={{ width: `${pct}%`, background: color, boxShadow: `0 0 10px ${color}88` }}
                     />
                   </div>
                 </div>
