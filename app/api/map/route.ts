@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
+import { inferPoint } from '@/lib/geo/locationLookup';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -12,12 +13,12 @@ export async function GET(req: NextRequest) {
   const federalOnly = searchParams.get('federal_only') === 'true';
 
   let sql = `
-    SELECT j.city, j.state, j.country, j.lat, j.lng, j.role_category,
-           j.is_remote, j.is_overseas, j.posted_at, e.name as entity_name, e.portal,
-           COUNT(*) as cnt
+    SELECT j.city, j.state, j.country, j.location, j.lat, j.lng, j.role_category,
+           j.is_remote, j.is_overseas, j.posted_at, j.created_at,
+           e.name as entity_name, e.portal
     FROM jobs j
     JOIN entities e ON e.id = j.entity_id
-    WHERE j.is_active = true AND j.lat IS NOT NULL AND j.lng IS NOT NULL
+    WHERE j.is_active = true AND e.is_active = true
   `;
   const params: any[] = [];
 
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
   if (newOnly) {
     const d7 = new Date(Date.now() - 7 * 86400000).toISOString();
     params.push(d7);
-    sql += ` AND j.posted_at >= $${params.length}`;
+    sql += ` AND COALESCE(j.posted_at, j.created_at) >= $${params.length}`;
   }
   if (overseasOnly) {
     sql += ` AND j.is_overseas = true`;
@@ -50,9 +51,38 @@ export async function GET(req: NextRequest) {
     sql += ` AND e.portal = $${params.length}`;
   }
 
-  sql += ` GROUP BY j.city, j.state, j.country, j.lat, j.lng, j.role_category, j.is_remote, j.is_overseas, j.posted_at, e.name, e.portal`;
   sql += ` LIMIT 5000`;
 
   const rows = await query(sql, params);
-  return NextResponse.json(rows);
+  const buckets = new Map<string, any>();
+
+  for (const row of rows) {
+    const inferred = inferPoint(row);
+    const lat = Number(row.lat || inferred?.lat);
+    const lng = Number(row.lng || inferred?.lng);
+    if (!lat || !lng) continue;
+
+    const city = row.city || inferred?.city || null;
+    const state = row.state || inferred?.state || null;
+    const rowCountry = row.country || inferred?.country || 'US';
+    const key = [lat.toFixed(4), lng.toFixed(4), city || '', state || '', rowCountry || '', row.entity_name || ''].join('|');
+
+    const existing = buckets.get(key) || {
+      city,
+      state,
+      country: rowCountry,
+      lat,
+      lng,
+      role_category: row.role_category,
+      is_remote: row.is_remote,
+      is_overseas: row.is_overseas,
+      entity_name: row.entity_name,
+      portal: row.portal,
+      cnt: 0,
+    };
+    existing.cnt += 1;
+    buckets.set(key, existing);
+  }
+
+  return NextResponse.json(Array.from(buckets.values()));
 }
