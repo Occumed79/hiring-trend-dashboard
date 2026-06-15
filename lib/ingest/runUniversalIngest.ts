@@ -2,6 +2,7 @@ import { query } from '@/db/client';
 import { fetchAdzunaJobs } from './adzuna';
 import { fetchPortalSpecificJobs } from './portalSources';
 import { fetchJobsForEntity } from './connectorRegistry';
+import { fetchGovernmentFallbackJobs } from './govFallback';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 
@@ -42,6 +43,11 @@ async function ingestOneEntity(entity: any) {
     if (jobs.length) used.push('adzuna');
     else skipped.push('adzuna (0 jobs returned or key missing)');
   }
+
+  const gov = await fetchGovernmentFallbackJobs(entity);
+  items.push(...gov.jobs);
+  used.push(...gov.used);
+  skipped.push(...gov.skipped);
 
   let newCount = 0;
   for (const item of items) {
