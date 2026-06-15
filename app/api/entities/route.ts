@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     sql += ` AND e.portal = $${params.length}`;
   }
 
-  sql += ` ORDER BY e.name ASC`;
+  sql += ` ORDER BY name ASC`;
 
   const rows = await query(sql, params);
   return NextResponse.json(rows);
@@ -27,10 +27,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { name, aliases, portal, career_page_url, ats_provider, ats_board_id, industry, category } = body;
+  const { aliases, portal, career_page_url, ats_provider, ats_board_id, industry, category } = body;
+  const name = String(body.name || '').trim();
 
   if (!name || !portal) {
     return NextResponse.json({ error: 'name and portal required' }, { status: 400 });
+  }
+
+  const duplicate = await query(
+    `SELECT * FROM entities WHERE is_active = true AND portal = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) LIMIT 1`,
+    [portal, name]
+  );
+  if (duplicate.length) {
+    return NextResponse.json({ ...duplicate[0], duplicate: true }, { status: 200 });
   }
 
   const needsResolve = !career_page_url || !ats_provider || ats_provider === 'unknown' || !ats_board_id;
