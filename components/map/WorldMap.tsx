@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState } from 'react';
-import type { Portal } from '@/lib/portals';
 
 const MAP_FILTERS = [
   { id: 'all', label: 'All Jobs' },
@@ -15,17 +14,18 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
   const [filter, setFilter] = useState('all');
   const [mapData, setMapData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [MapComponents, setMapComponents] = useState<any>(null);
 
-  // Lazy-load react-leaflet + leaflet CSS (SSR safe)
   useEffect(() => {
+    let mounted = true;
     Promise.all([
       import('leaflet'),
       import('react-leaflet'),
       // @ts-ignore
       import('leaflet/dist/leaflet.css'),
     ]).then(([L, RL]) => {
-      // Fix default marker icons
+      if (!mounted) return;
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -33,28 +33,45 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
       setMapComponents({ L, ...RL });
+    }).catch(() => {
+      if (mounted) setError('Map assets could not load.');
     });
+    return () => { mounted = false; };
   }, []);
 
-  // Fetch map data
   useEffect(() => {
     if (!entityId && !portalId) return;
+    const controller = new AbortController();
     setLoading(true);
+    setError('');
     const params = new URLSearchParams();
     if (entityId) params.set('entity_id', entityId);
     if (portalId) params.set('portal', portalId);
     if (filter === 'new_only') params.set('new_only', 'true');
     if (filter === 'overseas_only') params.set('overseas_only', 'true');
     if (['security', 'medical', 'remote'].includes(filter)) params.set('role_category', filter);
-    fetch(`/api/map?${params}`)
-      .then(r => r.json())
-      .then(d => { setMapData(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
+
+    fetch(`/api/map?${params}`, { signal: controller.signal })
+      .then(async r => {
+        const data = await r.json().catch(() => []);
+        if (!r.ok) throw new Error(data?.error || 'Could not load map data.');
+        return data;
+      })
+      .then(d => setMapData(Array.isArray(d) ? d : []))
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setMapData([]);
+        setError(err instanceof Error ? err.message : 'Could not load map data.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [entityId, portalId, filter]);
 
   return (
     <div className="map-glass-card flex flex-col gap-3">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-100 tracking-wide">World Hiring Map</h3>
@@ -74,7 +91,8 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
         </div>
       </div>
 
-      {/* Map container — NO overflow-hidden, fixed height */}
+      {error && <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100">{error}</div>}
+
       <div className="relative map-container">
         {loading && (
           <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
@@ -98,20 +116,22 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
             />
             <MapComponents.ZoomControl position="bottomright" />
             {mapData.map((point: any, i: number) => {
-              if (!point.lat || !point.lng) return null;
+              const lat = Number(point.lat);
+              const lng = Number(point.lng);
+              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
               const count = Number(point.cnt || 1);
               const radius = Math.min(5 + Math.log(count + 1) * 4, 28);
               const color = count > 50 ? '#ef4444' : count > 20 ? '#f97316' : count > 5 ? '#3b82f6' : '#64748b';
               return (
                 <MapComponents.CircleMarker
-                  key={i}
-                  center={[Number(point.lat), Number(point.lng)]}
+                  key={`${lat}-${lng}-${i}`}
+                  center={[lat, lng]}
                   radius={radius}
                   pathOptions={{ fillColor: color, color: 'rgba(255,255,255,0.25)', weight: 1, fillOpacity: 0.72 }}
                 >
                   <MapComponents.Popup>
                     <div style={{ fontFamily: 'sans-serif', fontSize: 12, minWidth: 150 }}>
-                      <strong>{[point.city, point.state, point.country].filter(Boolean).join(', ')}</strong><br />
+                      <strong>{[point.city, point.state, point.country].filter(Boolean).join(', ') || 'Unknown'}</strong><br />
                       <span style={{ color: '#60a5fa' }}>{count} open job{count !== 1 ? 's' : ''}</span>
                       {point.entity_name && <><br /><span style={{ color: '#94a3b8' }}>{point.entity_name}</span></>}
                     </div>
@@ -123,9 +143,8 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
         )}
       </div>
 
-      {/* Legend */}
       <div className="flex items-center gap-4 text-[10px] text-slate-500 flex-wrap">
-        {[['#ef4444','High (50+)'],['#f97316','Medium (20–50)'],['#3b82f6','Active (5–20)'],['#64748b','Low (<5)']].map(([c,l]) => (
+        {[["#ef4444",'High (50+)'],["#f97316",'Medium (20–50)'],["#3b82f6",'Active (5–20)'],["#64748b",'Low (<5)']].map(([c,l]) => (
           <div key={l} className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full" style={{ background: c }} />
             <span>{l}</span>
