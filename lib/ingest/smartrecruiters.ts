@@ -1,20 +1,15 @@
+import { fetchJson, getIngestTimeout } from './http';
+
 export async function fetchSmartRecruitersJobs(companyIdentifier: string) {
   if (!companyIdentifier) return [];
 
   try {
-    const res = await fetch(
+    const data = await fetchJson(
       `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(companyIdentifier)}/postings?limit=100`,
-      {
-        headers: {
-          'user-agent': 'OccuMedHiringTrendDashboard/1.0 (+https://github.com/Occumed79/hiring-trend-dashboard)',
-          accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(9000),
-      }
+      {},
+      getIngestTimeout(10000)
     );
 
-    if (!res.ok) return [];
-    const data = await res.json();
     const postings = Array.isArray(data?.content) ? data.content : [];
 
     return postings.map((job: any) => ({
@@ -25,14 +20,14 @@ export async function fetchSmartRecruitersJobs(companyIdentifier: string) {
       location: formatLocation(job.location),
       city: job.location?.city || null,
       state: job.location?.region || job.location?.state || null,
-      country: job.location?.country || 'US',
+      country: String(job.location?.country || 'US').toUpperCase(),
       lat: null,
       lng: null,
       is_remote: /remote/i.test(`${job.name || ''} ${formatLocation(job.location) || ''}`),
-      is_overseas: (job.location?.country || 'US') !== 'US',
+      is_overseas: String(job.location?.country || 'US').toUpperCase() !== 'US',
       posted_at: job.releasedDate || job.createdOn || null,
       raw_data: job,
-    }));
+    })).filter((job: any) => job.external_id && job.title);
   } catch (e) {
     console.error('SmartRecruiters fetch error:', e);
     return [];
