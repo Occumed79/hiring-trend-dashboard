@@ -7,6 +7,8 @@ import { fetchJobApiJobs } from './jobApiAdapters';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 
+type JobApiMode = 'off' | 'fallback' | 'always';
+
 export async function runUniversalIngest(entityId?: string | null) {
   const entities = entityId
     ? await query(`SELECT * FROM entities WHERE id = $1 AND is_active = true`, [entityId])
@@ -45,15 +47,21 @@ async function ingestOneEntity(entity: any) {
     else skipped.push('adzuna (0 jobs returned or key missing)');
   }
 
-  const jobApi = await fetchJobApiJobs(entity);
-  items.push(...jobApi.jobs);
-  used.push(...jobApi.used);
-  skipped.push(...jobApi.skipped);
-
   const gov = await fetchGovernmentFallbackJobs(entity);
   items.push(...gov.jobs);
   used.push(...gov.used);
   skipped.push(...gov.skipped);
+
+  const mode = getJobApiMode();
+  const minExisting = Number(process.env.JOB_API_FALLBACK_MIN_EXISTING || 1);
+  if (shouldRunJobApi(mode, items.length, minExisting)) {
+    const jobApi = await fetchJobApiJobs(entity);
+    items.push(...jobApi.jobs);
+    used.push(...jobApi.used);
+    skipped.push(...jobApi.skipped);
+  } else {
+    skipped.push(`jobs api skipped (${mode}; ${items.length} existing jobs)`);
+  }
 
   let newCount = 0;
   for (const item of items) {
@@ -78,6 +86,18 @@ async function ingestOneEntity(entity: any) {
     sources_skipped: sourcesSkipped,
     detected: primary.detected,
   };
+}
+
+function getJobApiMode(): JobApiMode {
+  const mode = (process.env.JOB_API_MODE || 'fallback').toLowerCase();
+  if (mode === 'off' || mode === 'always' || mode === 'fallback') return mode;
+  return 'fallback';
+}
+
+function shouldRunJobApi(mode: JobApiMode, existingJobCount: number, minExistingJobs: number) {
+  if (mode === 'off') return false;
+  if (mode === 'always') return true;
+  return existingJobCount < minExistingJobs;
 }
 
 async function saveDetectedMetadata(entity: any, detected: any) {
