@@ -25,10 +25,10 @@ type EntityLike = {
   industry?: string | null;
 };
 
-const DEFAULT_COUNTRY = readEnv('JOB_API_COUNTRY') || 'us';
-const DEFAULT_LIMIT = readEnv('JOB_API_LIMIT') || '25';
+const DEFAULT_COUNTRY = (readEnv('JOB_API_COUNTRY') || 'us').toLowerCase();
+const DEFAULT_LIMIT = getPositiveIntegerEnv('JOB_API_LIMIT', 25);
 const DEFAULT_LOCATION = readEnv('JOB_API_LOCATION') || '';
-const REQUEST_TIMEOUT_MS = Number(readEnv('JOB_API_TIMEOUT_MS') || 12000);
+const REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('JOB_API_TIMEOUT_MS', 12000);
 
 const DEFAULT_ADAPTERS: JobApiAdapter[] = [
   {
@@ -120,7 +120,9 @@ function getProviderToken() {
 
 function getEnabledAdapters(): JobApiAdapter[] {
   const configured = parseConfiguredAdapters();
-  const adapters = [...DEFAULT_ADAPTERS, ...getOptionalEnvAdapters(), ...configured];
+  const adapters = [...DEFAULT_ADAPTERS, ...getOptionalEnvAdapters(), ...configured]
+    .map((adapter) => ({ ...adapter, host: normalizeHost(adapter.host) }))
+    .filter((adapter) => adapter.host && adapter.path);
   const requested = (readEnv('JOB_API_ADAPTERS') || 'jsearch')
     .split(',')
     .map((part) => part.trim())
@@ -172,9 +174,9 @@ function parseConfiguredAdapters(): JobApiAdapter[] {
         path: String(item.path),
         method: item.method === 'POST' ? 'POST' : 'GET',
         source: String(item.source || `jobapi:${item.id || item.host}`),
-        headers: item.headers && typeof item.headers === 'object' ? item.headers : undefined,
-        queryParams: item.queryParams && typeof item.queryParams === 'object' ? item.queryParams : undefined,
-        body: item.body && typeof item.body === 'object' ? item.body : undefined,
+        headers: isPlainObject(item.headers) ? stringifyRecord(item.headers) : undefined,
+        queryParams: isPlainObject(item.queryParams) ? stringifyRecord(item.queryParams) : undefined,
+        body: isPlainObject(item.body) ? item.body : undefined,
         resultsPath: typeof item.resultsPath === 'string' ? item.resultsPath : undefined,
       }));
   } catch (error) {
@@ -203,10 +205,13 @@ async function runAdapter(adapter: JobApiAdapter, entity: EntityLike, token: str
       init.body = JSON.stringify(resolveTemplateObject(adapter.body || {}, entity));
     }
 
-    const res = await fetch(url, init);
+    const res = await fetch(url, init).catch((error) => {
+      if ((error as any)?.name === 'AbortError') throw new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`);
+      throw error;
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const payload = await res.json();
+    const payload = await res.json().catch(() => null);
     const rows = extractRows(payload, adapter.resultsPath);
     return rows.map((row, index) => normalizeJob(row, adapter, entity, index)).filter(Boolean);
   } finally {
@@ -241,13 +246,14 @@ function resolveTemplate(template: string, entity: EntityLike) {
     .replaceAll('{alias}', primaryAlias || entity.name)
     .replaceAll('{country}', DEFAULT_COUNTRY)
     .replaceAll('{location}', DEFAULT_LOCATION)
-    .replaceAll('{limit}', DEFAULT_LIMIT)
+    .replaceAll('{limit}', String(DEFAULT_LIMIT))
     .replaceAll('{portal}', entity.portal || '')
     .replaceAll('{category}', entity.category || '')
     .replaceAll('{industry}', entity.industry || '');
 }
 
 function extractRows(payload: any, preferredPath?: string): any[] {
+  if (!payload) return [];
   if (preferredPath) {
     const preferred = getByPath(payload, preferredPath);
     if (Array.isArray(preferred)) return preferred;
@@ -281,31 +287,34 @@ function getByPath(value: any, path: string) {
 }
 
 function normalizeJob(row: any, adapter: JobApiAdapter, entity: EntityLike, index: number) {
-  const title = pick(row, ['job_title', 'title', 'name', 'position', 'jobName', 'position_title']);
+  if (!row || typeof row !== 'object') return null;
+
+  const title = pickString(row, ['job_title', 'title', 'name', 'position', 'jobName', 'position_title']);
   if (!title) return null;
 
-  const city = pick(row, ['job_city', 'city', 'location_city', 'formattedWorkLocationCity']);
-  const state = pick(row, ['job_state', 'state', 'region', 'province', 'location_state', 'formattedWorkLocationState']);
-  const country = pick(row, ['job_country', 'country', 'location_country', 'formattedWorkLocationCountry']) || DEFAULT_COUNTRY.toUpperCase();
-  const location = pick(row, ['job_location', 'location', 'formattedLocation', 'formatted_work_location']) || joinLocation(city, state, country);
-  const url = pick(row, ['job_apply_link', 'job_google_link', 'apply_link', 'url', 'link', 'job_url', 'posting_url']);
-  const employer = pick(row, ['employer_name', 'company_name', 'company', 'hiring_company', 'organization']);
-  const externalId = pick(row, ['job_id', 'id', 'jobkey', 'jobKey', 'posting_id', 'position_id', 'slug']) || hashFallback(`${adapter.source}:${entity.name}:${title}:${location}:${url || index}`);
+  const city = pickString(row, ['job_city', 'city', 'location_city', 'formattedWorkLocationCity']);
+  const state = pickString(row, ['job_state', 'state', 'region', 'province', 'location_state', 'formattedWorkLocationState']);
+  const country = pickString(row, ['job_country', 'country', 'location_country', 'formattedWorkLocationCountry']) || DEFAULT_COUNTRY.toUpperCase();
+  const location = pickString(row, ['job_location', 'location', 'formattedLocation', 'formatted_work_location']) || joinLocation(city, state, country);
+  const url = pickString(row, ['job_apply_link', 'job_google_link', 'apply_link', 'url', 'link', 'job_url', 'posting_url']);
+  const employer = pickString(row, ['employer_name', 'company_name', 'company', 'hiring_company', 'organization']);
+  const externalId = pickString(row, ['job_id', 'id', 'jobkey', 'jobKey', 'posting_id', 'position_id', 'slug']) || hashFallback(`${adapter.source}:${entity.name}:${title}:${location}:${url || index}`);
+  const remoteValue = pick(row, ['job_is_remote', 'is_remote', 'remote']);
 
   return {
     external_id: externalId,
     source: adapter.source,
     title,
-    department: pick(row, ['department', 'category', 'job_category']) || employer || null,
+    department: pickString(row, ['department', 'category', 'job_category']) || employer || null,
     location,
     city: city || null,
     state: state || null,
     country: String(country || 'US').toUpperCase(),
     lat: toNumber(pick(row, ['job_latitude', 'latitude', 'lat'])),
     lng: toNumber(pick(row, ['job_longitude', 'longitude', 'lng', 'lon'])),
-    is_remote: Boolean(pick(row, ['job_is_remote', 'is_remote', 'remote'])) || /\bremote\b/i.test(`${title} ${location || ''}`),
+    is_remote: parseBoolean(remoteValue) || /\bremote\b/i.test(`${title} ${location || ''}`),
     is_overseas: String(country || 'US').toUpperCase() !== 'US',
-    posted_at: pick(row, ['job_posted_at_datetime_utc', 'job_posted_at_timestamp', 'posted_at', 'datePosted', 'date_posted', 'pubDate', 'created_at']) || null,
+    posted_at: normalizeDate(pick(row, ['job_posted_at_datetime_utc', 'job_posted_at_timestamp', 'posted_at', 'datePosted', 'date_posted', 'pubDate', 'created_at'])),
     raw_data: {
       ...row,
       normalized_employer: employer || entity.name,
@@ -323,6 +332,14 @@ function pick(row: any, keys: string[]) {
   return null;
 }
 
+function pickString(row: any, keys: string[]) {
+  const value = pick(row, keys);
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value.trim() || null;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
+}
+
 function joinLocation(city?: string | null, state?: string | null, country?: string | null) {
   return [city, state, country].filter(Boolean).join(', ') || null;
 }
@@ -331,6 +348,29 @@ function toNumber(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeDate(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'number' || /^\d+$/.test(String(value))) {
+    const numeric = Number(value);
+    const epochMs = numeric < 100000000000 ? numeric * 1000 : numeric;
+    const date = new Date(epochMs);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function parseBoolean(value: unknown) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'y'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n'].includes(normalized)) return false;
+  }
+  return false;
 }
 
 function hashFallback(value: string) {
@@ -350,6 +390,23 @@ function dedupeJobs(jobs: any[]) {
     seen.add(key);
     return true;
   });
+}
+
+function normalizeHost(host: string) {
+  return String(host || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+}
+
+function getPositiveIntegerEnv(name: string, fallback: number) {
+  const parsed = Number(readEnv(name));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringifyRecord(record: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(record).map(([key, value]) => [key, String(value)]));
 }
 
 function readEnv(name: string | string[]) {

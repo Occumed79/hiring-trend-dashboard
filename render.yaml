@@ -17,6 +17,10 @@ services:
         sync: false
       - key: JOB_API_TOKEN
         sync: false
+      - key: JOB_API_MODE
+        value: fallback
+      - key: JOB_API_FALLBACK_MIN_EXISTING
+        value: "1"
       - key: JOB_API_ADAPTERS
         value: jsearch
       - key: JOB_API_COUNTRY
@@ -51,6 +55,10 @@ services:
         sync: false
       - key: JOB_API_TOKEN
         sync: false
+      - key: JOB_API_MODE
+        value: fallback
+      - key: JOB_API_FALLBACK_MIN_EXISTING
+        value: "1"
       - key: JOB_API_ADAPTERS
         value: jsearch
       - key: JOB_API_COUNTRY

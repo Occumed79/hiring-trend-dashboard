@@ -9,19 +9,31 @@ export default function CompanyPortalView({ portal }: { portal: Portal }) {
   const [entities, setEntities] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
 
-  async function load() {
+  async function load(signal?: AbortSignal) {
     setLoading(true);
-    const res = await fetch(`/api/entities?portal=${portal.id}`);
-    const data = await res.json();
-    setEntities(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setError('');
+    try {
+      const res = await fetch(`/api/entities?portal=${encodeURIComponent(portal.id)}`, { signal });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || 'Could not load tracked companies.');
+      setEntities(Array.isArray(data) ? data : []);
+    } catch (err) {
+      if ((err as any)?.name === 'AbortError') return;
+      setEntities([]);
+      setError(err instanceof Error ? err.message : 'Could not load tracked companies.');
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
   }
 
   useEffect(() => {
+    const controller = new AbortController();
     setSelected(null);
-    load().catch(() => setLoading(false));
+    load(controller.signal);
+    return () => controller.abort();
   }, [portal.id]);
 
   function added(entity: any) {
@@ -41,7 +53,7 @@ export default function CompanyPortalView({ portal }: { portal: Portal }) {
       {selected ? (
         <UniversalCompanyDetail entity={selected} portal={portal} onBack={() => setSelected(null)} onRemoved={removed} />
       ) : (
-        <CompanyLanding portal={portal} entities={entities} loading={loading} onSelectEntity={setSelected} onAddEntity={() => setShowAdd(true)} />
+        <CompanyLanding portal={portal} entities={entities} loading={loading} error={error} onSelectEntity={setSelected} onAddEntity={() => setShowAdd(true)} />
       )}
       {showAdd && <UniversalAddEntityModal portal={portal} onClose={() => setShowAdd(false)} onAdded={added} />}
     </>

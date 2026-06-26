@@ -5,21 +5,34 @@ import WorldMap from '@/components/map/WorldMap';
 import USAMap from '@/components/map/USAMap';
 import CompanyRegistry from './CompanyRegistry';
 
-export default function CompanyLanding({ portal, entities, loading, onSelectEntity, onAddEntity }: {
+export default function CompanyLanding({ portal, entities, loading, error, onSelectEntity, onAddEntity }: {
   portal: Portal;
   entities: any[];
   loading: boolean;
+  error?: string;
   onSelectEntity: (e: any) => void;
   onAddEntity: () => void;
 }) {
   const [metrics, setMetrics] = useState<any>(null);
+  const [metricsError, setMetricsError] = useState('');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    fetch(`/api/portal-metrics?portal=${portal.id}`)
-      .then(r => r.json())
+    const controller = new AbortController();
+    setMetricsError('');
+    fetch(`/api/portal-metrics?portal=${encodeURIComponent(portal.id)}`, { signal: controller.signal })
+      .then(async r => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(data?.error || 'Could not load portal metrics.');
+        return data;
+      })
       .then(setMetrics)
-      .catch(() => setMetrics(null));
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setMetrics(null);
+        setMetricsError(err instanceof Error ? err.message : 'Could not load portal metrics.');
+      });
+    return () => controller.abort();
   }, [portal.id, entities.length]);
 
   const q = search.trim().toLowerCase();
@@ -51,6 +64,12 @@ export default function CompanyLanding({ portal, entities, loading, onSelectEnti
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tracked companies..." className="relative z-10 mt-6 w-full rounded-2xl border border-white/12 bg-white/[0.06] px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-blue-300/50" />
       </div>
+
+      {(error || metricsError) && (
+        <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {error || metricsError}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map(([label, value]) => (
