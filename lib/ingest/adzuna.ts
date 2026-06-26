@@ -1,3 +1,5 @@
+import { fetchJson, getIngestTimeout } from './http';
+
 const BASE = 'https://api.adzuna.com/v1/api/jobs';
 
 export async function fetchAdzunaJobs(entityName: string, country: string = 'us', page: number = 1) {
@@ -6,6 +8,8 @@ export async function fetchAdzunaJobs(entityName: string, country: string = 'us'
   if (!appId || !appKey) return { jobs: [], total: 0 };
 
   try {
+    const safeCountry = String(country || 'us').toLowerCase();
+    const safePage = Number.isFinite(Number(page)) && Number(page) > 0 ? Math.floor(Number(page)) : 1;
     const params = new URLSearchParams({
       app_id: appId,
       app_key: appKey,
@@ -13,27 +17,25 @@ export async function fetchAdzunaJobs(entityName: string, country: string = 'us'
       what_or: entityName,
       content_type: 'application/json',
     });
-    const res = await fetch(`${BASE}/${country}/search/${page}?${params}`);
-    if (!res.ok) return { jobs: [], total: 0 };
-    const data = await res.json();
+    const data = await fetchJson(`${BASE}/${safeCountry}/search/${safePage}?${params}`, {}, getIngestTimeout(10000));
     return {
       total: data.count || 0,
-      jobs: (data.results || []).map((job: any) => ({
-        external_id: job.id,
+      jobs: (Array.isArray(data.results) ? data.results : []).map((job: any) => ({
+        external_id: String(job.id || job.redirect_url || job.title),
         source: 'adzuna',
         title: job.title,
         department: null,
         location: job.location?.display_name || null,
         city: job.location?.area?.[3] || job.location?.area?.[2] || null,
         state: job.location?.area?.[1] || null,
-        country: country.toUpperCase(),
-        lat: job.latitude || null,
-        lng: job.longitude || null,
-        is_remote: job.title?.toLowerCase().includes('remote') || false,
-        is_overseas: country !== 'us',
+        country: safeCountry.toUpperCase(),
+        lat: toNumber(job.latitude),
+        lng: toNumber(job.longitude),
+        is_remote: /remote/i.test(String(job.title || '')),
+        is_overseas: safeCountry !== 'us',
         posted_at: job.created || null,
         raw_data: job,
-      })),
+      })).filter((job: any) => job.external_id && job.title),
     };
   } catch (e) {
     console.error('Adzuna fetch error:', e);
@@ -49,4 +51,10 @@ export async function getAdzunaCountryCounts(entityName: string) {
     results[country] = total;
   }
   return results;
+}
+
+function toNumber(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

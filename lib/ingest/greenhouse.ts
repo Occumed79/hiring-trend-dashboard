@@ -1,12 +1,14 @@
+import { fetchJson, getIngestTimeout } from './http';
+
 export async function fetchGreenhouseJobs(boardToken: string) {
   try {
-    const res = await fetch(
-      `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`,
-      { next: { revalidate: 3600 } }
+    const data = await fetchJson(
+      `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(boardToken)}/jobs?content=true`,
+      {},
+      getIngestTimeout(10000)
     );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.jobs || []).map((job: any) => ({
+
+    return (Array.isArray(data?.jobs) ? data.jobs : []).map((job: any) => ({
       external_id: String(job.id),
       source: 'greenhouse',
       title: job.title,
@@ -18,7 +20,7 @@ export async function fetchGreenhouseJobs(boardToken: string) {
       is_overseas: isOverseas(job.location?.name),
       posted_at: job.updated_at || null,
       raw_data: job,
-    }));
+    })).filter((job: any) => job.external_id && job.title);
   } catch (e) {
     console.error('Greenhouse fetch error:', e);
     return [];
