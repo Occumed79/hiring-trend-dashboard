@@ -13,8 +13,20 @@ services:
         sync: false
       - key: USAJOBS_API_KEY
         sync: false
-      - key: USAJOBS_EMAIL
+      - key: USAJOBS_USER_AGENT
         sync: false
+      - key: JOB_API_TOKEN
+        sync: false
+      - key: JOB_API_ADAPTERS
+        value: jsearch
+      - key: JOB_API_COUNTRY
+        value: us
+      - key: JOB_API_LIMIT
+        value: "25"
+      - key: JOB_API_DATE_POSTED
+        value: month
+      - key: JOB_API_TIMEOUT_MS
+        value: "12000"
       - key: CRON_SECRET
         generateValue: true
       - key: NEXT_PUBLIC_APP_URL
@@ -35,8 +47,20 @@ services:
         sync: false
       - key: USAJOBS_API_KEY
         sync: false
-      - key: USAJOBS_EMAIL
+      - key: USAJOBS_USER_AGENT
         sync: false
+      - key: JOB_API_TOKEN
+        sync: false
+      - key: JOB_API_ADAPTERS
+        value: jsearch
+      - key: JOB_API_COUNTRY
+        value: us
+      - key: JOB_API_LIMIT
+        value: "25"
+      - key: JOB_API_DATE_POSTED
+        value: month
+      - key: JOB_API_TIMEOUT_MS
+        value: "12000"
       - key: CRON_SECRET
         sync: false
       - key: NEXT_PUBLIC_APP_URL
