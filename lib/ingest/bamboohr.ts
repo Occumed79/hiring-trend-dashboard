@@ -1,17 +1,14 @@
+import { fetchJson, getIngestTimeout } from './http';
+
 export async function fetchBambooHRJobs(companySubdomain: string) {
   if (!companySubdomain) return [];
 
   try {
-    const res = await fetch(`https://${companySubdomain}.bamboohr.com/careers/list`, {
-      headers: {
-        'user-agent': 'OccuMedHiringTrendDashboard/1.0 (+https://github.com/Occumed79/hiring-trend-dashboard)',
-        accept: 'application/json,text/html;q=0.8,*/*;q=0.7',
-      },
-      signal: AbortSignal.timeout(9000),
-    });
-
-    if (!res.ok) return [];
-    const data = await res.json().catch(() => null);
+    const data = await fetchJson(
+      `https://${sanitizeSubdomain(companySubdomain)}.bamboohr.com/careers/list`,
+      {},
+      getIngestTimeout(10000)
+    ).catch(() => null);
     const jobs = Array.isArray(data?.result) ? data.result : Array.isArray(data) ? data : [];
 
     return jobs.map((job: any) => ({
@@ -29,11 +26,15 @@ export async function fetchBambooHRJobs(companySubdomain: string) {
       is_overseas: false,
       posted_at: job.datePosted || job.createdDate || null,
       raw_data: job,
-    }));
+    })).filter((job: any) => job.external_id && job.title);
   } catch (e) {
     console.error('BambooHR fetch error:', e);
     return [];
   }
+}
+
+function sanitizeSubdomain(value: string) {
+  return String(value || '').trim().replace(/^https?:\/\//i, '').replace(/\.bamboohr\.com.*$/i, '').replace(/[^a-z0-9-]/gi, '');
 }
 
 function splitCity(location?: string | null): string | null {
