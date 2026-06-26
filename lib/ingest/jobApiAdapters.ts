@@ -64,6 +64,18 @@ const OPTIONAL_ENV_ADAPTERS: Array<{
   { id: 'jobbank', label: 'JobBank jobs adapter', hostEnv: 'JOB_API_JOBBANK_HOST', pathEnv: 'JOB_API_JOBBANK_PATH', defaultPath: '/search', source: 'jobapi:jobbank' },
   { id: 'jobfinder', label: 'JobFinder jobs adapter', hostEnv: 'JOB_API_JOBFINDER_HOST', pathEnv: 'JOB_API_JOBFINDER_PATH', defaultPath: '/search', source: 'jobapi:jobfinder' },
   { id: 'latest_jobs', label: 'Latest Jobs adapter', hostEnv: 'JOB_API_LATEST_JOBS_HOST', pathEnv: 'JOB_API_LATEST_JOBS_PATH', defaultPath: '/search', source: 'jobapi:latest_jobs' },
+  { id: 'job_search_ai', label: 'Job Search AI adapter', hostEnv: 'JOB_API_JOB_SEARCH_AI_HOST', pathEnv: 'JOB_API_JOB_SEARCH_AI_PATH', defaultPath: '/search', source: 'jobapi:job_search_ai' },
+  { id: 'realtime_linkedin', label: 'Realtime LinkedIn adapter', hostEnv: 'JOB_API_REALTIME_LINKEDIN_HOST', pathEnv: 'JOB_API_REALTIME_LINKEDIN_PATH', defaultPath: '/search', source: 'jobapi:realtime_linkedin' },
+  { id: 'job_listings', label: 'Job Listings Aggregator adapter', hostEnv: 'JOB_API_JOB_LISTINGS_HOST', pathEnv: 'JOB_API_JOB_LISTINGS_PATH', defaultPath: '/search', source: 'jobapi:job_listings' },
+  { id: 'job_search_realtime', label: 'Job Search Realtime adapter', hostEnv: 'JOB_API_JOB_SEARCH_REALTIME_HOST', pathEnv: 'JOB_API_JOB_SEARCH_REALTIME_PATH', defaultPath: '/search', source: 'jobapi:job_search_realtime' },
+  { id: 'jobs', label: 'Jobs API adapter', hostEnv: 'JOB_API_JOBS_HOST', pathEnv: 'JOB_API_JOBS_PATH', defaultPath: '/search', source: 'jobapi:jobs' },
+  { id: 'job_parser', label: 'Job Parser adapter', hostEnv: 'JOB_API_JOB_PARSER_HOST', pathEnv: 'JOB_API_JOB_PARSER_PATH', defaultPath: '/parse', source: 'jobapi:job_parser' },
+  { id: 'lead_scraper', label: 'Lead Scraper adapter', hostEnv: 'JOB_API_LEAD_SCRAPER_HOST', pathEnv: 'JOB_API_LEAD_SCRAPER_PATH', defaultPath: '/search', source: 'jobapi:lead_scraper' },
+  { id: 'hirebase', label: 'HireBase adapter', hostEnv: 'JOB_API_HIREBASE_HOST', pathEnv: 'JOB_API_HIREBASE_PATH', defaultPath: '/search', source: 'jobapi:hirebase' },
+  { id: 'internsignal', label: 'InternSignal adapter', hostEnv: 'JOB_API_INTERNSIGNAL_HOST', pathEnv: 'JOB_API_INTERNSIGNAL_PATH', defaultPath: '/search', source: 'jobapi:internsignal' },
+  { id: 'yc_jobs', label: 'Y Combinator Jobs adapter', hostEnv: 'JOB_API_YC_JOBS_HOST', pathEnv: 'JOB_API_YC_JOBS_PATH', defaultPath: '/search', source: 'jobapi:yc_jobs' },
+  { id: 'job_posting_feed', label: 'Job Posting Feed adapter', hostEnv: 'JOB_API_JOB_POSTING_FEED_HOST', pathEnv: 'JOB_API_JOB_POSTING_FEED_PATH', defaultPath: '/feed', source: 'jobapi:job_posting_feed' },
+  { id: 'active_jobs', label: 'Active Jobs DB adapter', hostEnv: 'JOB_API_ACTIVE_JOBS_HOST', pathEnv: 'JOB_API_ACTIVE_JOBS_PATH', defaultPath: '/search', source: 'jobapi:active_jobs' },
 ];
 
 export async function fetchJobApiJobs(entity: EntityLike): Promise<JobApiIngestResult> {
