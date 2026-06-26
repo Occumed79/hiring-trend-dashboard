@@ -14,7 +14,7 @@ BEGIN
     'counties_and_cities'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
-END
+END;
 $$;
 
 -- ATS providers
@@ -34,7 +34,7 @@ BEGIN
     'unknown'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
-END
+END;
 $$;
 
 -- Role categories
@@ -52,7 +52,7 @@ BEGIN
     'other'
   );
 EXCEPTION WHEN duplicate_object THEN NULL;
-END
+END;
 $$;
 
 -- Entities table (clients, prospects, companies, agencies)
