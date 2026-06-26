@@ -16,11 +16,31 @@ export async function runUniversalIngest(entityId?: string | null) {
 
   const results = [];
   for (const entity of entities) {
-    results.push(await ingestOneEntity(entity));
-    await buildHiringSnapshot(entity.id);
+    try {
+      const result = await ingestOneEntity(entity);
+      await buildHiringSnapshot(entity.id);
+      results.push(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await logEntityIngestError(entity, message);
+      results.push({
+        entity: entity.name,
+        portal: entity.portal,
+        total: 0,
+        new: 0,
+        sources_used: [],
+        sources_skipped: [],
+        status: 'error',
+        error: message,
+      });
+    }
   }
 
-  return { ingested: results.length, results };
+  return {
+    ingested: results.filter((result: any) => result.status !== 'error').length,
+    failed: results.filter((result: any) => result.status === 'error').length,
+    results,
+  };
 }
 
 async function ingestOneEntity(entity: any) {
@@ -53,7 +73,7 @@ async function ingestOneEntity(entity: any) {
   skipped.push(...gov.skipped);
 
   const mode = getJobApiMode();
-  const minExisting = Number(process.env.JOB_API_FALLBACK_MIN_EXISTING || 1);
+  const minExisting = getFallbackThreshold();
   if (shouldRunJobApi(mode, items.length, minExisting)) {
     const jobApi = await fetchJobApiJobs(entity);
     items.push(...jobApi.jobs);
@@ -70,11 +90,12 @@ async function ingestOneEntity(entity: any) {
 
   const sourcesUsed = Array.from(new Set(used));
   const sourcesSkipped = Array.from(new Set(skipped));
+  const status = items.length ? 'success' : 'partial';
 
   await query(
     `INSERT INTO ingest_log (entity_id, source, status, jobs_found, jobs_new)
      VALUES ($1, $2, $3, $4, $5)`,
-    [entity.id, sourcesUsed.join(',') || 'none', items.length ? 'success' : 'partial', items.length, newCount]
+    [entity.id, sourcesUsed.join(',') || 'none', status, items.length, newCount]
   );
 
   return {
@@ -84,6 +105,7 @@ async function ingestOneEntity(entity: any) {
     new: newCount,
     sources_used: sourcesUsed,
     sources_skipped: sourcesSkipped,
+    status,
     detected: primary.detected,
   };
 }
@@ -94,10 +116,23 @@ function getJobApiMode(): JobApiMode {
   return 'fallback';
 }
 
+function getFallbackThreshold() {
+  const parsed = Number(process.env.JOB_API_FALLBACK_MIN_EXISTING || 1);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+}
+
 function shouldRunJobApi(mode: JobApiMode, existingJobCount: number, minExistingJobs: number) {
   if (mode === 'off') return false;
   if (mode === 'always') return true;
   return existingJobCount < minExistingJobs;
+}
+
+async function logEntityIngestError(entity: any, message: string) {
+  await query(
+    `INSERT INTO ingest_log (entity_id, source, status, jobs_found, jobs_new, error_message)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [entity.id, 'universal_ingest', 'error', 0, 0, message.slice(0, 2000)]
+  ).catch(() => {});
 }
 
 async function saveDetectedMetadata(entity: any, detected: any) {
