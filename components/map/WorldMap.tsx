@@ -22,8 +22,6 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
     Promise.all([
       import('leaflet'),
       import('react-leaflet'),
-      // @ts-ignore
-      import('leaflet/dist/leaflet.css'),
     ]).then(([L, RL]) => {
       if (!mounted) return;
       delete (L.Icon.Default.prototype as any)._getIconUrl;
