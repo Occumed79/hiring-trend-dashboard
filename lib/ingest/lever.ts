@@ -1,13 +1,15 @@
+import { fetchJson, getIngestTimeout } from './http';
+
 export async function fetchLeverJobs(companyId: string) {
   try {
-    const res = await fetch(
-      `https://api.lever.co/v0/postings/${companyId}?mode=json&limit=500`,
-      { next: { revalidate: 3600 } }
+    const data = await fetchJson(
+      `https://api.lever.co/v0/postings/${encodeURIComponent(companyId)}?mode=json&limit=500`,
+      {},
+      getIngestTimeout(10000)
     );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data || []).map((job: any) => ({
-      external_id: job.id,
+
+    return (Array.isArray(data) ? data : []).map((job: any) => ({
+      external_id: String(job.id || job.text),
       source: 'lever',
       title: job.text,
       department: job.categories?.department || null,
@@ -18,7 +20,7 @@ export async function fetchLeverJobs(companyId: string) {
       is_overseas: false,
       posted_at: job.createdAt ? new Date(job.createdAt).toISOString() : null,
       raw_data: job,
-    }));
+    })).filter((job: any) => job.external_id && job.title);
   } catch (e) {
     console.error('Lever fetch error:', e);
     return [];
