@@ -4,6 +4,7 @@ services:
     env: node
     buildCommand: npm install && npm run build
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -31,6 +32,8 @@ services:
         value: month
       - key: JOB_API_TIMEOUT_MS
         value: "12000"
+      - key: INGEST_HTTP_TIMEOUT_MS
+        value: "10000"
       - key: CRON_SECRET
         generateValue: true
       - key: NEXT_PUBLIC_APP_URL
@@ -69,6 +72,10 @@ services:
         value: month
       - key: JOB_API_TIMEOUT_MS
         value: "12000"
+      - key: INGEST_HTTP_TIMEOUT_MS
+        value: "10000"
+      - key: INGEST_CRON_TIMEOUT_MS
+        value: "120000"
       - key: CRON_SECRET
         sync: false
       - key: NEXT_PUBLIC_APP_URL
