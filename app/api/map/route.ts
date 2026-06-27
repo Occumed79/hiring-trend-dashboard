@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { inferPoint } from '@/lib/geo/locationLookup';
+import { extractLocationCandidates } from '@/lib/geo/locationSignals';
 
 const VALID_PORTALS = new Set(['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities']);
 const VALID_ROLE_CATEGORIES = new Set(['security', 'logistics', 'medical', 'admin', 'aviation', 'engineering', 'remote', 'overseas', 'other']);
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
     const newOnly = searchParams.get('new_only') === 'true';
     const overseasOnly = searchParams.get('overseas_only') === 'true';
     const federalOnly = searchParams.get('federal_only') === 'true';
+    const includeMeta = searchParams.get('include_meta') === 'true';
 
     if (portal && !VALID_PORTALS.has(portal)) {
       return NextResponse.json({ error: 'Invalid portal' }, { status: 400 });
@@ -24,8 +26,8 @@ export async function GET(req: NextRequest) {
     }
 
     let sql = `
-      SELECT j.city, j.state, j.country, j.location, j.lat, j.lng, j.role_category,
-             j.is_remote, j.is_overseas, j.posted_at, j.created_at,
+      SELECT j.id, j.title, j.source, j.city, j.state, j.country, j.location, j.lat, j.lng, j.role_category,
+             j.is_remote, j.is_overseas, j.posted_at, j.created_at, j.raw_data,
              e.name as entity_name, e.portal
       FROM jobs j
       JOIN entities e ON e.id = j.entity_id
@@ -66,12 +68,22 @@ export async function GET(req: NextRequest) {
 
     const rows = await query(sql, params);
     const buckets = new Map<string, any>();
+    let unmappedJobs = 0;
+    let mappedJobs = 0;
+    let fallbackJobs = 0;
 
     for (const row of rows) {
-      const inferred = inferPoint(row);
+      const candidates = extractLocationCandidates(row);
+      const inferred = inferPoint({ ...row, location_candidates: candidates });
       const lat = toFiniteNumber(row.lat ?? inferred?.lat);
       const lng = toFiniteNumber(row.lng ?? inferred?.lng);
-      if (lat === null || lng === null) continue;
+      if (lat === null || lng === null) {
+        unmappedJobs += 1;
+        continue;
+      }
+
+      mappedJobs += 1;
+      if (inferred?.note?.includes('fallback')) fallbackJobs += 1;
 
       const city = row.city || inferred?.city || null;
       const state = row.state || inferred?.state || null;
@@ -89,13 +101,28 @@ export async function GET(req: NextRequest) {
         is_overseas: row.is_overseas,
         entity_name: row.entity_name,
         portal: row.portal,
+        location_quality: inferred?.note || (row.lat && row.lng ? 'source coordinates' : 'location match'),
         cnt: 0,
       };
       existing.cnt += 1;
       buckets.set(key, existing);
     }
 
-    return NextResponse.json(Array.from(buckets.values()));
+    const locations = Array.from(buckets.values());
+    if (includeMeta) {
+      return NextResponse.json({
+        locations,
+        meta: {
+          total_jobs: rows.length,
+          mapped_jobs: mappedJobs,
+          unmapped_jobs: unmappedJobs,
+          fallback_jobs: fallbackJobs,
+          location_count: locations.length,
+        },
+      });
+    }
+
+    return NextResponse.json(locations);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error';
     return NextResponse.json({ error: message }, { status: 500 });
