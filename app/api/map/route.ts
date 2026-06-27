@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     const overseasOnly = searchParams.get('overseas_only') === 'true';
     const federalOnly = searchParams.get('federal_only') === 'true';
     const includeMeta = searchParams.get('include_meta') === 'true';
+    const includeFallback = searchParams.get('include_fallback') !== 'false';
 
     if (portal && !VALID_PORTALS.has(portal)) {
       return NextResponse.json({ error: 'Invalid portal' }, { status: 400 });
@@ -69,26 +70,39 @@ export async function GET(req: NextRequest) {
     const rows = await query(sql, params);
     const buckets = new Map<string, any>();
     let unmappedJobs = 0;
-    let mappedJobs = 0;
+    let realMappedJobs = 0;
     let fallbackJobs = 0;
 
     for (const row of rows) {
+      const rawData = parseRawData(row.raw_data);
+      const storedQuality = String(rawData?.normalized_location_quality || '').toLowerCase();
+      const storedWasFallback = storedQuality.includes('fallback') || storedQuality.includes('unmapped_no_job_location') || !!rawData?.normalized_fallback_point;
       const candidates = extractLocationCandidates(row);
-      const inferred = inferPoint({ ...row, location_candidates: candidates });
-      const lat = toFiniteNumber(row.lat ?? inferred?.lat);
-      const lng = toFiniteNumber(row.lng ?? inferred?.lng);
+      const inferred = inferPoint({ ...row, lat: storedWasFallback ? null : row.lat, lng: storedWasFallback ? null : row.lng, location_candidates: candidates });
+      const sourceLat = storedWasFallback ? null : toFiniteNumber(row.lat);
+      const sourceLng = storedWasFallback ? null : toFiniteNumber(row.lng);
+      const lat = sourceLat ?? toFiniteNumber(inferred?.lat);
+      const lng = sourceLng ?? toFiniteNumber(inferred?.lng);
       if (lat === null || lng === null) {
         unmappedJobs += 1;
         continue;
       }
 
-      mappedJobs += 1;
-      if (inferred?.note?.includes('fallback')) fallbackJobs += 1;
+      const quality = storedWasFallback
+        ? inferred?.note || 'entity fallback'
+        : inferred?.note || (sourceLat !== null && sourceLng !== null ? 'source coordinates' : 'location match');
+      const isFallback = quality.includes('fallback');
+      if (isFallback) {
+        fallbackJobs += 1;
+        if (!includeFallback) continue;
+      } else {
+        realMappedJobs += 1;
+      }
 
-      const city = row.city || inferred?.city || null;
-      const state = row.state || inferred?.state || null;
+      const city = storedWasFallback ? inferred?.city || null : row.city || inferred?.city || null;
+      const state = storedWasFallback ? inferred?.state || null : row.state || inferred?.state || null;
       const rowCountry = row.country || inferred?.country || 'US';
-      const key = [lat.toFixed(4), lng.toFixed(4), city || '', state || '', rowCountry || '', row.entity_name || ''].join('|');
+      const key = [lat.toFixed(4), lng.toFixed(4), city || '', state || '', rowCountry || '', row.entity_name || '', isFallback ? 'fallback' : 'real'].join('|');
 
       const existing = buckets.get(key) || {
         city,
@@ -101,7 +115,8 @@ export async function GET(req: NextRequest) {
         is_overseas: row.is_overseas,
         entity_name: row.entity_name,
         portal: row.portal,
-        location_quality: inferred?.note || (row.lat && row.lng ? 'source coordinates' : 'location match'),
+        location_quality: quality,
+        is_fallback: isFallback,
         cnt: 0,
       };
       existing.cnt += 1;
@@ -114,9 +129,10 @@ export async function GET(req: NextRequest) {
         locations,
         meta: {
           total_jobs: rows.length,
-          mapped_jobs: mappedJobs,
-          unmapped_jobs: unmappedJobs,
+          real_mapped_jobs: realMappedJobs,
+          mapped_jobs: realMappedJobs,
           fallback_jobs: fallbackJobs,
+          unmapped_jobs: unmappedJobs,
           location_count: locations.length,
         },
       });
@@ -133,4 +149,17 @@ function toFiniteNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseRawData(value: unknown) {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, any>;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }

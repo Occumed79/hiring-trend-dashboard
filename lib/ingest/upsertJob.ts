@@ -21,14 +21,19 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
     is_remote: isRemote,
     location_candidates: locationCandidates,
   });
-  const lat = toNumber(item.lat) ?? inferred?.lat ?? null;
-  const lng = toNumber(item.lng) ?? inferred?.lng ?? null;
-  const city = nullableString(item.city) || inferred?.city || null;
-  const state = nullableString(item.state) || inferred?.state || null;
+  const inferredQuality = inferred?.note || null;
+  const inferredIsFallback = !!inferredQuality && inferredQuality.includes('fallback');
+  const sourceLat = toNumber(item.lat);
+  const sourceLng = toNumber(item.lng);
+  const lat = sourceLat ?? (inferredIsFallback ? null : inferred?.lat ?? null);
+  const lng = sourceLng ?? (inferredIsFallback ? null : inferred?.lng ?? null);
+  const city = nullableString(item.city) || (inferredIsFallback ? null : inferred?.city || null);
+  const state = nullableString(item.state) || (inferredIsFallback ? null : inferred?.state || null);
   const normalizedRawData = {
     ...(item.raw_data || {}),
     normalized_location_candidates: locationCandidates,
-    normalized_location_quality: inferred?.note || (lat !== null && lng !== null ? 'source coordinates' : null),
+    normalized_location_quality: inferredIsFallback ? 'unmapped_no_job_location' : inferredQuality || (lat !== null && lng !== null ? 'source coordinates' : null),
+    normalized_fallback_point: inferredIsFallback ? inferred : null,
   };
 
   const roleCategory = classifyRole(title, item.location);
