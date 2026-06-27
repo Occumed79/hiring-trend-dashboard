@@ -10,6 +10,14 @@ const MAP_FILTERS = [
   { id: 'logistics', label: 'Logistics' },
 ];
 
+type MapMeta = {
+  total_jobs?: number;
+  mapped_jobs?: number;
+  unmapped_jobs?: number;
+  fallback_jobs?: number;
+  location_count?: number;
+};
+
 export default function USAMap({
   entityId,
   portalId,
@@ -21,6 +29,7 @@ export default function USAMap({
 }) {
   const [filter, setFilter] = useState('all');
   const [mapData, setMapData] = useState<any[]>([]);
+  const [mapMeta, setMapMeta] = useState<MapMeta | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [MapComponents, setMapComponents] = useState<any>(null);
@@ -54,6 +63,7 @@ export default function USAMap({
     if (entityId) params.set('entity_id', entityId);
     if (portalId) params.set('portal', portalId);
     params.set('country', 'US');
+    params.set('include_meta', 'true');
     if (filter === 'new_only') params.set('new_only', 'true');
     if (['remote', 'security', 'medical', 'logistics'].includes(filter)) params.set('role_category', filter);
 
@@ -63,10 +73,19 @@ export default function USAMap({
         if (!r.ok) throw new Error(data?.error || 'Could not load map data.');
         return data;
       })
-      .then(d => setMapData(Array.isArray(d) ? d : []))
+      .then(d => {
+        if (Array.isArray(d)) {
+          setMapData(d);
+          setMapMeta(null);
+        } else {
+          setMapData(Array.isArray(d?.locations) ? d.locations : []);
+          setMapMeta(d?.meta || null);
+        }
+      })
       .catch((err) => {
         if (err?.name === 'AbortError') return;
         setMapData([]);
+        setMapMeta(null);
         setError(err instanceof Error ? err.message : 'Could not load map data.');
       })
       .finally(() => {
@@ -81,7 +100,11 @@ export default function USAMap({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-100 tracking-wide">{title}</h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">United States · {mapData.length} locations</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            United States · {mapData.length} locations
+            {mapMeta ? ` · ${mapMeta.mapped_jobs || 0}/${mapMeta.total_jobs || 0} jobs mapped` : ''}
+            {mapMeta?.unmapped_jobs ? ` · ${mapMeta.unmapped_jobs} unmapped` : ''}
+          </p>
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {MAP_FILTERS.map(f => (
@@ -144,6 +167,7 @@ export default function USAMap({
                       <strong>{[point.city, point.state].filter(Boolean).join(', ') || 'Unknown'}</strong><br />
                       <span style={{ color: '#60a5fa' }}>{count} open job{count !== 1 ? 's' : ''}</span>
                       {point.entity_name && <><br /><span style={{ color: '#94a3b8' }}>{point.entity_name}</span></>}
+                      {point.location_quality && <><br /><span style={{ color: '#64748b' }}>{point.location_quality}</span></>}
                     </div>
                   </MapComponents.Popup>
                 </MapComponents.CircleMarker>

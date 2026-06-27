@@ -1,5 +1,7 @@
 import { query } from '@/db/client';
 import { classifyRole } from '@/lib/roleClassifier';
+import { inferPoint } from '@/lib/geo/locationLookup';
+import { extractLocationCandidates } from '@/lib/geo/locationSignals';
 
 export async function upsertIngestedJob(entity: any, item: any): Promise<boolean> {
   if (!item.external_id || !item.source || !item.title) return false;
@@ -8,6 +10,26 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   const source = String(item.source).trim();
   const title = String(item.title).trim();
   if (!externalId || !source || !title) return false;
+
+  const isRemote = toBoolean(item.is_remote) || /\b(remote|work from home|wfh|virtual)\b/i.test(`${title} ${item.location || ''}`);
+  const country = normalizeCountry(item.country);
+  const locationCandidates = extractLocationCandidates({ ...item, entity_name: entity.name });
+  const inferred = inferPoint({
+    ...item,
+    country,
+    entity_name: entity.name,
+    is_remote: isRemote,
+    location_candidates: locationCandidates,
+  });
+  const lat = toNumber(item.lat) ?? inferred?.lat ?? null;
+  const lng = toNumber(item.lng) ?? inferred?.lng ?? null;
+  const city = nullableString(item.city) || inferred?.city || null;
+  const state = nullableString(item.state) || inferred?.state || null;
+  const normalizedRawData = {
+    ...(item.raw_data || {}),
+    normalized_location_candidates: locationCandidates,
+    normalized_location_quality: inferred?.note || (lat !== null && lng !== null ? 'source coordinates' : null),
+  };
 
   const roleCategory = classifyRole(title, item.location);
   const existing = await query(
@@ -44,15 +66,15 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
       nullableString(item.department),
       roleCategory,
       nullableString(item.location),
-      nullableString(item.city),
-      nullableString(item.state),
-      normalizeCountry(item.country),
-      toNumber(item.lat),
-      toNumber(item.lng),
-      toBoolean(item.is_remote),
-      toBoolean(item.is_overseas),
+      city,
+      state,
+      country,
+      lat,
+      lng,
+      isRemote,
+      toBoolean(item.is_overseas) || country !== 'US',
       normalizeDate(item.posted_at),
-      JSON.stringify(item.raw_data || {}),
+      JSON.stringify(normalizedRawData),
     ]
   );
 
@@ -66,7 +88,33 @@ function nullableString(value: unknown) {
 }
 
 function normalizeCountry(value: unknown) {
-  const text = nullableString(value) || 'US';
+  const text = (nullableString(value) || 'US').toLowerCase();
+  const mapped: Record<string, string> = {
+    us: 'US',
+    usa: 'US',
+    'u.s.': 'US',
+    'u.s.a.': 'US',
+    'united states': 'US',
+    'united states of america': 'US',
+    ca: 'CA',
+    canada: 'CA',
+    gb: 'GB',
+    uk: 'GB',
+    'united kingdom': 'GB',
+    england: 'GB',
+    de: 'DE',
+    germany: 'DE',
+    kw: 'KW',
+    kuwait: 'KW',
+    qa: 'QA',
+    qatar: 'QA',
+    bh: 'BH',
+    bahrain: 'BH',
+    iq: 'IQ',
+    iraq: 'IQ',
+  };
+  if (mapped[text]) return mapped[text];
+  if (/^[a-z]{2}$/i.test(text)) return text.toUpperCase();
   return text.slice(0, 2).toUpperCase();
 }
 

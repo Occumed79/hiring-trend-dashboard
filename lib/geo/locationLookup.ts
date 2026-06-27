@@ -31,20 +31,20 @@ const POINTS: Record<string, Point> = {
   'bahrain': { lat: 26.2235, lng: 50.5876, city: 'Manama', country: 'BH' },
   'iraq': { lat: 33.3152, lng: 44.3661, city: 'Baghdad', country: 'IQ' },
   'germany': { lat: 50.1109, lng: 8.6821, city: 'Frankfurt', country: 'DE' },
-  'remote': { lat: 39.8283, lng: -98.5795, city: 'Remote', country: 'US' },
+  'remote': { lat: 39.8283, lng: -98.5795, city: 'Remote', country: 'US', note: 'remote fallback' },
 };
 
 const STATE_POINTS: Record<string, Point> = {
-  va: { lat: 37.7693, lng: -78.1700, state: 'VA', country: 'US' },
-  tx: { lat: 31.0545, lng: -97.5635, state: 'TX', country: 'US' },
-  fl: { lat: 27.7663, lng: -81.6868, state: 'FL', country: 'US' },
-  ca: { lat: 36.1162, lng: -119.6816, state: 'CA', country: 'US' },
-  co: { lat: 39.0598, lng: -105.3111, state: 'CO', country: 'US' },
-  al: { lat: 32.8067, lng: -86.7911, state: 'AL', country: 'US' },
-  ga: { lat: 33.0406, lng: -83.6431, state: 'GA', country: 'US' },
-  sc: { lat: 33.8569, lng: -80.9450, state: 'SC', country: 'US' },
-  nc: { lat: 35.6301, lng: -79.8064, state: 'NC', country: 'US' },
-  dc: { lat: 38.9072, lng: -77.0369, state: 'DC', country: 'US' },
+  va: { lat: 37.7693, lng: -78.1700, state: 'VA', country: 'US', note: 'state fallback' },
+  tx: { lat: 31.0545, lng: -97.5635, state: 'TX', country: 'US', note: 'state fallback' },
+  fl: { lat: 27.7663, lng: -81.6868, state: 'FL', country: 'US', note: 'state fallback' },
+  ca: { lat: 36.1162, lng: -119.6816, state: 'CA', country: 'US', note: 'state fallback' },
+  co: { lat: 39.0598, lng: -105.3111, state: 'CO', country: 'US', note: 'state fallback' },
+  al: { lat: 32.8067, lng: -86.7911, state: 'AL', country: 'US', note: 'state fallback' },
+  ga: { lat: 33.0406, lng: -83.6431, state: 'GA', country: 'US', note: 'state fallback' },
+  sc: { lat: 33.8569, lng: -80.9450, state: 'SC', country: 'US', note: 'state fallback' },
+  nc: { lat: 35.6301, lng: -79.8064, state: 'NC', country: 'US', note: 'state fallback' },
+  dc: { lat: 38.9072, lng: -77.0369, state: 'DC', country: 'US', note: 'state fallback' },
 };
 
 const ENTITY_FALLBACK_POINTS: Record<string, Point> = {
@@ -63,6 +63,7 @@ type LocationInput = {
   state?: string | null;
   country?: string | null;
   location?: string | null;
+  location_candidates?: string[] | null;
   entity_name?: string | null;
   is_remote?: boolean | null;
 };
@@ -75,18 +76,40 @@ export function inferPoint(input: LocationInput): Point | null {
   const country = clean(input.country);
   const entityName = clean(input.entity_name);
 
-  if (city && state && POINTS[`${city}, ${state}`]) return POINTS[`${city}, ${state}`];
-  if (location && POINTS[location]) return POINTS[location];
-  if (location) {
-    const hit = Object.keys(POINTS).find(key => location.includes(key));
-    if (hit) return POINTS[hit];
+  const direct = matchLocationParts(city, state, location, country, 'job location');
+  if (direct) return direct;
+
+  for (const candidate of input.location_candidates || []) {
+    const candidateHit = matchCandidate(candidate);
+    if (candidateHit) return candidateHit;
   }
-  if (state && STATE_POINTS[state]) return STATE_POINTS[state];
-  if (country && POINTS[country]) return POINTS[country];
+
   if (entityName) {
     const entityHit = Object.keys(ENTITY_FALLBACK_POINTS).find(key => entityName === key || entityName.includes(key));
     if (entityHit) return ENTITY_FALLBACK_POINTS[entityHit];
   }
+  return null;
+}
+
+function matchCandidate(candidate: string): Point | null {
+  const cleaned = clean(candidate);
+  if (!cleaned) return null;
+  const parts = cleaned.split(',').map(part => part.trim()).filter(Boolean);
+  const city = parts[0] || '';
+  const state = parts[1] || '';
+  const country = parts[2] || '';
+  return matchLocationParts(city, state, cleaned, country, 'payload location');
+}
+
+function matchLocationParts(city: string, state: string, location: string, country: string, note: string): Point | null {
+  if (city && state && POINTS[`${city}, ${state}`]) return { ...POINTS[`${city}, ${state}`], note };
+  if (location && POINTS[location]) return { ...POINTS[location], note };
+  if (location) {
+    const hit = Object.keys(POINTS).find(key => location.includes(key));
+    if (hit) return { ...POINTS[hit], note };
+  }
+  if (state && STATE_POINTS[state]) return STATE_POINTS[state];
+  if (country && POINTS[country]) return { ...POINTS[country], note };
   return null;
 }
 
