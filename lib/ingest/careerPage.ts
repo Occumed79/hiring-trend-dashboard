@@ -102,7 +102,6 @@ async function enrichOneLinkedJob(job: ParsedJob): Promise<ParsedJob> {
   return {
     ...job,
     location: location || job.location,
-    city: undefined as any,
     country: detectCountryFromLocation(location) || job.country,
     parser: location ? `${job.parser}+detail_html` : job.parser,
     detail_enriched: !!location,
