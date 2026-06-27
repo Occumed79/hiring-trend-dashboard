@@ -74,16 +74,23 @@ export async function GET(req: NextRequest) {
     let fallbackJobs = 0;
 
     for (const row of rows) {
+      const rawData = parseRawData(row.raw_data);
+      const storedQuality = String(rawData?.normalized_location_quality || '').toLowerCase();
+      const storedWasFallback = storedQuality.includes('fallback') || storedQuality.includes('unmapped_no_job_location') || !!rawData?.normalized_fallback_point;
       const candidates = extractLocationCandidates(row);
-      const inferred = inferPoint({ ...row, location_candidates: candidates });
-      const lat = toFiniteNumber(row.lat ?? inferred?.lat);
-      const lng = toFiniteNumber(row.lng ?? inferred?.lng);
+      const inferred = inferPoint({ ...row, lat: storedWasFallback ? null : row.lat, lng: storedWasFallback ? null : row.lng, location_candidates: candidates });
+      const sourceLat = storedWasFallback ? null : toFiniteNumber(row.lat);
+      const sourceLng = storedWasFallback ? null : toFiniteNumber(row.lng);
+      const lat = sourceLat ?? toFiniteNumber(inferred?.lat);
+      const lng = sourceLng ?? toFiniteNumber(inferred?.lng);
       if (lat === null || lng === null) {
         unmappedJobs += 1;
         continue;
       }
 
-      const quality = inferred?.note || (row.lat && row.lng ? 'source coordinates' : 'location match');
+      const quality = storedWasFallback
+        ? inferred?.note || 'entity fallback'
+        : inferred?.note || (sourceLat !== null && sourceLng !== null ? 'source coordinates' : 'location match');
       const isFallback = quality.includes('fallback');
       if (isFallback) {
         fallbackJobs += 1;
@@ -92,8 +99,8 @@ export async function GET(req: NextRequest) {
         realMappedJobs += 1;
       }
 
-      const city = row.city || inferred?.city || null;
-      const state = row.state || inferred?.state || null;
+      const city = storedWasFallback ? inferred?.city || null : row.city || inferred?.city || null;
+      const state = storedWasFallback ? inferred?.state || null : row.state || inferred?.state || null;
       const rowCountry = row.country || inferred?.country || 'US';
       const key = [lat.toFixed(4), lng.toFixed(4), city || '', state || '', rowCountry || '', row.entity_name || '', isFallback ? 'fallback' : 'real'].join('|');
 
@@ -142,4 +149,17 @@ function toFiniteNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseRawData(value: unknown) {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, any>;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
