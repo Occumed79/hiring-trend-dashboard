@@ -5,6 +5,7 @@ const POINTS: Record<string, Point> = {
   'mclean, va': { lat: 38.9339, lng: -77.1773, city: 'McLean', state: 'VA', country: 'US' },
   'reston, va': { lat: 38.9586, lng: -77.3570, city: 'Reston', state: 'VA', country: 'US' },
   'herndon, va': { lat: 38.9696, lng: -77.3861, city: 'Herndon', state: 'VA', country: 'US' },
+  'falls church, va': { lat: 38.8823, lng: -77.1711, city: 'Falls Church', state: 'VA', country: 'US' },
   'arlington, va': { lat: 38.8816, lng: -77.0910, city: 'Arlington', state: 'VA', country: 'US' },
   'chantilly, va': { lat: 38.8943, lng: -77.4311, city: 'Chantilly', state: 'VA', country: 'US' },
   'norfolk, va': { lat: 36.8508, lng: -76.2859, city: 'Norfolk', state: 'VA', country: 'US' },
@@ -54,7 +55,7 @@ const ENTITY_FALLBACK_POINTS: Record<string, Point> = {
   peraton: { ...POINTS['reston, va'], note: 'entity fallback' },
   leidos: { ...POINTS['reston, va'], note: 'entity fallback' },
   caci: { ...POINTS['reston, va'], note: 'entity fallback' },
-  gdit: { ...POINTS['falls church, va'] || POINTS['mclean, va'], note: 'entity fallback' },
+  gdit: { ...POINTS['falls church, va'], note: 'entity fallback' },
 };
 
 type LocationInput = {
