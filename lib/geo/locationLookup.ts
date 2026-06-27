@@ -1,7 +1,10 @@
-type Point = { lat: number; lng: number; city?: string; state?: string; country?: string };
+type Point = { lat: number; lng: number; city?: string; state?: string; country?: string; note?: string };
 
 const POINTS: Record<string, Point> = {
   'washington, dc': { lat: 38.9072, lng: -77.0369, city: 'Washington', state: 'DC', country: 'US' },
+  'mclean, va': { lat: 38.9339, lng: -77.1773, city: 'McLean', state: 'VA', country: 'US' },
+  'reston, va': { lat: 38.9586, lng: -77.3570, city: 'Reston', state: 'VA', country: 'US' },
+  'herndon, va': { lat: 38.9696, lng: -77.3861, city: 'Herndon', state: 'VA', country: 'US' },
   'arlington, va': { lat: 38.8816, lng: -77.0910, city: 'Arlington', state: 'VA', country: 'US' },
   'chantilly, va': { lat: 38.8943, lng: -77.4311, city: 'Chantilly', state: 'VA', country: 'US' },
   'norfolk, va': { lat: 36.8508, lng: -76.2859, city: 'Norfolk', state: 'VA', country: 'US' },
@@ -43,12 +46,33 @@ const STATE_POINTS: Record<string, Point> = {
   dc: { lat: 38.9072, lng: -77.0369, state: 'DC', country: 'US' },
 };
 
-export function inferPoint(input: { city?: string | null; state?: string | null; country?: string | null; location?: string | null; is_remote?: boolean | null }): Point | null {
+const ENTITY_FALLBACK_POINTS: Record<string, Point> = {
+  v2x: { ...POINTS['mclean, va'], note: 'entity fallback' },
+  vectrus: { ...POINTS['mclean, va'], note: 'entity fallback' },
+  vertex: { ...POINTS['mclean, va'], note: 'entity fallback' },
+  amentum: { ...POINTS['chantilly, va'], note: 'entity fallback' },
+  peraton: { ...POINTS['reston, va'], note: 'entity fallback' },
+  leidos: { ...POINTS['reston, va'], note: 'entity fallback' },
+  caci: { ...POINTS['reston, va'], note: 'entity fallback' },
+  gdit: { ...POINTS['falls church, va'] || POINTS['mclean, va'], note: 'entity fallback' },
+};
+
+type LocationInput = {
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  location?: string | null;
+  entity_name?: string | null;
+  is_remote?: boolean | null;
+};
+
+export function inferPoint(input: LocationInput): Point | null {
   if (input.is_remote) return POINTS.remote;
   const city = clean(input.city);
   const state = clean(input.state);
   const location = clean(input.location);
   const country = clean(input.country);
+  const entityName = clean(input.entity_name);
 
   if (city && state && POINTS[`${city}, ${state}`]) return POINTS[`${city}, ${state}`];
   if (location && POINTS[location]) return POINTS[location];
@@ -58,6 +82,10 @@ export function inferPoint(input: { city?: string | null; state?: string | null;
   }
   if (state && STATE_POINTS[state]) return STATE_POINTS[state];
   if (country && POINTS[country]) return POINTS[country];
+  if (entityName) {
+    const entityHit = Object.keys(ENTITY_FALLBACK_POINTS).find(key => entityName === key || entityName.includes(key));
+    if (entityHit) return ENTITY_FALLBACK_POINTS[entityHit];
+  }
   return null;
 }
 
