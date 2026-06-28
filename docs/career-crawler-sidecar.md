@@ -109,6 +109,17 @@ Use the sidecar when:
 
 Do not use it for every entity by default. It is deliberately optional so the dashboard can keep daily ingestion cheap and predictable.
 
+## Existing ingest stays intact
+
+This sidecar is additive. It does not remove or bypass the current app ingest order:
+
+1. direct ATS connectors
+2. portal-specific sources
+3. Adzuna where configured
+4. government fallback sources where configured
+5. paid/rate-limited jobs API fallback according to `JOB_API_MODE`
+6. manual/offline crawler JSONL import only when explicitly run
+
 ## Notes for future hardening
 
 - Add entity-specific spiders for high-value targets with unusual HTML.
