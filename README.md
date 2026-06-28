@@ -54,7 +54,7 @@ curl -X POST http://localhost:3000/api/ingest \
 
 ## Optional Career-Page Crawler
 
-For companies/agencies where the normal ATS/API ingest returns too little, use the optional crawler sidecar instead of burning paid/rate-limited job API quota.
+For companies/agencies where the normal ATS/API ingest returns too little, use the optional crawler sidecar instead of burning paid/rate-limited job API quota. This is additive and does not remove or bypass the existing ingest flow.
 
 ```bash
 python3 -m venv .venv-crawler
