@@ -1,0 +1,9 @@
+{
+  "targets": [
+    {
+      "entity": "Example Company",
+      "start_url": "https://example.invalid/careers",
+      "max_pages": 150
+    }
+  ]
+}
