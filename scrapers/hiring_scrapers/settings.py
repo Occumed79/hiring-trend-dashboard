@@ -29,5 +29,10 @@ ITEM_PIPELINES = {
     "hiring_scrapers.pipelines.UniqueJobPipeline": 300,
 }
 
+EXTENSIONS = {
+    "hiring_scrapers.extensions.JsonStatsExtension": 500,
+}
+CAREER_CRAWLER_STATS_FILE = "output/crawler-stats.jsonl"
+
 FEED_EXPORT_ENCODING = "utf-8"
 LOG_LEVEL = "INFO"
