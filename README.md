@@ -71,6 +71,23 @@ cd ..
 npm run import:crawler -- --entity-id=ENTITY_UUID --file=scrapers/output/example-company.jsonl
 ```
 
+For quick one-off selector checks, use the included `scrapy runspider` example:
+
+```bash
+scrapy runspider scrapers/examples/runspider_career_page.py \
+  -a start_url=https://example.com/careers \
+  -a entity="Example Company" \
+  -O scrapers/output/runspider-example.jsonl
+```
+
+For multiple configured targets, use the Scrapy API batch runner:
+
+```bash
+npm run crawler:batch -- \
+  --config scrapers/examples/targets.example.json \
+  --output scrapers/output/career-pages-batch.jsonl
+```
+
 See [`docs/career-crawler-sidecar.md`](docs/career-crawler-sidecar.md) for usage details and guardrails.
 
 ## Deployment on Render
