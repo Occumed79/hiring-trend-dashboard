@@ -13,6 +13,7 @@ Real-time hiring intelligence dashboard for tracking job trends across clients, 
 - Lever Postings API (public ATS)
 - Adzuna API (job counts + regional trends)
 - USAJOBS API (federal/government hiring)
+- Optional career-page crawler sidecar for pages that do not expose a clean ATS/API feed
 
 ## Quick Start
 
@@ -50,6 +51,44 @@ curl -X POST http://localhost:3000/api/ingest \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
+
+## Optional Career-Page Crawler
+
+For companies/agencies where the normal ATS/API ingest returns too little, use the optional crawler sidecar instead of burning paid/rate-limited job API quota. This is additive and does not remove or bypass the existing ingest flow.
+
+```bash
+python3 -m venv .venv-crawler
+source .venv-crawler/bin/activate
+pip install -r scrapers/requirements.txt
+
+cd scrapers
+scrapy crawl career_pages \
+  -a start_url=https://example.com/careers \
+  -a entity="Example Company" \
+  -O output/example-company.jsonl
+
+cd ..
+npm run import:crawler -- --entity-id=ENTITY_UUID --file=scrapers/output/example-company.jsonl
+```
+
+For quick one-off selector checks, use the included `scrapy runspider` example:
+
+```bash
+scrapy runspider scrapers/examples/runspider_career_page.py \
+  -a start_url=https://example.com/careers \
+  -a entity="Example Company" \
+  -O scrapers/output/runspider-example.jsonl
+```
+
+For multiple configured targets, use the Scrapy API batch runner:
+
+```bash
+npm run crawler:batch -- \
+  --config scrapers/examples/targets.example.json \
+  --output scrapers/output/career-pages-batch.jsonl
+```
+
+See [`docs/career-crawler-sidecar.md`](docs/career-crawler-sidecar.md) for usage details and guardrails.
 
 ## Deployment on Render
 

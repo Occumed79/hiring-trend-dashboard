@@ -1,0 +1,38 @@
+BOT_NAME = "hiring_scrapers"
+
+SPIDER_MODULES = ["hiring_scrapers.spiders"]
+NEWSPIDER_MODULE = "hiring_scrapers.spiders"
+
+ROBOTSTXT_OBEY = True
+USER_AGENT = "OccuMedHiringTrendDashboard/1.0 (+https://github.com/Occumed79/hiring-trend-dashboard)"
+
+CONCURRENT_REQUESTS = 8
+CONCURRENT_REQUESTS_PER_DOMAIN = 2
+DOWNLOAD_DELAY = 0.5
+DOWNLOAD_TIMEOUT = 18
+RETRY_ENABLED = True
+RETRY_TIMES = 2
+REDIRECT_ENABLED = True
+COOKIES_ENABLED = False
+DEPTH_LIMIT = 6
+
+AUTOTHROTTLE_ENABLED = True
+AUTOTHROTTLE_START_DELAY = 0.5
+AUTOTHROTTLE_MAX_DELAY = 8
+AUTOTHROTTLE_TARGET_CONCURRENCY = 1.0
+
+HTTPCACHE_ENABLED = True
+HTTPCACHE_EXPIRATION_SECS = 86400
+HTTPCACHE_DIR = ".scrapy/httpcache"
+
+ITEM_PIPELINES = {
+    "hiring_scrapers.pipelines.UniqueJobPipeline": 300,
+}
+
+EXTENSIONS = {
+    "hiring_scrapers.extensions.JsonStatsExtension": 500,
+}
+CAREER_CRAWLER_STATS_FILE = "output/crawler-stats.jsonl"
+
+FEED_EXPORT_ENCODING = "utf-8"
+LOG_LEVEL = "INFO"
