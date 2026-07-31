@@ -2,9 +2,15 @@ import { fetchJson, getIngestTimeout } from './http';
 
 const BASE = 'https://api.adzuna.com/v1/api/jobs';
 
+function getAdzunaCredentials() {
+  const appId = (process.env.ADZUNA_APP_ID || process.env.ADZUNA_APPID || '').trim();
+  // Prefer canonical ADZUNA_APP_KEY; also accept ADZUNA_API_KEY (common Render naming).
+  const appKey = (process.env.ADZUNA_APP_KEY || process.env.ADZUNA_API_KEY || '').trim();
+  return { appId, appKey };
+}
+
 export async function fetchAdzunaJobs(entityName: string, country: string = 'us', page: number = 1) {
-  const appId = process.env.ADZUNA_APP_ID;
-  const appKey = process.env.ADZUNA_APP_KEY;
+  const { appId, appKey } = getAdzunaCredentials();
   if (!appId || !appKey) return { jobs: [], total: 0 };
 
   try {
