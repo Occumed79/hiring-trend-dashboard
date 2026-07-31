@@ -2,9 +2,19 @@ import { fetchJson, getIngestTimeout } from './http';
 
 const BASE = 'https://data.usajobs.gov/api/search';
 
+function getUsaJobsCredentials() {
+  const apiKey = (process.env.USAJOBS_API_KEY || '').trim();
+  // USAJOBS requires the registered email in the User-Agent header.
+  const userAgent = (
+    process.env.USAJOBS_USER_AGENT
+    || process.env.USAJOBS_EMAIL
+    || ''
+  ).trim();
+  return { apiKey, userAgent };
+}
+
 export async function fetchUSAJobsPostings(keywords: string, page: number = 1) {
-  const apiKey = process.env.USAJOBS_API_KEY;
-  const userAgent = process.env.USAJOBS_USER_AGENT || process.env.USAJOBS_EMAIL;
+  const { apiKey, userAgent } = getUsaJobsCredentials();
 
   if (!apiKey || !userAgent) return { jobs: [], total: 0 };
 
