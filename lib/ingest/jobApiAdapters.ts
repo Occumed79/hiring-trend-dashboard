@@ -112,10 +112,22 @@ export async function fetchJobApiJobs(entity: EntityLike): Promise<JobApiIngestR
 }
 
 function getProviderToken() {
-  return readEnv('JOB_API_TOKEN')
-    || readEnv(['RAPID', 'API_TOKEN'])
-    || readEnv(['RAPID', 'API_', 'KEY'])
-    || readEnv(['RAPID_API_', 'KEY']);
+  // Canonical name is JOB_API_TOKEN. Also accept common Render aliases.
+  return firstNonEmptyEnv([
+    'JOB_API_TOKEN',
+    'JSEARCH_API_KEY',
+    'RAPIDAPI_KEY',
+    'RAPID_API_KEY',
+    'RAPIDAPI_TOKEN',
+  ]);
+}
+
+function firstNonEmptyEnv(names: string[]) {
+  for (const name of names) {
+    const value = (process.env[name] || '').trim();
+    if (value) return value;
+  }
+  return '';
 }
 
 function getEnabledAdapters(): JobApiAdapter[] {
