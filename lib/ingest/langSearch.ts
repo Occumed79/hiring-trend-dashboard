@@ -37,9 +37,7 @@ export async function fetchLangSearchJobs(entity: EntityLike): Promise<LangSearc
     'LANG_SEARCH_API_KEY',
   ]);
 
-  if (!apiKey) {
-    return { jobs: [], used: [], skipped: ['langsearch (key missing)'] };
-  }
+  if (!apiKey) return { jobs: [], used: [], skipped: ['langsearch (key missing)'] };
 
   const query = buildQuery(entity);
   const controller = new AbortController();
@@ -68,21 +66,22 @@ export async function fetchLangSearchJobs(entity: EntityLike): Promise<LangSearc
     });
 
     const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     if (payload?.code !== undefined && Number(payload.code) !== 200) {
       throw new Error(`API code ${payload.code}`);
     }
 
-    const pages = payload?.data?.webPages?.value;
-    const jobs = (Array.isArray(pages) ? pages : [])
-      .map((page: LangSearchWebPage, index: number) => normalizeResult(page, entity, query, index))
-      .filter(Boolean);
+    const pages: LangSearchWebPage[] = Array.isArray(payload?.data?.webPages?.value)
+      ? payload.data.webPages.value
+      : [];
+    const jobs = dedupeJobs(
+      pages
+        .map((page) => normalizeResult(page, entity, query))
+        .filter((job): job is NonNullable<typeof job> => Boolean(job))
+    );
 
-    const deduped = dedupeJobs(jobs);
-    return deduped.length
-      ? { jobs: deduped, used: [SOURCE], skipped: [] }
+    return jobs.length
+      ? { jobs, used: [SOURCE], skipped: [] }
       : { jobs: [], used: [], skipped: ['langsearch (0 job-detail results)'] };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -106,11 +105,11 @@ function buildQuery(entity: EntityLike) {
   ].filter(Boolean).join(' ');
 }
 
-function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: string, index: number) {
-  const url = normalizeUrl(page?.url || page?.displayUrl);
-  const originalTitle = cleanText(page?.name);
-  const snippet = cleanText(page?.snippet);
-  const summary = cleanText(page?.summary);
+function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: string) {
+  const url = normalizeUrl(page.url || page.displayUrl);
+  const originalTitle = cleanText(page.name);
+  const snippet = cleanText(page.snippet);
+  const summary = cleanText(page.summary);
   if (!url || !originalTitle) return null;
 
   const searchableText = `${originalTitle} ${snippet || ''} ${summary || ''}`;
@@ -121,10 +120,9 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
 
   const location = extractLocation(searchableText);
   const country = detectCountry(`${location || ''} ${searchableText}`) || 'US';
-  const postedAt = normalizeDate(page?.datePublished);
 
   return {
-    external_id: `langsearch-${hashString(`${entity.name}|${url}|${title}|${index}`)}`,
+    external_id: `langsearch-${hashString(`${entity.name}|${url}|${title}`)}`,
     source: SOURCE,
     title,
     department: entity.name,
@@ -136,18 +134,18 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
     lng: null,
     is_remote: /\b(remote|work from home|wfh|virtual)\b/i.test(searchableText),
     is_overseas: country !== 'US',
-    posted_at: postedAt,
+    posted_at: normalizeDate(page.datePublished),
     raw_data: {
       normalized_employer: entity.name,
       normalized_apply_url: url,
       url,
       search_query: query,
-      langsearch_result_id: page?.id || null,
+      langsearch_result_id: page.id || null,
       langsearch_title: originalTitle,
       langsearch_snippet: snippet,
       langsearch_summary: summary,
-      date_published: page?.datePublished || null,
-      date_last_crawled: page?.dateLastCrawled || null,
+      date_published: page.datePublished || null,
+      date_last_crawled: page.dateLastCrawled || null,
     },
   };
 }
@@ -160,25 +158,29 @@ function looksLikeJobDetail(url: string, title: string, text: string) {
     return false;
   }
 
-  const host = parsed.hostname.toLowerCase();
-  const path = `${parsed.pathname}${parsed.search}`.toLowerCase();
-  const combined = `${title} ${text}`.toLowerCase();
-
-  const knownJobHost = /(?:greenhouse\.io|lever\.co|myworkdayjobs\.com|workdayjobs\.com|smartrecruiters\.com|icims\.com|taleo\.net|jobvite\.com|bamboohr\.com|usajobs\.gov|indeed\.com|linkedin\.com\/jobs)/i.test(`${host}${path}`);
-  const jobPath = /\/(?:job|jobs|career|careers|position|positions|opening|openings|vacancy|vacancies|requisition|requisitions|opportunity|opportunities)(?:\/|[-_?=&])/i.test(path);
+  const target = `${parsed.hostname}${parsed.pathname}${parsed.search}`.toLowerCase();
+  const combined = `${title} ${text}`;
   const jobLanguage = /\b(?:job|jobs|career|careers|opening|openings|vacancy|vacancies|position|positions|requisition|hiring|apply)\b/i.test(combined);
-
-  if (!knownJobHost && !jobPath) return false;
   if (!jobLanguage) return false;
 
   const genericPath = /^\/(?:careers?|jobs?|employment|join-us|work-with-us)\/?$/i.test(parsed.pathname);
-  if (genericPath && isGenericJobTitle(title)) return false;
+  if (genericPath || isGenericJobTitle(title)) return false;
 
   const detailSignals = [
     /\/(?:job|jobs|positions?|openings?|requisitions?)\/[^/?#]{3,}/i.test(parsed.pathname),
-    /(?:jobid|job_id|gh_jid|requisitionid|reqid|postingid)=/i.test(parsed.search),
+    /(?:jobid|job_id|gh_jid|requisitionid|reqid|postingid|jk)=/i.test(parsed.search),
     /\/[^/]*\d{4,}[^/]*\/?$/i.test(parsed.pathname),
-    knownJobHost && !genericPath && !isGenericJobTitle(title),
+    /boards\.greenhouse\.io\/[^/]+\/jobs\/\d+/i.test(target),
+    /jobs\.lever\.co\/[^/]+\/[^/?#]+/i.test(target),
+    /(?:myworkdayjobs|workdayjobs)\.com\/.+\/job\//i.test(target),
+    /smartrecruiters\.com\/[^/]+\/\d+/i.test(target),
+    /icims\.com\/jobs\/\d+/i.test(target),
+    /taleo\.net\/.+(?:jobdetail|requisition)/i.test(target),
+    /jobvite\.com\/.+(?:job|position)/i.test(target),
+    /bamboohr\.com\/careers\/\d+/i.test(target),
+    /usajobs\.gov\/job\/\d+/i.test(target),
+    /indeed\.com\/viewjob/i.test(target),
+    /linkedin\.com\/jobs\/view\//i.test(target),
   ];
 
   return detailSignals.some(Boolean);
@@ -198,7 +200,11 @@ function cleanJobTitle(value: string, entityName: string) {
 }
 
 function isGenericJobTitle(value: string) {
-  const normalized = cleanText(value)?.toLowerCase().replace(/[|:–—-]+/g, ' ').replace(/\s+/g, ' ').trim() || '';
+  const normalized = (cleanText(value) || '')
+    .toLowerCase()
+    .replace(/[|:–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return /^(?:careers?|jobs?|job search|search jobs|job openings|open positions|employment opportunities|join our team|work with us)(?:\s+(?:at|with|for)\s+.+)?$/.test(normalized);
 }
 
@@ -225,7 +231,7 @@ function detectCountry(value: string) {
     [/\bpoland\b/i, 'PL'],
     [/\baustralia\b/i, 'AU'],
     [/\bjapan\b/i, 'JP'],
-    [/\bsouth korea|\bkorea\b/i, 'KR'],
+    [/\b(?:south korea|korea)\b/i, 'KR'],
   ];
 
   for (const [pattern, code] of mappings) {
