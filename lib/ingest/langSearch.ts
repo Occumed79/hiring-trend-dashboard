@@ -113,7 +113,7 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
   if (!url || !originalTitle) return null;
 
   const searchableText = `${originalTitle} ${snippet || ''} ${summary || ''}`;
-  if (!looksLikeJobDetail(url, originalTitle, searchableText)) return null;
+  if (!looksLikeJobDetail(url, originalTitle)) return null;
 
   const title = cleanJobTitle(originalTitle, entity.name);
   if (!title || isGenericJobTitle(title)) return null;
@@ -150,7 +150,7 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
   };
 }
 
-function looksLikeJobDetail(url: string, title: string, text: string) {
+function looksLikeJobDetail(url: string, title: string) {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -159,10 +159,6 @@ function looksLikeJobDetail(url: string, title: string, text: string) {
   }
 
   const target = `${parsed.hostname}${parsed.pathname}${parsed.search}`.toLowerCase();
-  const combined = `${title} ${text}`;
-  const jobLanguage = /\b(?:job|jobs|career|careers|opening|openings|vacancy|vacancies|position|positions|requisition|hiring|apply)\b/i.test(combined);
-  if (!jobLanguage) return false;
-
   const genericPath = /^\/(?:careers?|jobs?|employment|join-us|work-with-us)\/?$/i.test(parsed.pathname);
   if (genericPath || isGenericJobTitle(title)) return false;
 
@@ -211,7 +207,7 @@ function isGenericJobTitle(value: string) {
 function extractLocation(value: string) {
   if (/\b(remote|work from home|wfh|virtual)\b/i.test(value)) return 'Remote';
 
-  const cityState = value.match(/\b([A-Z][A-Za-z .'-]{1,48},\s*(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY))\b/);
+  const cityState = value.match(/\b([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,3},\s*(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY))\b/);
   if (cityState?.[1]) return cityState[1].trim();
 
   const labeled = value.match(/\b(?:location|job location|work location)\s*[:\-–—]\s*([^|•.;]{2,80})/i);
