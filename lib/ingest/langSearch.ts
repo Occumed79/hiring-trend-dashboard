@@ -23,6 +23,13 @@ type LangSearchIngestResult = {
   skipped: string[];
 };
 
+class LangSearchRequestError extends Error {
+  constructor(message: string, readonly retryableWithNextKey: boolean) {
+    super(message);
+    this.name = 'LangSearchRequestError';
+  }
+}
+
 const SOURCE = 'web:langsearch';
 const DEFAULT_ENDPOINT = 'https://api.langsearch.com/v1/web-search';
 const REQUEST_TIMEOUT_MS = positiveIntegerEnv('LANGSEARCH_TIMEOUT_MS', 12000);
@@ -31,15 +38,43 @@ const FRESHNESS = readFreshness();
 const INCLUDE_SUMMARIES = booleanEnv('LANGSEARCH_SUMMARY', false);
 
 export async function fetchLangSearchJobs(entity: EntityLike): Promise<LangSearchIngestResult> {
-  const apiKey = firstNonEmptyEnv([
-    'LANGSEARCH_API_KEY',
-    'LANGSEARCH-API-KEY',
-    'LANG_SEARCH_API_KEY',
-  ]);
-
-  if (!apiKey) return { jobs: [], used: [], skipped: ['langsearch (key missing)'] };
+  const apiKeys = readApiKeys();
+  if (!apiKeys.length) return { jobs: [], used: [], skipped: ['langsearch (key missing)'] };
 
   const query = buildQuery(entity);
+  let lastError = 'all configured keys unavailable';
+
+  for (let keyIndex = 0; keyIndex < apiKeys.length; keyIndex++) {
+    try {
+      const payload = await requestLangSearch(apiKeys[keyIndex], query);
+      const pages: LangSearchWebPage[] = Array.isArray(payload?.data?.webPages?.value)
+        ? payload.data.webPages.value
+        : [];
+      const jobs = dedupeJobs(
+        pages
+          .map((page) => normalizeResult(page, entity, query))
+          .filter((job): job is NonNullable<typeof job> => Boolean(job))
+      );
+
+      return jobs.length
+        ? { jobs, used: [SOURCE], skipped: [] }
+        : { jobs: [], used: [], skipped: ['langsearch (0 job-detail results)'] };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      const hasAnotherKey = keyIndex < apiKeys.length - 1;
+      const canRetryWithNextKey = error instanceof LangSearchRequestError
+        && error.retryableWithNextKey
+        && hasAnotherKey;
+
+      if (canRetryWithNextKey) continue;
+      return { jobs: [], used: [], skipped: [`langsearch (${lastError})`] };
+    }
+  }
+
+  return { jobs: [], used: [], skipped: [`langsearch (${lastError})`] };
+}
+
+async function requestLangSearch(apiKey: string, query: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -58,34 +93,33 @@ export async function fetchLangSearchJobs(entity: EntityLike): Promise<LangSearc
         count: RESULT_LIMIT,
       }),
       signal: controller.signal,
-    }).catch((error) => {
-      if ((error as any)?.name === 'AbortError') {
-        throw new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`);
-      }
-      throw error;
     });
 
     const payload = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (payload?.code !== undefined && Number(payload.code) !== 200) {
-      throw new Error(`API code ${payload.code}`);
+    const apiCode = parseApiCode(payload?.code);
+    const statusOrCode = response.ok ? apiCode : response.status;
+
+    if (!response.ok) {
+      throw new LangSearchRequestError(
+        `HTTP ${response.status}`,
+        isKeyOrQuotaFailure(response.status)
+      );
     }
 
-    const pages: LangSearchWebPage[] = Array.isArray(payload?.data?.webPages?.value)
-      ? payload.data.webPages.value
-      : [];
-    const jobs = dedupeJobs(
-      pages
-        .map((page) => normalizeResult(page, entity, query))
-        .filter((job): job is NonNullable<typeof job> => Boolean(job))
-    );
+    if (apiCode !== null && apiCode !== 200) {
+      throw new LangSearchRequestError(
+        `API code ${apiCode}`,
+        isKeyOrQuotaFailure(statusOrCode)
+      );
+    }
 
-    return jobs.length
-      ? { jobs, used: [SOURCE], skipped: [] }
-      : { jobs: [], used: [], skipped: ['langsearch (0 job-detail results)'] };
+    return payload;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { jobs: [], used: [], skipped: [`langsearch (${message})`] };
+    if (error instanceof LangSearchRequestError) throw error;
+    if ((error as any)?.name === 'AbortError') {
+      throw new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -312,6 +346,33 @@ function readFreshness() {
   const configured = (process.env.LANGSEARCH_FRESHNESS || 'oneMonth').trim();
   const allowed = new Set(['oneDay', 'oneWeek', 'oneMonth', 'oneYear', 'noLimit']);
   return allowed.has(configured) ? configured : 'oneMonth';
+}
+
+function readApiKeys() {
+  const candidates = [
+    firstNonEmptyEnv([
+      'LANGSEARCH_API_KEY',
+      'LANGSEARCH-API-KEY',
+      'LANG_SEARCH_API_KEY',
+    ]),
+    firstNonEmptyEnv([
+      'LANGSEARCH_API_KEY_2',
+      'LANGSEARCH-API-KEY-2',
+      'LANG_SEARCH_API_KEY_2',
+    ]),
+  ].filter(Boolean);
+
+  return Array.from(new Set(candidates));
+}
+
+function parseApiCode(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isKeyOrQuotaFailure(statusOrCode: number | null) {
+  return statusOrCode !== null && [401, 402, 403, 429].includes(statusOrCode);
 }
 
 function firstNonEmptyEnv(names: string[]) {
