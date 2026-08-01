@@ -3,11 +3,12 @@ import { fetchAdzunaJobs } from './adzuna';
 import { fetchPortalSpecificJobs } from './portalSources';
 import { fetchJobsForEntity } from './connectorRegistry';
 import { fetchGovernmentFallbackJobs } from './govFallback';
+import { fetchLangSearchJobs } from './langSearch';
 import { fetchJobApiJobs } from './jobApiAdapters';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 
-type JobApiMode = 'off' | 'fallback' | 'always';
+type SourceMode = 'off' | 'fallback' | 'always';
 
 export async function runUniversalIngest(entityId?: string | null) {
   const entities = entityId
@@ -72,15 +73,26 @@ async function ingestOneEntity(entity: any) {
   used.push(...gov.used);
   skipped.push(...gov.skipped);
 
-  const mode = getJobApiMode();
-  const minExisting = getFallbackThreshold();
-  if (shouldRunJobApi(mode, items.length, minExisting)) {
+  const langSearchMode = getSourceMode('LANGSEARCH_MODE', 'always');
+  const langSearchMinimum = getThreshold('LANGSEARCH_FALLBACK_MIN_EXISTING', 1);
+  if (shouldRunSource(langSearchMode, items.length, langSearchMinimum)) {
+    const langSearch = await fetchLangSearchJobs(entity);
+    items.push(...langSearch.jobs);
+    used.push(...langSearch.used);
+    skipped.push(...langSearch.skipped);
+  } else {
+    skipped.push(`langsearch skipped (${langSearchMode}; ${items.length} existing jobs)`);
+  }
+
+  const jobApiMode = getSourceMode('JOB_API_MODE', 'fallback');
+  const jobApiMinimum = getThreshold('JOB_API_FALLBACK_MIN_EXISTING', 1);
+  if (shouldRunSource(jobApiMode, items.length, jobApiMinimum)) {
     const jobApi = await fetchJobApiJobs(entity);
     items.push(...jobApi.jobs);
     used.push(...jobApi.used);
     skipped.push(...jobApi.skipped);
   } else {
-    skipped.push(`jobs api skipped (${mode}; ${items.length} existing jobs)`);
+    skipped.push(`jobs api skipped (${jobApiMode}; ${items.length} existing jobs)`);
   }
 
   let newCount = 0;
@@ -110,18 +122,18 @@ async function ingestOneEntity(entity: any) {
   };
 }
 
-function getJobApiMode(): JobApiMode {
-  const mode = (process.env.JOB_API_MODE || 'fallback').toLowerCase();
+function getSourceMode(name: string, fallback: SourceMode): SourceMode {
+  const mode = (process.env[name] || fallback).toLowerCase();
   if (mode === 'off' || mode === 'always' || mode === 'fallback') return mode;
-  return 'fallback';
+  return fallback;
 }
 
-function getFallbackThreshold() {
-  const parsed = Number(process.env.JOB_API_FALLBACK_MIN_EXISTING || 1);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+function getThreshold(name: string, fallback: number) {
+  const parsed = Number(process.env[name] || fallback);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function shouldRunJobApi(mode: JobApiMode, existingJobCount: number, minExistingJobs: number) {
+function shouldRunSource(mode: SourceMode, existingJobCount: number, minExistingJobs: number) {
   if (mode === 'off') return false;
   if (mode === 'always') return true;
   return existingJobCount < minExistingJobs;
