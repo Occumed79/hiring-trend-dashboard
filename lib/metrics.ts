@@ -1,6 +1,8 @@
 import { query } from '@/db/client';
 import { getVerifiedActiveJobs, hasRealMappedLocation, isNewThisWeek } from '@/lib/verifiedJobs';
 
+const QUALITY_BASELINE_DATE = '2026-08-07';
+
 export async function getEntityMetrics(entityId: string) {
   const d30 = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
   const d60 = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
@@ -13,8 +15,10 @@ export async function getEntityMetrics(entityId: string) {
     getSnapshotAtOrBefore(entityId, d90),
     query(`SELECT snapshot_date, total_active, new_this_week, closed_count
            FROM hiring_snapshots
-           WHERE entity_id = $1 AND snapshot_date >= CURRENT_DATE - INTERVAL '90 days'
-           ORDER BY snapshot_date ASC`, [entityId]),
+           WHERE entity_id = $1
+             AND snapshot_date >= CURRENT_DATE - INTERVAL '90 days'
+             AND snapshot_date >= $2::date
+           ORDER BY snapshot_date ASC`, [entityId, QUALITY_BASELINE_DATE]),
   ]);
 
   const totalNow = jobs.length;
@@ -67,5 +71,14 @@ export async function getEntityMapData(entityId: string) {
 }
 
 async function getSnapshotAtOrBefore(entityId: string, targetDate: string) {
-  return query(`SELECT total_active FROM hiring_snapshots WHERE entity_id = $1 AND snapshot_date <= $2 ORDER BY snapshot_date DESC LIMIT 1`, [entityId, targetDate]);
+  return query(
+    `SELECT total_active
+     FROM hiring_snapshots
+     WHERE entity_id = $1
+       AND snapshot_date <= $2
+       AND snapshot_date >= $3::date
+     ORDER BY snapshot_date DESC
+     LIMIT 1`,
+    [entityId, targetDate, QUALITY_BASELINE_DATE]
+  );
 }
