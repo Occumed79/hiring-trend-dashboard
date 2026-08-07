@@ -1,18 +1,30 @@
 'use client';
 
-export default function CompanyRegistry({ entities, loading, onSelect, onAdd }: {
+export default function CompanyRegistry({
+  entities,
+  loading,
+  onSelect,
+  onAdd,
+  entitySingular = 'Company',
+  entityPlural = 'Companies',
+}: {
   entities: any[];
   loading: boolean;
   onSelect: (e: any) => void;
   onAdd: () => void;
+  entitySingular?: string;
+  entityPlural?: string;
 }) {
+  const singularLower = entitySingular.toLowerCase();
+  const pluralLower = entityPlural.toLowerCase();
+
   return (
     <div className="glass-card luminous-panel p-5 h-full min-h-[520px] flex flex-col overflow-hidden">
       <div className="shimmer-top" />
       <div className="flex items-center justify-between gap-3 mb-4 shrink-0">
         <div>
-          <h3 className="text-[15px] font-semibold text-slate-100">Tracked Companies</h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">Select a company to open hiring intelligence.</p>
+          <h3 className="text-[15px] font-semibold text-slate-100">Tracked {entityPlural}</h3>
+          <p className="text-[10px] text-slate-500 mt-0.5">Select a {singularLower} to open hiring intelligence.</p>
         </div>
         <button
           onClick={onAdd}
@@ -32,8 +44,8 @@ export default function CompanyRegistry({ entities, loading, onSelect, onAdd }: 
         <div className="flex-1 min-h-[260px] flex items-center justify-center text-center px-6">
           <div>
             <div className="mx-auto mb-3 w-10 h-10 rounded-2xl border border-white/10 bg-white/[0.04] flex items-center justify-center text-slate-500 text-lg">⌕</div>
-            <p className="text-sm font-medium text-slate-300">No companies in this view</p>
-            <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">Clear the search or track another company.</p>
+            <p className="text-sm font-medium text-slate-300">No {pluralLower} in this view</p>
+            <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">Clear the search or track another {singularLower}.</p>
           </div>
         </div>
       ) : (
@@ -74,7 +86,7 @@ export default function CompanyRegistry({ entities, loading, onSelect, onAdd }: 
 
       {!loading && entities.length > 0 && (
         <div className="pt-3 mt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-slate-600 shrink-0">
-          <span>{entities.length} compan{entities.length === 1 ? 'y' : 'ies'} shown</span>
+          <span>{entities.length} {entities.length === 1 ? singularLower : pluralLower} shown</span>
           <span>{entities.reduce((sum, entity) => sum + Number(entity.open_jobs || 0), 0).toLocaleString()} open roles</span>
         </div>
       )}
