@@ -2,6 +2,7 @@ import { query } from '@/db/client';
 import { classifyRole } from '@/lib/roleClassifier';
 import { inferPoint } from '@/lib/geo/locationLookup';
 import { extractLocationCandidates } from '@/lib/geo/locationSignals';
+import { geocodeLocationCandidates } from '@/lib/geo/geocode';
 import { normalizeApplyUrl } from './jobIdentity';
 
 export async function upsertIngestedJob(entity: any, item: any): Promise<boolean> {
@@ -13,31 +14,39 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   if (!externalId || !source || !title) return false;
 
   const isRemote = toBoolean(item.is_remote) || /\b(remote|work from home|wfh|virtual)\b/i.test(`${title} ${item.location || ''}`);
-  const country = normalizeCountry(item.country);
+  let country = normalizeCountry(item.country);
   const locationCandidates = extractLocationCandidates({ ...item, entity_name: entity.name });
-  const inferred = inferPoint({
-    ...item,
-    country,
-    entity_name: entity.name,
-    is_remote: isRemote,
-    location_candidates: locationCandidates,
-  });
+  const inferred = inferPoint({ ...item, country, entity_name: entity.name, is_remote: isRemote, location_candidates: locationCandidates });
   const inferredQuality = inferred?.note || null;
   const inferredIsFallback = !!inferredQuality && inferredQuality.includes('fallback');
   const sourceLat = toNumber(item.lat);
   const sourceLng = toNumber(item.lng);
-  const lat = sourceLat ?? (inferredIsFallback ? null : inferred?.lat ?? null);
-  const lng = sourceLng ?? (inferredIsFallback ? null : inferred?.lng ?? null);
-  const city = nullableString(item.city) || (inferredIsFallback ? null : inferred?.city || null);
-  const state = nullableString(item.state) || (inferredIsFallback ? null : inferred?.state || null);
+
+  const shouldGeocode = !isRemote
+    && (sourceLat === null || sourceLng === null)
+    && (!inferred || inferredIsFallback);
+  const geocoded = shouldGeocode ? await geocodeLocationCandidates(locationCandidates) : null;
+  country = country || geocoded?.country || (!inferredIsFallback ? inferred?.country || null : null);
+
+  const lat = sourceLat ?? (!inferredIsFallback ? inferred?.lat ?? null : null) ?? geocoded?.lat ?? null;
+  const lng = sourceLng ?? (!inferredIsFallback ? inferred?.lng ?? null : null) ?? geocoded?.lng ?? null;
+  const city = nullableString(item.city) || (!inferredIsFallback ? inferred?.city || null : null) || geocoded?.city || null;
+  const state = nullableString(item.state) || (!inferredIsFallback ? inferred?.state || null : null) || geocoded?.state || null;
   const normalizedApplyUrl = normalizeApplyUrl(item);
+  const locationQuality = sourceLat !== null && sourceLng !== null
+    ? 'source coordinates'
+    : (!inferredIsFallback && inferred?.lat !== undefined && inferred?.lng !== undefined)
+      ? inferredQuality || 'normalized job location'
+      : geocoded?.note || (inferredIsFallback ? 'unmapped_no_job_location' : null);
+
   const normalizedRawData = {
     ...(item.raw_data || {}),
     normalized_apply_url: normalizedApplyUrl || item.raw_data?.normalized_apply_url || null,
     normalized_seen_at: new Date().toISOString(),
     normalized_location_candidates: locationCandidates,
-    normalized_location_quality: inferredIsFallback ? 'unmapped_no_job_location' : inferredQuality || (lat !== null && lng !== null ? 'source coordinates' : null),
+    normalized_location_quality: locationQuality,
     normalized_fallback_point: inferredIsFallback ? inferred : null,
+    normalized_geocoded: !!geocoded,
   };
 
   const roleCategory = classifyRole(title, item.location);
@@ -67,24 +76,10 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
       is_active = true,
       closed_at = NULL,
       updated_at = NOW()`,
-    [
-      entity.id,
-      externalId,
-      source,
-      title,
-      nullableString(item.department),
-      roleCategory,
-      nullableString(item.location),
-      city,
-      state,
-      country,
-      lat,
-      lng,
-      isRemote,
+    [entity.id, externalId, source, title, nullableString(item.department), roleCategory,
+      nullableString(item.location), city, state, country, lat, lng, isRemote,
       toBoolean(item.is_overseas) || (country !== null && country !== 'US'),
-      normalizeDate(item.posted_at),
-      JSON.stringify(normalizedRawData),
-    ]
+      normalizeDate(item.posted_at), JSON.stringify(normalizedRawData)]
   );
 
   return existing.length === 0;
@@ -99,35 +94,19 @@ function nullableString(value: unknown) {
 function normalizeCountry(value: unknown): string | null {
   const raw = nullableString(value);
   if (!raw) return null;
-
   const text = raw.toLowerCase();
   const mapped: Record<string, string> = {
-    us: 'US',
-    usa: 'US',
-    'u.s.': 'US',
-    'u.s.a.': 'US',
-    'united states': 'US',
-    'united states of america': 'US',
-    ca: 'CA',
-    canada: 'CA',
-    gb: 'GB',
-    uk: 'GB',
-    'united kingdom': 'GB',
-    england: 'GB',
-    de: 'DE',
-    germany: 'DE',
-    kw: 'KW',
-    kuwait: 'KW',
-    qa: 'QA',
-    qatar: 'QA',
-    bh: 'BH',
-    bahrain: 'BH',
-    iq: 'IQ',
-    iraq: 'IQ',
+    us: 'US', usa: 'US', 'u.s.': 'US', 'u.s.a.': 'US', 'united states': 'US', 'united states of america': 'US',
+    ca: 'CA', canada: 'CA', gb: 'GB', uk: 'GB', 'united kingdom': 'GB', 'great britain': 'GB', england: 'GB',
+    de: 'DE', germany: 'DE', kw: 'KW', kuwait: 'KW', qa: 'QA', qatar: 'QA', bh: 'BH', bahrain: 'BH',
+    iq: 'IQ', iraq: 'IQ', pl: 'PL', poland: 'PL', au: 'AU', australia: 'AU', jp: 'JP', japan: 'JP',
+    kr: 'KR', korea: 'KR', 'south korea': 'KR', mx: 'MX', mexico: 'MX', es: 'ES', spain: 'ES',
+    it: 'IT', italy: 'IT', gr: 'GR', greece: 'GR', fr: 'FR', france: 'FR', nl: 'NL', netherlands: 'NL',
+    be: 'BE', belgium: 'BE', ae: 'AE', uae: 'AE', 'united arab emirates': 'AE', sa: 'SA', 'saudi arabia': 'SA',
   };
   if (mapped[text]) return mapped[text];
   if (/^[a-z]{2}$/i.test(text)) return text.toUpperCase();
-  return text.slice(0, 2).toUpperCase();
+  return null;
 }
 
 function toNumber(value: unknown) {
@@ -135,7 +114,6 @@ function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
-
 function toBoolean(value: unknown) {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value === 1;
@@ -146,7 +124,6 @@ function toBoolean(value: unknown) {
   }
   return false;
 }
-
 function normalizeDate(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   const date = new Date(String(value));
