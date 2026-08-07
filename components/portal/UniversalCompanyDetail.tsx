@@ -109,7 +109,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
       {error && <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>}
       <TrendCard metrics={data?.metrics} loading={loading} entityName={entity.name} />
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.15fr)_minmax(320px,0.85fr)] gap-5 items-stretch"><div className="min-w-0">{useWorldMap ? <WorldMap entityId={entity.id} /> : <USAMap entityId={entity.id} title={`${entity.name} Hiring Map`} />}</div><RoleBreakdown roles={data?.roles} loading={loading} /></div>
-      <OpenRolesList rows={roles} loading={loading} />
+      <OpenRolesList rows={roles} loading={loading} totalRows={activeJobs} />
     </div>
   );
 }

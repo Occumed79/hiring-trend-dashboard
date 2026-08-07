@@ -41,9 +41,10 @@ export async function getVerifiedActiveJobs(entityId: string): Promise<VerifiedJ
 }
 
 export function isNewThisWeek(row: Record<string, any>, now = Date.now()) {
-  const value = row.posted_at || row.created_at;
-  if (!value) return false;
-  const timestamp = new Date(value).getTime();
+  // Database discovery time is not publication time. A first import of an old
+  // career board must never turn the entire inventory into "new this week".
+  if (!row.posted_at) return false;
+  const timestamp = new Date(row.posted_at).getTime();
   return Number.isFinite(timestamp) && timestamp >= now - 7 * 86400000;
 }
 
