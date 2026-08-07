@@ -2,6 +2,7 @@ import { query } from '@/db/client';
 import { classifyRole } from '@/lib/roleClassifier';
 import { inferPoint } from '@/lib/geo/locationLookup';
 import { extractLocationCandidates } from '@/lib/geo/locationSignals';
+import { normalizeApplyUrl } from './jobIdentity';
 
 export async function upsertIngestedJob(entity: any, item: any): Promise<boolean> {
   if (!item.external_id || !item.source || !item.title) return false;
@@ -29,8 +30,11 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   const lng = sourceLng ?? (inferredIsFallback ? null : inferred?.lng ?? null);
   const city = nullableString(item.city) || (inferredIsFallback ? null : inferred?.city || null);
   const state = nullableString(item.state) || (inferredIsFallback ? null : inferred?.state || null);
+  const normalizedApplyUrl = normalizeApplyUrl(item);
   const normalizedRawData = {
     ...(item.raw_data || {}),
+    normalized_apply_url: normalizedApplyUrl || item.raw_data?.normalized_apply_url || null,
+    normalized_seen_at: new Date().toISOString(),
     normalized_location_candidates: locationCandidates,
     normalized_location_quality: inferredIsFallback ? 'unmapped_no_job_location' : inferredQuality || (lat !== null && lng !== null ? 'source coordinates' : null),
     normalized_fallback_point: inferredIsFallback ? inferred : null,
@@ -77,7 +81,7 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
       lat,
       lng,
       isRemote,
-      toBoolean(item.is_overseas) || country !== 'US',
+      toBoolean(item.is_overseas) || (country !== null && country !== 'US'),
       normalizeDate(item.posted_at),
       JSON.stringify(normalizedRawData),
     ]
@@ -92,8 +96,11 @@ function nullableString(value: unknown) {
   return text || null;
 }
 
-function normalizeCountry(value: unknown) {
-  const text = (nullableString(value) || 'US').toLowerCase();
+function normalizeCountry(value: unknown): string | null {
+  const raw = nullableString(value);
+  if (!raw) return null;
+
+  const text = raw.toLowerCase();
   const mapped: Record<string, string> = {
     us: 'US',
     usa: 'US',

@@ -6,7 +6,7 @@ export async function buildHiringSnapshot(entityId: string) {
 
   const [totals, newJobs, roleCounts, closed] = await Promise.all([
     query(`SELECT COUNT(*) as total FROM jobs WHERE entity_id = $1 AND is_active = true`, [entityId]),
-    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND (posted_at >= $2 OR created_at >= $2)`, [entityId, d7]),
+    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true AND (posted_at >= $2 OR created_at >= $2)`, [entityId, d7]),
     query(`SELECT role_category, COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true GROUP BY role_category`, [entityId]),
     query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = false`, [entityId]),
   ]);
