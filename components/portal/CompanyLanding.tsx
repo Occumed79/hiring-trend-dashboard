@@ -64,7 +64,7 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
           </div>
           <button
             onClick={onAddEntity}
-            className="px-5 py-2.5 rounded-xl border border-blue-300/40 bg-blue-500/18 text-blue-50 text-sm font-semibold hover:bg-blue-400/28 hover:border-blue-300/60 transition-all luminous-button shadow-[0_10px_30px_rgba(37,99,235,0.12)]"
+            className="px-5 py-2.5 rounded-xl border border-blue-300/40 bg-blue-500/20 text-blue-50 text-sm font-semibold hover:bg-blue-400/30 hover:border-blue-300/60 transition-all luminous-button shadow-[0_10px_30px_rgba(37,99,235,0.12)]"
           >
             Track Company
           </button>
@@ -80,7 +80,7 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search tracked companies…"
-              className="w-full rounded-2xl border border-white/12 bg-white/[0.055] pl-11 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-blue-300/50 focus:bg-white/[0.075] transition-all"
+              className="w-full rounded-2xl border border-white/10 bg-white/[0.055] pl-11 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-blue-300/50 focus:bg-white/[0.075] transition-all"
             />
           </div>
           {q && (
@@ -99,7 +99,7 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 lg:gap-4 shrink-0">
         {cards.map(([label, value]) => (
-          <div key={String(label)} className="glass-card-metric luminous-panel px-5 py-4.5 lg:p-5 relative overflow-hidden min-h-[92px]">
+          <div key={String(label)} className="glass-card-metric luminous-panel px-5 py-[18px] lg:p-5 relative overflow-hidden min-h-[92px]">
             <div className="shimmer-top" />
             <p className="text-[10px] lg:text-[11px] text-slate-500 font-semibold uppercase tracking-[0.16em] mb-2">{label}</p>
             <p className="text-[30px] lg:text-[32px] font-semibold tracking-tight leading-none text-blue-100">{loading ? '…' : Number(value).toLocaleString()}</p>
