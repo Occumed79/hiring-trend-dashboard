@@ -10,21 +10,12 @@ import {
   fetchHostedAtsJobs,
   STRUCTURED_ATS_PROVIDERS,
 } from './expandedAts';
+import { fetchSpecializedEmployerJobs } from './employerConnectors';
 import { detectATS, resolveCompany, type CompanyResolution, type AtsProvider } from './companyResolver';
 
 type DetectedResolution = CompanyResolution & { replace_existing?: boolean };
-interface ConnectorResult {
-  jobs: any[];
-  used: string[];
-  skipped: string[];
-  detected: DetectedResolution | null;
-}
-
-type CareerProfile = {
-  career_page_url: string;
-  ats_provider: AtsProvider;
-  ats_board_id: string | null;
-};
+interface ConnectorResult { jobs: any[]; used: string[]; skipped: string[]; detected: DetectedResolution | null; }
+type CareerProfile = { career_page_url: string; ats_provider: AtsProvider; ats_board_id: string | null; };
 
 const DIRECT_CONNECTORS = new Set([
   'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', ...Array.from(STRUCTURED_ATS_PROVIDERS),
@@ -65,7 +56,19 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
 
   const jobs: any[] = [];
 
-  if (DIRECT_CONNECTORS.has(atsProvider) && boardId) {
+  if (careerPageUrl) {
+    const specialized = await fetchSpecializedEmployerJobs(entity.name, atsProvider, careerPageUrl).catch((error) => {
+      skipped.push(`specialized employer connector (${error instanceof Error ? error.message : String(error)})`);
+      return { handled: false, jobs: [], source: null };
+    });
+    if (specialized.handled) {
+      jobs.push(...specialized.jobs);
+      if (specialized.jobs.length && specialized.source) used.push(specialized.source);
+      else if (specialized.source) skipped.push(`${specialized.source} (0 verified jobs returned)`);
+    }
+  }
+
+  if (!jobs.length && DIRECT_CONNECTORS.has(atsProvider) && boardId) {
     const atsJobs = await fetchDirectAtsJobs(atsProvider, boardId);
     jobs.push(...atsJobs);
     if (atsJobs.length) {
@@ -85,7 +88,7 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
     }
   }
 
-  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && !DIRECT_CONNECTORS.has(atsProvider);
+  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && atsProvider !== 'jibeapply' && !DIRECT_CONNECTORS.has(atsProvider);
   if (!jobs.length && recognizedHostedProvider && careerPageUrl) {
     const hostedJobs = await fetchHostedAtsJobs(atsProvider, careerPageUrl, entity.name);
     jobs.push(...hostedJobs);
@@ -135,7 +138,7 @@ function knownCareerProfile(name: unknown): CareerProfile | null {
     return { career_page_url: 'https://www.amentumcareers.com/jobs/search', ats_provider: 'other', ats_board_id: null };
   }
   if (/\b(?:v2x|vectrus)\b/.test(normalized)) {
-    return { career_page_url: 'https://careers.gov2x.com/why-gov2x/jobs', ats_provider: 'other', ats_board_id: null };
+    return { career_page_url: 'https://careers.gov2x.com/why-gov2x/jobs', ats_provider: 'jibeapply', ats_board_id: 'why-gov2x' };
   }
   if (/\bids international\b/.test(normalized)) {
     return { career_page_url: 'https://idsinternational.applytojob.com/apply/jobs/', ats_provider: 'jazzhr', ats_board_id: 'idsinternational' };
