@@ -83,11 +83,20 @@ export function dedupeJobsAcrossSources(items: any[]) {
 }
 
 export function filterWebSearchJobsForEntity(items: any[], entity: any) {
+  return filterByEmployerEvidence(items, entity, (source) => source === 'web:langsearch');
+}
+
+export function filterJobApiJobsForEntity(items: any[], entity: any) {
+  return filterByEmployerEvidence(items, entity, (source) => source.startsWith('jobapi:'));
+}
+
+function filterByEmployerEvidence(items: any[], entity: any, shouldFilter: (source: string) => boolean) {
   const jobs: any[] = [];
   let rejected = 0;
 
   for (const item of items) {
-    if (String(item?.source || '').toLowerCase() !== 'web:langsearch') {
+    const source = String(item?.source || '').trim().toLowerCase();
+    if (!shouldFilter(source)) {
       jobs.push(item);
       continue;
     }
@@ -102,6 +111,7 @@ export function filterWebSearchJobsForEntity(items: any[], entity: any) {
       ...item,
       raw_data: {
         ...(item.raw_data || {}),
+        normalized_employer: entity?.name || item.raw_data?.normalized_employer || null,
         normalized_employer_match: evidence,
       },
     });
@@ -132,8 +142,16 @@ function getEmployerEvidence(item: any, entity: any): string | null {
     raw.langsearch_title,
     raw.langsearch_snippet,
     raw.langsearch_summary,
+    raw.employer_name,
+    raw.company_name,
+    raw.company,
+    raw.hiring_company,
+    raw.organization,
+    raw.job_publisher,
     raw.normalized_apply_url,
     raw.url,
+    raw.job_apply_link,
+    raw.job_url,
   ].filter(Boolean).join(' '));
 
   const names = [entity?.name, ...(Array.isArray(entity?.aliases) ? entity.aliases : [])]
