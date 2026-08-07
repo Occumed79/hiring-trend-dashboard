@@ -165,13 +165,8 @@ function isAuthoritativeSource(source: unknown) {
   const value = String(source || '').toLowerCase();
   if (!value) return false;
   if (value.startsWith('ats:')) return true;
-  return ['greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'ashby', 'recruitee', 'workday', 'usajobs'].includes(value)
+  return ['greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'ashby', 'recruitee', 'workday', 'usajobs', 'career_page'].includes(value)
     || value.startsWith('portal:') || value.startsWith('gov:');
-}
-
-function isDiscoverySource(source: unknown) {
-  const value = String(source || '').toLowerCase();
-  return value === 'adzuna' || value === 'career_page' || value.startsWith('web:') || value.startsWith('jobapi:');
 }
 
 async function retireSupersededDiscoveryJobs(entityId: string, runStartedAt: string) {
