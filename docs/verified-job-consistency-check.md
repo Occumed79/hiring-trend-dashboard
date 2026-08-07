@@ -1,0 +1,1 @@
+Temporary CI verification marker for the verified-job consistency pass. This branch exists only to exercise the current main code through pull-request CI.
