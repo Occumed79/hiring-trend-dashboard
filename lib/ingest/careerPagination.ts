@@ -41,7 +41,7 @@ export async function crawlCareerListingPages(startUrl: string, fetchPage: PageF
 
     const pageJobKeys = extractJobCandidateKeys(html, nextUrl);
     let newJobs = 0;
-    for (const key of pageJobKeys) {
+    for (const key of Array.from(pageJobKeys)) {
       if (!knownJobKeys.has(key)) {
         knownJobKeys.add(key);
         newJobs++;
@@ -170,7 +170,7 @@ function isListingFamily(candidateValue: string, currentValue: string, startValu
   if (candidateBase === currentBase || candidateBase === startBase) return true;
 
   const sharedPrefix = commonPathPrefix(candidateBase, startBase);
-  return sharedPrefix.length >= Math.min(2, startBase.split('/').filter(Boolean).length);
+  return sharedPrefix >= Math.min(2, startBase.split('/').filter(Boolean).length);
 }
 
 function stripPaginationFromPath(pathname: string) {
@@ -203,7 +203,7 @@ function extractJobCandidateKeys(html: string, baseUrl: string) {
   while ((match = jsonLdRegex.exec(html)) !== null) {
     const block = decodeEntities(match[1] || '');
     if (!/JobPosting/i.test(block)) continue;
-    const urlMatches = block.matchAll(/["']url["']\s*:\s*["']([^"']+)["']/gi);
+    const urlMatches = Array.from(block.matchAll(/["']url["']\s*:\s*["']([^"']+)["']/gi));
     for (const urlMatch of urlMatches) {
       const absolute = canonicalizeUrl(urlMatch[1], baseUrl);
       if (absolute) keys.add(absolute);
