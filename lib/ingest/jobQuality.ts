@@ -2,6 +2,7 @@ import { normalizeApplyUrl } from './jobIdentity';
 
 const STRUCTURED_SOURCES = new Set([
   'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'ashby', 'recruitee', 'workday', 'usajobs',
+  'jazzhr', 'jibeapply', 'amentum_careers',
 ]);
 
 const LEGACY_WEAK_SOURCES = new Set([
@@ -36,7 +37,6 @@ export function assessJobQuality(item: any): JobQualityResult {
   const source = String(item?.source || '').trim().toLowerCase();
   const applyUrl = normalizeApplyUrl(item);
   const strongDetailUrl = looksLikeJobDetailUrl(applyUrl);
-
   if (!title) return reject('missing title', applyUrl, strongDetailUrl);
   if (title.length < 3 || title.length > 180) return reject('implausible title length', applyUrl, strongDetailUrl);
   if (looksLikeMarkupOrCss(title)) return reject('markup/css text', applyUrl, strongDetailUrl);
@@ -44,15 +44,14 @@ export function assessJobQuality(item: any): JobQualityResult {
 
   const raw = item?.raw_data && typeof item.raw_data === 'object' ? item.raw_data : {};
   const parser = String(raw.parser || '').toLowerCase();
-  const hasStructuredEvidence = parser.includes('json_ld') || raw.normalized_employer_source || STRUCTURED_SOURCES.has(source)
-    || source.startsWith('portal:') || source.startsWith('gov:');
+  const hasStructuredEvidence = parser.includes('json_ld') || parser.includes('structured') || raw.normalized_employer_source
+    || STRUCTURED_SOURCES.has(source) || source.startsWith('portal:') || source.startsWith('gov:');
 
   if (source === 'career_page' || source.startsWith('ats:')) {
     if (!hasStructuredEvidence && !strongDetailUrl) return reject('career-page row lacks job-detail evidence', applyUrl, strongDetailUrl);
   }
   if (LEGACY_WEAK_SOURCES.has(source) && !strongDetailUrl) return reject('legacy discovery row lacks a direct job-detail URL', applyUrl, strongDetailUrl);
   if ((source.startsWith('web:') || source.startsWith('jobapi:')) && !strongDetailUrl) return reject('discovery row lacks a direct job-detail URL', applyUrl, strongDetailUrl);
-
   return { ok: true, reason: null, applyUrl, strongDetailUrl };
 }
 
@@ -79,8 +78,9 @@ export function looksLikeJobDetailUrl(value: unknown): boolean {
   if (/^\/(?:careers?|jobs?|employment|join-us|join-our-team|work-with-us|apply|jobs\/search)$/i.test(path)) return false;
   if (/\/(?:jobs?|careers?)\/(?:search|categories|locations|saved|alerts?|favorites?)$/i.test(path)) return false;
   const patterns = [
-    /\/why-gov2x\/jobs\/\d{3,}(?:$|\/)/i,
-    /amentumcareers\.com\/jobs\/[^/?#]{5,}/i,
+    /\/why-gov2x\/jobs\/\d{3,}(?:$|[/?#])/i,
+    /amentumcareers\.com\/jobs\/(?!search(?:[/?#]|$))[^/?#]{5,}/i,
+    /applytojob\.com\/apply\/jobs\/details\/[A-Za-z0-9_-]{4,}/i,
     /applytojob\.com\/apply\/[A-Za-z0-9_-]{4,}(?:\/[^/?#]+)?/i,
     /(?:boards|job-boards)\.greenhouse\.io\/[^/]+\/jobs\/\d+/i,
     /jobs\.lever\.co\/[^/]+\/[^/?#]+/i,
@@ -107,13 +107,7 @@ export function isGenericNavigationTitle(value: unknown) {
   if (!title) return true;
   return GENERIC_TITLE_PATTERNS.some((pattern) => pattern.test(title.replace(/\s+/g, ' ').trim()));
 }
-
-function hasStructuredParser(item: any) {
-  const parser = String(item?.raw_data?.parser || '').toLowerCase();
-  return parser.includes('json_ld') || parser.includes('structured');
-}
-function looksLikeMarkupOrCss(title: string) {
-  return /[{}<>]|(?:^|\s)\.[a-z0-9_-]+\s*\{|display\s*:\s*(?:inline|block)|vertical-align\s*:/i.test(title) || /^(?:css|style|script)\b/i.test(title);
-}
+function hasStructuredParser(item: any) { const parser = String(item?.raw_data?.parser || '').toLowerCase(); return parser.includes('json_ld') || parser.includes('structured'); }
+function looksLikeMarkupOrCss(title: string) { return /[{}<>]|(?:^|\s)\.[a-z0-9_-]+\s*\{|display\s*:\s*(?:inline|block)|vertical-align\s*:/i.test(title) || /^(?:css|style|script)\b/i.test(title); }
 function cleanTitle(value: unknown) { return String(value || '').replace(/\s+/g, ' ').trim(); }
 function reject(reason: string, applyUrl: string | null, strongDetailUrl: boolean): JobQualityResult { return { ok: false, reason, applyUrl, strongDetailUrl }; }
