@@ -1,52 +1,84 @@
 /**
- * Daily ingestion cron runner
- * Run via: node scripts/ingest.js
- * Or trigger via the /api/ingest endpoint with the cron secret
+ * Daily ingestion cron runner.
+ * Enumerates active entities and refreshes them one at a time so a single slow or broken
+ * provider cannot consume/abort the entire daily ingest.
  */
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config();
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
-const TIMEOUT_MS = Number(process.env.INGEST_CRON_TIMEOUT_MS || 120000);
+const ENTITY_TIMEOUT_MS = Number(process.env.INGEST_ENTITY_TIMEOUT_MS || 90000);
+const PORTALS = ['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities'];
 
 async function run() {
-  console.log(`[${new Date().toISOString()}] Starting full ingest...`);
-
+  console.log(`[${new Date().toISOString()}] Starting resilient entity-by-entity ingest...`);
   if (!CRON_SECRET) {
     console.error('CRON_SECRET is not set. Refusing to call /api/ingest without authentication.');
     process.exit(1);
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const entities = await loadEntities();
+  console.log(`Found ${entities.length} active entities.`);
+  const results = [];
 
+  for (let index = 0; index < entities.length; index++) {
+    const entity = entities[index];
+    const started = Date.now();
+    process.stdout.write(`[${index + 1}/${entities.length}] ${entity.name} ... `);
+    try {
+      const result = await ingestEntity(entity.id);
+      const row = result?.results?.[0] || result;
+      results.push({ id: entity.id, name: entity.name, ok: true, result: row });
+      console.log(`OK (${Math.round((Date.now() - started) / 1000)}s, ${row?.total || 0} active, ${row?.new || 0} new, ${row?.closed || 0} closed)`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ id: entity.id, name: entity.name, ok: false, error: message });
+      console.log(`FAILED (${Math.round((Date.now() - started) / 1000)}s): ${message}`);
+    }
+  }
+
+  const failed = results.filter(row => !row.ok);
+  console.log(`[${new Date().toISOString()}] Ingest complete: ${results.length - failed.length} succeeded, ${failed.length} failed.`);
+  if (failed.length) {
+    console.error('Failed entities:', failed.map(row => `${row.name}: ${row.error}`).join(' | '));
+    process.exitCode = 1;
+  }
+}
+
+async function loadEntities() {
+  const map = new Map();
+  for (const portal of PORTALS) {
+    const response = await fetch(`${APP_URL}/api/entities?portal=${encodeURIComponent(portal)}`, { signal: AbortSignal.timeout(30000) });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(`Could not enumerate ${portal}: HTTP ${response.status}`);
+    for (const entity of Array.isArray(payload) ? payload : []) map.set(entity.id, entity);
+  }
+  return Array.from(map.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+async function ingestEntity(entityId) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ENTITY_TIMEOUT_MS);
   try {
-    const res = await fetch(`${APP_URL}/api/ingest`, {
+    const response = await fetch(`${APP_URL}/api/ingest`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-cron-secret': CRON_SECRET,
-      },
-      body: JSON.stringify({}),
+      headers: { 'Content-Type': 'application/json', 'x-cron-secret': CRON_SECRET },
+      body: JSON.stringify({ entity_id: entityId, reconcile: true }),
       signal: controller.signal,
     });
-
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new Error(`Ingest endpoint returned HTTP ${res.status}: ${JSON.stringify(data)}`);
-    }
-
-    console.log('Ingest complete:', data);
-  } catch (err) {
-    const message = err && err.name === 'AbortError'
-      ? `Ingest timed out after ${TIMEOUT_MS}ms`
-      : err;
-    console.error('Ingest error:', message);
-    process.exit(1);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    return payload;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`timed out after ${ENTITY_TIMEOUT_MS}ms`);
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-run();
+run().catch(error => {
+  console.error('Fatal cron error:', error);
+  process.exit(1);
+});
