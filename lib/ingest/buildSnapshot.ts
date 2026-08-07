@@ -1,18 +1,15 @@
 import { query } from '@/db/client';
+import { getVerifiedActiveJobs, isNewThisWeek } from '@/lib/verifiedJobs';
 
 export async function buildHiringSnapshot(entityId: string) {
   const today = new Date().toISOString().split('T')[0];
-  const d7 = new Date(Date.now() - 7 * 86400000).toISOString();
-
-  const [totals, newJobs, roleCounts, closed] = await Promise.all([
-    query(`SELECT COUNT(*) as total FROM jobs WHERE entity_id = $1 AND is_active = true`, [entityId]),
-    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true AND (posted_at >= $2 OR created_at >= $2)`, [entityId, d7]),
-    query(`SELECT role_category, COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true GROUP BY role_category`, [entityId]),
-    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = false`, [entityId]),
-  ]);
-
+  const jobs = await getVerifiedActiveJobs(entityId);
   const roleMap: Record<string, number> = {};
-  for (const row of roleCounts) roleMap[row.role_category] = Number(row.cnt);
+  for (const job of jobs) {
+    const role = String(job.role_category || 'other');
+    roleMap[role] = (roleMap[role] || 0) + 1;
+  }
+  const closedRows = await query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = false`, [entityId]);
 
   await query(
     `INSERT INTO hiring_snapshots (entity_id, snapshot_date, total_active, new_this_week, closed_count,
@@ -32,8 +29,7 @@ export async function buildHiringSnapshot(entityId: string) {
        remote_count = EXCLUDED.remote_count,
        overseas_count = EXCLUDED.overseas_count,
        other_count = EXCLUDED.other_count`,
-    [entityId, today,
-     Number(totals[0]?.total || 0), Number(newJobs[0]?.cnt || 0), Number(closed[0]?.cnt || 0),
+    [entityId, today, jobs.length, jobs.filter((job) => isNewThisWeek(job)).length, Number(closedRows[0]?.cnt || 0),
      roleMap.security || 0, roleMap.logistics || 0, roleMap.medical || 0, roleMap.admin || 0,
      roleMap.aviation || 0, roleMap.engineering || 0, roleMap.remote || 0,
      roleMap.overseas || 0, roleMap.other || 0]
