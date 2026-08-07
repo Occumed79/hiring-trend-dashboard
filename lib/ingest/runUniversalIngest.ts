@@ -5,7 +5,7 @@ import { fetchJobsForEntity } from './connectorRegistry';
 import { fetchGovernmentFallbackJobs } from './govFallback';
 import { fetchLangSearchJobs } from './langSearch';
 import { fetchJobApiJobs } from './jobApiAdapters';
-import { dedupeJobsAcrossSources } from './jobIdentity';
+import { dedupeJobsAcrossSources, filterWebSearchJobsForEntity } from './jobIdentity';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 
@@ -32,6 +32,7 @@ export async function runUniversalIngest(entityId?: string | null) {
         new: 0,
         closed: 0,
         duplicates_removed: 0,
+        off_target_rejected: 0,
         sources_used: [],
         sources_skipped: [],
         status: 'error',
@@ -51,6 +52,8 @@ async function ingestOneEntity(entity: any) {
   const items: any[] = [];
   const used: string[] = [];
   const skipped: string[] = [];
+  let rawDiscovered = 0;
+  let offTargetRejected = 0;
 
   const shouldUseAdzuna = ['current_clients', 'prospects', 'private_companies', 'state_agencies', 'counties_and_cities'].includes(entity.portal);
   const [primary, portal, adzuna, gov] = await Promise.all([
@@ -80,20 +83,27 @@ async function ingestOneEntity(entity: any) {
   ]);
 
   items.push(...primary.jobs, ...portal.jobs, ...adzuna.jobs, ...gov.jobs);
+  rawDiscovered += items.length;
   used.push(...primary.used, ...portal.used, ...adzuna.used, ...gov.used);
   skipped.push(...primary.skipped, ...portal.skipped, ...adzuna.skipped, ...gov.skipped);
 
   if (primary.detected) await saveDetectedMetadata(entity, primary.detected);
+  const resolvedEntity = mergeDetectedEntity(entity, primary.detected);
 
   let deduped = dedupeJobsAcrossSources(items);
 
   const langSearchMode = getSourceMode('LANGSEARCH_MODE', 'always');
   const langSearchMinimum = getThreshold('LANGSEARCH_FALLBACK_MIN_EXISTING', 1);
   if (shouldRunSource(langSearchMode, deduped.jobs.length, langSearchMinimum)) {
-    const langSearch = await fetchLangSearchJobs(entity);
-    items.push(...langSearch.jobs);
-    used.push(...langSearch.used);
+    const langSearch = await fetchLangSearchJobs(resolvedEntity);
+    rawDiscovered += langSearch.jobs.length;
+    const filtered = filterWebSearchJobsForEntity(langSearch.jobs, resolvedEntity);
+    offTargetRejected += filtered.rejected;
+    items.push(...filtered.jobs);
+    if (filtered.jobs.length) used.push(...langSearch.used);
     skipped.push(...langSearch.skipped);
+    if (filtered.rejected) skipped.push(`langsearch (${filtered.rejected} off-target result${filtered.rejected === 1 ? '' : 's'} rejected)`);
+    if (langSearch.jobs.length && !filtered.jobs.length) skipped.push('langsearch (all job-detail results failed employer evidence)');
     deduped = dedupeJobsAcrossSources(items);
   } else {
     skipped.push(`langsearch skipped (${langSearchMode}; ${deduped.jobs.length} unique existing jobs)`);
@@ -102,7 +112,8 @@ async function ingestOneEntity(entity: any) {
   const jobApiMode = getSourceMode('JOB_API_MODE', 'fallback');
   const jobApiMinimum = getThreshold('JOB_API_FALLBACK_MIN_EXISTING', 1);
   if (shouldRunSource(jobApiMode, deduped.jobs.length, jobApiMinimum)) {
-    const jobApi = await fetchJobApiJobs(entity);
+    const jobApi = await fetchJobApiJobs(resolvedEntity);
+    rawDiscovered += jobApi.jobs.length;
     items.push(...jobApi.jobs);
     used.push(...jobApi.used);
     skipped.push(...jobApi.skipped);
@@ -134,10 +145,11 @@ async function ingestOneEntity(entity: any) {
     entity: entity.name,
     portal: entity.portal,
     total: uniqueItems.length,
-    raw_discovered: items.length,
+    raw_discovered: rawDiscovered,
     new: newCount,
     closed: closedCount,
     duplicates_removed: items.length - uniqueItems.length + duplicateClosures,
+    off_target_rejected: offTargetRejected,
     sources_used: sourcesUsed,
     sources_skipped: sourcesSkipped,
     status,
@@ -237,6 +249,17 @@ function clamp(value: number, min: number, max: number) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function mergeDetectedEntity(entity: any, detected: any) {
+  if (!detected) return entity;
+  return {
+    ...entity,
+    aliases: Array.from(new Set([...(entity.aliases || []), ...(detected.aliases || [])])),
+    career_page_url: entity.career_page_url || detected.career_page_url || null,
+    ats_provider: entity.ats_provider && entity.ats_provider !== 'unknown' ? entity.ats_provider : detected.ats_provider || 'unknown',
+    ats_board_id: entity.ats_board_id || detected.ats_board_id || null,
+  };
 }
 
 async function logEntityIngestError(entity: any, message: string) {
