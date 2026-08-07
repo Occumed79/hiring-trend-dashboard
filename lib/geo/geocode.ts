@@ -11,11 +11,13 @@ type GeocodedPoint = {
 
 const MAX_EXTERNAL_LOOKUPS = positiveIntegerEnv('GEOCODE_MAX_PER_PROCESS', 100);
 let externalLookups = 0;
+let cacheReady: Promise<void> | null = null;
 
 export async function geocodeLocationCandidates(candidates: string[]): Promise<GeocodedPoint | null> {
   const specific = candidates.map(clean).filter(Boolean).find(isSpecificLocation);
   if (!specific) return null;
 
+  await ensureCacheTable();
   const cacheKey = normalizeKey(specific);
   const cached = await readCache(cacheKey);
   if (cached) return cached;
@@ -57,27 +59,34 @@ export async function geocodeLocationCandidates(candidates: string[]): Promise<G
   }
 }
 
+function ensureCacheTable() {
+  if (!cacheReady) {
+    cacheReady = query(`
+      CREATE TABLE IF NOT EXISTS location_geocode_cache (
+        query_key TEXT PRIMARY KEY,
+        query_text TEXT NOT NULL,
+        lat DECIMAL(10,7) NOT NULL,
+        lng DECIMAL(10,7) NOT NULL,
+        city TEXT,
+        state TEXT,
+        country TEXT,
+        quality TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).then(() => undefined).catch(() => undefined);
+  }
+  return cacheReady;
+}
+
 async function readCache(cacheKey: string): Promise<GeocodedPoint | null> {
   try {
-    const rows = await query(
-      `SELECT lat, lng, city, state, country, quality
-       FROM location_geocode_cache
-       WHERE query_key = $1
-       LIMIT 1`,
-      [cacheKey],
-    );
+    const rows = await query(`SELECT lat, lng, city, state, country, quality FROM location_geocode_cache WHERE query_key = $1 LIMIT 1`, [cacheKey]);
     if (!rows.length) return null;
     const lat = Number(rows[0].lat);
     const lng = Number(rows[0].lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return {
-      lat,
-      lng,
-      city: rows[0].city || null,
-      state: rows[0].state || null,
-      country: rows[0].country || null,
-      note: rows[0].quality || 'cached geocoded job location',
-    };
+    return { lat, lng, city: rows[0].city || null, state: rows[0].state || null, country: rows[0].country || null, note: rows[0].quality || 'cached geocoded job location' };
   } catch {
     return null;
   }
@@ -87,15 +96,8 @@ async function writeCache(cacheKey: string, queryText: string, point: GeocodedPo
   await query(
     `INSERT INTO location_geocode_cache (query_key, query_text, lat, lng, city, state, country, quality, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
-     ON CONFLICT (query_key) DO UPDATE SET
-       query_text = EXCLUDED.query_text,
-       lat = EXCLUDED.lat,
-       lng = EXCLUDED.lng,
-       city = EXCLUDED.city,
-       state = EXCLUDED.state,
-       country = EXCLUDED.country,
-       quality = EXCLUDED.quality,
-       updated_at = NOW()`,
+     ON CONFLICT (query_key) DO UPDATE SET query_text = EXCLUDED.query_text, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+       city = EXCLUDED.city, state = EXCLUDED.state, country = EXCLUDED.country, quality = EXCLUDED.quality, updated_at = NOW()`,
     [cacheKey, queryText, point.lat, point.lng, point.city, point.state, point.country, point.note],
   ).catch(() => {});
 }
@@ -108,10 +110,7 @@ function isSpecificLocation(value: string) {
   if (/^[^,]{2,60},\s*[^,]{2,60}/.test(value)) return true;
   return value.trim().split(/\s+/).length >= 2 && value.length >= 5;
 }
-
-function normalizeKey(value: string) {
-  return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
+function normalizeKey(value: string) { return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 function clean(value: unknown) { return String(value || '').replace(/\s+/g, ' ').trim(); }
 function text(value: unknown) { const v = clean(value); return v || null; }
 function normalizeCountry(value: unknown) {
@@ -119,9 +118,9 @@ function normalizeCountry(value: unknown) {
   if (!raw) return null;
   if (/^[a-z]{2}$/i.test(raw)) return raw.toUpperCase();
   const map: Record<string, string> = {
-    'united states': 'US', usa: 'US', canada: 'CA', 'united kingdom': 'GB', germany: 'DE',
-    kuwait: 'KW', qatar: 'QA', bahrain: 'BH', iraq: 'IQ', poland: 'PL', australia: 'AU',
-    japan: 'JP', 'south korea': 'KR', mexico: 'MX', spain: 'ES', italy: 'IT', greece: 'GR',
+    'united states': 'US', usa: 'US', canada: 'CA', 'united kingdom': 'GB', germany: 'DE', kuwait: 'KW',
+    qatar: 'QA', bahrain: 'BH', iraq: 'IQ', poland: 'PL', australia: 'AU', japan: 'JP', 'south korea': 'KR',
+    mexico: 'MX', spain: 'ES', italy: 'IT', greece: 'GR',
   };
   return map[raw.toLowerCase()] || null;
 }
