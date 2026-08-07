@@ -12,8 +12,8 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside className={`h-screen flex flex-col glass border-r border-white/8 transition-all duration-300 shrink-0 ${collapsed ? 'w-[68px]' : 'w-[220px]'}`}>
-      <div className="px-4 py-4.5 border-b border-white/7 flex items-center gap-3.5 min-h-[74px]">
+    <aside className={`h-screen flex flex-col glass border-r border-white/10 transition-all duration-300 shrink-0 ${collapsed ? 'w-[68px]' : 'w-[220px]'}`}>
+      <div className="px-4 py-[18px] border-b border-white/10 flex items-center gap-3.5 min-h-[74px]">
         <div
           className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
           style={{
@@ -56,7 +56,7 @@ export default function Sidebar({
 
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="px-4 py-4 border-t border-white/7 text-slate-500 hover:text-slate-200 text-[11px] flex items-center gap-2 transition-colors min-h-[48px]"
+        className="px-4 py-4 border-t border-white/10 text-slate-500 hover:text-slate-200 text-[11px] flex items-center gap-2 transition-colors min-h-[48px]"
       >
         <span className="text-slate-400 text-sm leading-none">{collapsed ? '›' : '‹'}</span>
         {!collapsed && <span>Collapse</span>}
