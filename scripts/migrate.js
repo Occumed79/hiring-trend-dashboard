@@ -1,5 +1,12 @@
-require('dotenv').config({ path: '.env.local' });
-require('dotenv').config();
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: '.env.local' });
+  dotenv.config();
+} catch (err) {
+  if (err?.code !== 'MODULE_NOT_FOUND') throw err;
+  // Render and other production hosts inject environment variables directly.
+  // dotenv is only a local-development convenience and must not block migrations.
+}
 
 const { Client } = require('pg');
 const fs = require('fs');
