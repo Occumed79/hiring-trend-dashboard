@@ -15,16 +15,16 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
 
   const isRemote = toBoolean(item.is_remote) || /\b(remote|work from home|wfh|virtual)\b/i.test(`${title} ${item.location || ''}`);
   let country = normalizeCountry(item.country);
-  const locationCandidates = extractLocationCandidates({ ...item, entity_name: entity.name });
+  if (source === 'career_page' && country === 'US' && !hasExplicitUsEvidence(item)) country = null;
+
+  const locationCandidates = extractLocationCandidates({ ...item, country, entity_name: entity.name });
   const inferred = inferPoint({ ...item, country, entity_name: entity.name, is_remote: isRemote, location_candidates: locationCandidates });
   const inferredQuality = inferred?.note || null;
   const inferredIsFallback = !!inferredQuality && inferredQuality.includes('fallback');
   const sourceLat = toNumber(item.lat);
   const sourceLng = toNumber(item.lng);
 
-  const shouldGeocode = !isRemote
-    && (sourceLat === null || sourceLng === null)
-    && (!inferred || inferredIsFallback);
+  const shouldGeocode = !isRemote && (sourceLat === null || sourceLng === null) && (!inferred || inferredIsFallback);
   const geocoded = shouldGeocode ? await geocodeLocationCandidates(locationCandidates) : null;
   country = country || geocoded?.country || (!inferredIsFallback ? inferred?.country || null : null);
 
@@ -50,32 +50,18 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   };
 
   const roleCategory = classifyRole(title, item.location);
-  const existing = await query(
-    `SELECT id FROM jobs WHERE entity_id = $1 AND external_id = $2 AND source = $3`,
-    [entity.id, externalId, source]
-  );
+  const existing = await query(`SELECT id FROM jobs WHERE entity_id = $1 AND external_id = $2 AND source = $3`, [entity.id, externalId, source]);
 
   await query(
     `INSERT INTO jobs (entity_id, external_id, source, title, department, role_category,
       location, city, state, country, lat, lng, is_remote, is_overseas, posted_at, raw_data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (entity_id, external_id, source) DO UPDATE SET
-      title = EXCLUDED.title,
-      department = EXCLUDED.department,
-      role_category = EXCLUDED.role_category,
-      location = EXCLUDED.location,
-      city = EXCLUDED.city,
-      state = EXCLUDED.state,
-      country = EXCLUDED.country,
-      lat = EXCLUDED.lat,
-      lng = EXCLUDED.lng,
-      is_remote = EXCLUDED.is_remote,
-      is_overseas = EXCLUDED.is_overseas,
-      posted_at = COALESCE(EXCLUDED.posted_at, jobs.posted_at),
-      raw_data = EXCLUDED.raw_data,
-      is_active = true,
-      closed_at = NULL,
-      updated_at = NOW()`,
+      title = EXCLUDED.title, department = EXCLUDED.department, role_category = EXCLUDED.role_category,
+      location = EXCLUDED.location, city = EXCLUDED.city, state = EXCLUDED.state, country = EXCLUDED.country,
+      lat = EXCLUDED.lat, lng = EXCLUDED.lng, is_remote = EXCLUDED.is_remote, is_overseas = EXCLUDED.is_overseas,
+      posted_at = COALESCE(EXCLUDED.posted_at, jobs.posted_at), raw_data = EXCLUDED.raw_data,
+      is_active = true, closed_at = NULL, updated_at = NOW()`,
     [entity.id, externalId, source, title, nullableString(item.department), roleCategory,
       nullableString(item.location), city, state, country, lat, lng, isRemote,
       toBoolean(item.is_overseas) || (country !== null && country !== 'US'),
@@ -85,47 +71,33 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   return existing.length === 0;
 }
 
-function nullableString(value: unknown) {
-  if (value === undefined || value === null) return null;
-  const text = String(value).trim();
-  return text || null;
+function hasExplicitUsEvidence(item: any) {
+  const raw = item?.raw_data || {};
+  const text = [item.location, item.city, item.state, raw.location, raw.job_location, raw.detail_location_candidates]
+    .flat().filter(Boolean).join(' ');
+  if (/\b(?:united states|usa|u\.s\.)\b/i.test(text)) return true;
+  return /\b[A-Z][A-Za-z .'-]+,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/.test(text);
 }
-
+function nullableString(value: unknown) { if (value === undefined || value === null) return null; const text = String(value).trim(); return text || null; }
 function normalizeCountry(value: unknown): string | null {
-  const raw = nullableString(value);
-  if (!raw) return null;
-  const text = raw.toLowerCase();
+  const raw = nullableString(value); if (!raw) return null; const text = raw.toLowerCase();
   const mapped: Record<string, string> = {
     us: 'US', usa: 'US', 'u.s.': 'US', 'u.s.a.': 'US', 'united states': 'US', 'united states of america': 'US',
     ca: 'CA', canada: 'CA', gb: 'GB', uk: 'GB', 'united kingdom': 'GB', 'great britain': 'GB', england: 'GB',
-    de: 'DE', germany: 'DE', kw: 'KW', kuwait: 'KW', qa: 'QA', qatar: 'QA', bh: 'BH', bahrain: 'BH',
-    iq: 'IQ', iraq: 'IQ', pl: 'PL', poland: 'PL', au: 'AU', australia: 'AU', jp: 'JP', japan: 'JP',
-    kr: 'KR', korea: 'KR', 'south korea': 'KR', mx: 'MX', mexico: 'MX', es: 'ES', spain: 'ES',
-    it: 'IT', italy: 'IT', gr: 'GR', greece: 'GR', fr: 'FR', france: 'FR', nl: 'NL', netherlands: 'NL',
-    be: 'BE', belgium: 'BE', ae: 'AE', uae: 'AE', 'united arab emirates': 'AE', sa: 'SA', 'saudi arabia': 'SA',
+    de: 'DE', germany: 'DE', kw: 'KW', kuwait: 'KW', qa: 'QA', qatar: 'QA', bh: 'BH', bahrain: 'BH', iq: 'IQ', iraq: 'IQ',
+    pl: 'PL', poland: 'PL', au: 'AU', australia: 'AU', jp: 'JP', japan: 'JP', kr: 'KR', korea: 'KR', 'south korea': 'KR',
+    mx: 'MX', mexico: 'MX', es: 'ES', spain: 'ES', it: 'IT', italy: 'IT', gr: 'GR', greece: 'GR', fr: 'FR', france: 'FR',
+    nl: 'NL', netherlands: 'NL', be: 'BE', belgium: 'BE', ae: 'AE', uae: 'AE', 'united arab emirates': 'AE', sa: 'SA', 'saudi arabia': 'SA',
   };
   if (mapped[text]) return mapped[text];
   if (/^[a-z]{2}$/i.test(text)) return text.toUpperCase();
   return null;
 }
-
-function toNumber(value: unknown) {
-  if (value === undefined || value === null || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
+function toNumber(value: unknown) { if (value === undefined || value === null || value === '') return null; const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
 function toBoolean(value: unknown) {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value === 1;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'yes', 'y'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'n'].includes(normalized)) return false;
-  }
+  if (typeof value === 'string') { const normalized = value.trim().toLowerCase(); if (['true','1','yes','y'].includes(normalized)) return true; if (['false','0','no','n'].includes(normalized)) return false; }
   return false;
 }
-function normalizeDate(value: unknown) {
-  if (value === undefined || value === null || value === '') return null;
-  const date = new Date(String(value));
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
+function normalizeDate(value: unknown) { if (value === undefined || value === null || value === '') return null; const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? null : date.toISOString(); }
