@@ -5,7 +5,7 @@ import { fetchJobsForEntity } from './connectorRegistry';
 import { fetchGovernmentFallbackJobs } from './govFallback';
 import { fetchLangSearchJobs } from './langSearch';
 import { fetchJobApiJobs } from './jobApiAdapters';
-import { dedupeJobsAcrossSources, filterWebSearchJobsForEntity } from './jobIdentity';
+import { dedupeJobsAcrossSources, filterJobApiJobsForEntity, filterWebSearchJobsForEntity } from './jobIdentity';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 
@@ -114,9 +114,13 @@ async function ingestOneEntity(entity: any) {
   if (shouldRunSource(jobApiMode, deduped.jobs.length, jobApiMinimum)) {
     const jobApi = await fetchJobApiJobs(resolvedEntity);
     rawDiscovered += jobApi.jobs.length;
-    items.push(...jobApi.jobs);
-    used.push(...jobApi.used);
+    const filtered = filterJobApiJobsForEntity(jobApi.jobs, resolvedEntity);
+    offTargetRejected += filtered.rejected;
+    items.push(...filtered.jobs);
+    if (filtered.jobs.length) used.push(...jobApi.used);
     skipped.push(...jobApi.skipped);
+    if (filtered.rejected) skipped.push(`jobs api (${filtered.rejected} off-target result${filtered.rejected === 1 ? '' : 's'} rejected)`);
+    if (jobApi.jobs.length && !filtered.jobs.length) skipped.push('jobs api (all results failed employer evidence)');
     deduped = dedupeJobsAcrossSources(items);
   } else {
     skipped.push(`jobs api skipped (${jobApiMode}; ${deduped.jobs.length} unique existing jobs)`);
