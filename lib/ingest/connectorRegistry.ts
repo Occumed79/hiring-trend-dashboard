@@ -19,7 +19,13 @@ interface ConnectorResult {
   detected: CompanyResolution | null;
 }
 
-const DIRECT_CONNECTORS = new Set(['greenhouse', 'lever', 'smartrecruiters', 'bamboohr', ...STRUCTURED_ATS_PROVIDERS]);
+const DIRECT_CONNECTORS = new Set([
+  'greenhouse',
+  'lever',
+  'smartrecruiters',
+  'bamboohr',
+  ...Array.from(STRUCTURED_ATS_PROVIDERS),
+]);
 
 export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> {
   const used: string[] = [];
