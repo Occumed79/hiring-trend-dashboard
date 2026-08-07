@@ -82,6 +82,79 @@ export function dedupeJobsAcrossSources(items: any[]) {
   return { jobs: Array.from(byIdentity.values()), duplicates };
 }
 
+export function filterWebSearchJobsForEntity(items: any[], entity: any) {
+  const jobs: any[] = [];
+  let rejected = 0;
+
+  for (const item of items) {
+    if (String(item?.source || '').toLowerCase() !== 'web:langsearch') {
+      jobs.push(item);
+      continue;
+    }
+
+    const evidence = getEmployerEvidence(item, entity);
+    if (!evidence) {
+      rejected++;
+      continue;
+    }
+
+    jobs.push({
+      ...item,
+      raw_data: {
+        ...(item.raw_data || {}),
+        normalized_employer_match: evidence,
+      },
+    });
+  }
+
+  return { jobs, rejected };
+}
+
+function getEmployerEvidence(item: any, entity: any): string | null {
+  const applyUrl = normalizeApplyUrl(item);
+  const candidateUrl = parseUrl(applyUrl);
+  const careerUrl = parseUrl(entity?.career_page_url);
+
+  if (candidateUrl && careerUrl && sameSite(candidateUrl.hostname, careerUrl.hostname)) {
+    return 'career-domain';
+  }
+
+  const boardId = normalizeComparable(entity?.ats_board_id);
+  if (candidateUrl && boardId.length >= 3) {
+    const urlText = normalizeComparable(`${candidateUrl.hostname} ${candidateUrl.pathname} ${candidateUrl.search}`);
+    if (containsPhrase(urlText, boardId)) return 'ats-board-id';
+  }
+
+  const raw = item?.raw_data || {};
+  const searchable = normalizeComparable([
+    item?.title,
+    item?.department,
+    raw.langsearch_title,
+    raw.langsearch_snippet,
+    raw.langsearch_summary,
+    raw.normalized_apply_url,
+    raw.url,
+  ].filter(Boolean).join(' '));
+
+  const names = [entity?.name, ...(Array.isArray(entity?.aliases) ? entity.aliases : [])]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  for (const name of names) {
+    const normalizedName = normalizeComparable(name);
+    if (normalizedName.length >= 3 && containsPhrase(searchable, normalizedName)) {
+      return `employer-name:${name}`;
+    }
+
+    const withoutLegalSuffix = stripLegalSuffix(normalizedName);
+    if (withoutLegalSuffix.length >= 4 && withoutLegalSuffix !== normalizedName && containsPhrase(searchable, withoutLegalSuffix)) {
+      return `employer-name:${name}`;
+    }
+  }
+
+  return null;
+}
+
 function mergeDuplicateJobs(left: any, right: any) {
   const leftScore = sourceScore(left?.source);
   const rightScore = sourceScore(right?.source);
@@ -141,25 +214,57 @@ function sourceScore(source: unknown) {
 }
 
 function normalizeUrl(value: unknown): string | null {
+  const url = parseUrl(value);
+  if (!url) return null;
+
+  url.hash = '';
+  url.hostname = url.hostname.toLowerCase();
+
+  for (const key of Array.from(url.searchParams.keys())) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey.startsWith('utm_') || TRACKING_PARAMS.has(normalizedKey)) {
+      url.searchParams.delete(key);
+    }
+  }
+  url.searchParams.sort();
+
+  return url.toString();
+}
+
+function parseUrl(value: unknown): URL | null {
   if (!value) return null;
 
   try {
     const url = new URL(String(value).trim());
-    if (!['http:', 'https:'].includes(url.protocol)) return null;
-
-    url.hash = '';
-    url.hostname = url.hostname.toLowerCase();
-
-    for (const key of Array.from(url.searchParams.keys())) {
-      const normalizedKey = key.toLowerCase();
-      if (normalizedKey.startsWith('utm_') || TRACKING_PARAMS.has(normalizedKey)) {
-        url.searchParams.delete(key);
-      }
-    }
-    url.searchParams.sort();
-
-    return url.toString();
+    return ['http:', 'https:'].includes(url.protocol) ? url : null;
   } catch {
     return null;
   }
+}
+
+function sameSite(leftHost: string, rightHost: string) {
+  const left = leftHost.toLowerCase().replace(/^www\./, '');
+  const right = rightHost.toLowerCase().replace(/^www\./, '');
+  return left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`);
+}
+
+function normalizeComparable(value: unknown) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function containsPhrase(haystack: string, needle: string) {
+  if (!haystack || !needle) return false;
+  return ` ${haystack} `.includes(` ${needle} `);
+}
+
+function stripLegalSuffix(value: string) {
+  return value
+    .replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
