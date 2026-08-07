@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
+import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const [entities, logs, coverage] = await Promise.all([
+    const [entities, logs, jobs] = await Promise.all([
       query(`SELECT id, created_at, updated_at, ats_provider, ats_board_id, career_page_url FROM entities WHERE id = $1 LIMIT 1`, [params.id]),
       query(`SELECT status, source, jobs_found, jobs_new, jobs_closed, error_message, ran_at
              FROM ingest_log WHERE entity_id = $1 ORDER BY ran_at DESC LIMIT 1`, [params.id]),
-      query(`SELECT
-               COUNT(*) FILTER (WHERE is_active = true)::int AS active_jobs,
-               COUNT(*) FILTER (WHERE is_active = true AND lat IS NOT NULL AND lng IS NOT NULL
-                 AND COALESCE(raw_data->>'normalized_location_quality','') NOT ILIKE '%fallback%')::int AS mapped_jobs,
-               COUNT(*) FILTER (WHERE is_active = true AND COALESCE(raw_data->>'normalized_location_quality','') = 'geocoded job location')::int AS geocoded_jobs,
-               COUNT(*) FILTER (WHERE is_active = true AND (lat IS NULL OR lng IS NULL))::int AS unmapped_jobs
-             FROM jobs WHERE entity_id = $1`, [params.id]),
+      getVerifiedActiveJobs(params.id),
     ]);
 
     if (!entities.length) return NextResponse.json({ error: 'Entity not found' }, { status: 404 });
@@ -23,6 +18,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const createdAt = new Date(entity.created_at).getTime();
     const lastRunAt = latest?.ran_at ? new Date(latest.ran_at).getTime() : 0;
     const awaitingInitialIngest = !latest || lastRunAt < createdAt;
+    const mapped = jobs.filter(hasRealMappedLocation);
+    const geocoded = jobs.filter((job) => String(job.raw_data?.normalized_location_quality || '') === 'geocoded job location');
 
     return NextResponse.json({
       status: awaitingInitialIngest ? 'queued' : latest.status,
@@ -35,7 +32,12 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       ats_provider: entity.ats_provider || 'unknown',
       ats_board_id: entity.ats_board_id || null,
       career_page_url: entity.career_page_url || null,
-      coverage: coverage[0] || { active_jobs: 0, mapped_jobs: 0, geocoded_jobs: 0, unmapped_jobs: 0 },
+      coverage: {
+        active_jobs: jobs.length,
+        mapped_jobs: mapped.length,
+        geocoded_jobs: geocoded.length,
+        unmapped_jobs: jobs.length - mapped.length,
+      },
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not load ingest status.' }, { status: 500 });
