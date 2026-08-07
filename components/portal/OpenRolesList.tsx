@@ -1,26 +1,69 @@
 'use client';
+import { useMemo, useState } from 'react';
 
 export default function OpenRolesList({ rows, loading }: { rows: any[]; loading: boolean }) {
   const safeRows = Array.isArray(rows) ? rows : [];
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('all');
+  const [source, setSource] = useState('all');
+
+  const categories = useMemo(() => Array.from(new Set(safeRows.map(row => row.role_category).filter(Boolean))).sort(), [safeRows]);
+  const sources = useMemo(() => Array.from(new Set(safeRows.map(row => row.source).filter(Boolean))).sort(), [safeRows]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return safeRows.filter(row => {
+      if (category !== 'all' && row.role_category !== category) return false;
+      if (source !== 'all' && row.source !== source) return false;
+      if (!q) return true;
+      return `${row.title || ''} ${row.location || ''} ${row.department || ''} ${row.source || ''}`.toLowerCase().includes(q);
+    });
+  }, [safeRows, search, category, source]);
 
   return (
-    <div className="glass-card luminous-panel p-5">
+    <div className="glass-card luminous-panel p-5 lg:p-6 relative overflow-hidden">
       <div className="shimmer-top" />
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-100">Open Roles</h3>
-        <span className="text-[10px] text-slate-500">{safeRows.length} shown</span>
+      <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+        <div>
+          <h3 className="text-[15px] font-semibold text-slate-100">Open Roles</h3>
+          <p className="text-[10px] text-slate-500 mt-1">Search the normalized active posting set and open the original employer/ATS listing.</p>
+        </div>
+        <span className="text-[10px] text-slate-500 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">{filtered.length} of {safeRows.length}</span>
       </div>
-      {loading ? <p className="text-xs text-slate-500">Loading roles...</p> : safeRows.length === 0 ? (
-        <p className="text-xs text-slate-500">No roles are available for this company yet.</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px_190px] gap-2.5 mb-4">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, location, department, source…" className="rounded-xl border border-white/10 bg-white/[0.045] px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-blue-300/40" />
+        <select value={category} onChange={e => setCategory(e.target.value)} className="rounded-xl border border-white/10 bg-[#0b1223] px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-blue-300/40">
+          <option value="all">All categories</option>{categories.map(value => <option key={value} value={value}>{label(value)}</option>)}
+        </select>
+        <select value={source} onChange={e => setSource(e.target.value)} className="rounded-xl border border-white/10 bg-[#0b1223] px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-blue-300/40">
+          <option value="all">All sources</option>{sources.map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">{[0,1,2,3,4].map(i => <div key={i} className="h-[62px] rounded-xl bg-white/[0.035] animate-pulse" style={{ opacity: 1 - i * 0.12 }} />)}</div>
+      ) : safeRows.length === 0 ? (
+        <Empty title="No active roles yet" text="The first ingest may still be running, or the authoritative source currently has no published openings." />
+      ) : filtered.length === 0 ? (
+        <Empty title="No roles match these filters" text="Clear the search or broaden the category/source filters." />
       ) : (
-        <div className="divide-y divide-white/8">
-          {safeRows.slice(0, 100).map(row => (
-            <div key={row.id} className="py-3 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-sm text-slate-100 font-medium truncate">{row.title}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">{[row.location, row.source].filter(Boolean).join(' · ')}</p>
+        <div className="divide-y divide-white/8 max-h-[720px] overflow-y-auto scrollbar-glass pr-1">
+          {filtered.map(row => (
+            <div key={row.id} className="py-3.5 px-1 flex items-start justify-between gap-4 group">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[13px] text-slate-100 font-semibold truncate max-w-full">{row.title}</p>
+                  {row.role_category && <span className="text-[9px] uppercase tracking-[0.11em] rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-slate-500">{label(row.role_category)}</span>}
+                </div>
+                <div className="flex items-center gap-x-2.5 gap-y-1 mt-1.5 flex-wrap text-[10px] text-slate-500">
+                  <span>{row.location || 'Location not supplied'}</span>
+                  <span className="text-slate-700">•</span><span>{row.source || 'Unknown source'}</span>
+                  {row.posted_at && <><span className="text-slate-700">•</span><span>{formatDate(row.posted_at)}</span></>}
+                </div>
               </div>
-              {row.url && <a href={row.url} target="_blank" rel="noreferrer" className="text-xs text-blue-300 hover:text-blue-200 shrink-0">Open</a>}
+              {row.url ? (
+                <a href={row.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-200 border border-blue-400/25 bg-blue-500/8 hover:bg-blue-500/18 rounded-lg px-2.5 py-1.5 shrink-0 transition-all">Open ↗</a>
+              ) : <span className="text-[9px] text-slate-700 shrink-0">No direct URL</span>}
             </div>
           ))}
         </div>
@@ -28,3 +71,7 @@ export default function OpenRolesList({ rows, loading }: { rows: any[]; loading:
     </div>
   );
 }
+
+function Empty({ title, text }: { title: string; text: string }) { return <div className="py-12 text-center"><p className="text-sm font-medium text-slate-300">{title}</p><p className="text-[11px] text-slate-500 mt-1.5">{text}</p></div>; }
+function label(value: string) { return String(value || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase()); }
+function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined }); }
