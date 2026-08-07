@@ -88,7 +88,7 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
     }
   }
 
-  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && atsProvider !== 'jibeapply' && !DIRECT_CONNECTORS.has(atsProvider);
+  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && !DIRECT_CONNECTORS.has(atsProvider);
   if (!jobs.length && recognizedHostedProvider && careerPageUrl) {
     const hostedJobs = await fetchHostedAtsJobs(atsProvider, careerPageUrl, entity.name);
     jobs.push(...hostedJobs);
@@ -138,7 +138,7 @@ function knownCareerProfile(name: unknown): CareerProfile | null {
     return { career_page_url: 'https://www.amentumcareers.com/jobs/search', ats_provider: 'other', ats_board_id: null };
   }
   if (/\b(?:v2x|vectrus)\b/.test(normalized)) {
-    return { career_page_url: 'https://careers.gov2x.com/why-gov2x/jobs', ats_provider: 'jibeapply', ats_board_id: 'why-gov2x' };
+    return { career_page_url: 'https://careers.gov2x.com/why-gov2x/jobs', ats_provider: 'icims', ats_board_id: 'why-gov2x' };
   }
   if (/\bids international\b/.test(normalized)) {
     return { career_page_url: 'https://idsinternational.applytojob.com/apply/jobs/', ats_provider: 'jazzhr', ats_board_id: 'idsinternational' };
