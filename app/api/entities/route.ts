@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     let sql = `
       SELECT e.*,
         COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.entity_id = e.id AND j.is_active = true), 0)::int AS open_jobs,
-        COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.entity_id = e.id AND (j.posted_at >= NOW() - INTERVAL '7 days' OR j.created_at >= NOW() - INTERVAL '7 days')), 0)::int AS new_this_week
+        COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.entity_id = e.id AND j.is_active = true AND (j.posted_at >= NOW() - INTERVAL '7 days' OR j.created_at >= NOW() - INTERVAL '7 days')), 0)::int AS new_this_week
       FROM entities e
       WHERE e.is_active = true`;
     const params: any[] = [];
