@@ -12,8 +12,10 @@ async function migrate() {
     process.exit(1);
   }
 
-  const schemaPath = path.join(__dirname, '../db/schema.sql');
-  const schema = fs.readFileSync(schemaPath, 'utf8');
+  const files = [
+    path.join(__dirname, '../db/schema.sql'),
+    path.join(__dirname, '../db/hardening.sql'),
+  ];
   const client = new Client({
     connectionString,
     ssl: connectionString.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined,
@@ -22,7 +24,11 @@ async function migrate() {
   console.log('Running migrations...');
   try {
     await client.connect();
-    await client.query(schema);
+    for (const file of files) {
+      if (!fs.existsSync(file)) continue;
+      console.log(`Applying ${path.basename(file)}...`);
+      await client.query(fs.readFileSync(file, 'utf8'));
+    }
     console.log('Migrations complete');
   } catch (err) {
     console.error('Migration error:', err);
