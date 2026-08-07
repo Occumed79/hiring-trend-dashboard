@@ -16,7 +16,7 @@ export default function CompanyRegistry({ entities, loading, onSelect, onAdd }: 
         </div>
         <button
           onClick={onAdd}
-          className="text-[11px] px-3.5 py-1.5 rounded-xl border border-blue-400/35 text-blue-100 bg-blue-500/12 hover:bg-blue-500/22 hover:border-blue-300/50 transition-all shrink-0"
+          className="text-[11px] px-3.5 py-1.5 rounded-xl border border-blue-400/40 text-blue-100 bg-blue-500/10 hover:bg-blue-500/20 hover:border-blue-300/50 transition-all shrink-0"
         >
           Add
         </button>
@@ -47,7 +47,7 @@ export default function CompanyRegistry({ entities, loading, onSelect, onAdd }: 
               <button
                 key={entity.id}
                 onClick={() => onSelect(entity)}
-                className="group w-full text-left px-3.5 py-3 rounded-xl border border-white/9 bg-white/[0.035] hover:border-blue-300/30 hover:bg-blue-500/10 transition-all focus:outline-none focus:border-blue-300/40"
+                className="group w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.035] hover:border-blue-300/30 hover:bg-blue-500/10 transition-all focus:outline-none focus:border-blue-300/40"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -73,7 +73,7 @@ export default function CompanyRegistry({ entities, loading, onSelect, onAdd }: 
       )}
 
       {!loading && entities.length > 0 && (
-        <div className="pt-3 mt-3 border-t border-white/7 flex items-center justify-between text-[10px] text-slate-600 shrink-0">
+        <div className="pt-3 mt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-slate-600 shrink-0">
           <span>{entities.length} compan{entities.length === 1 ? 'y' : 'ies'} shown</span>
           <span>{entities.reduce((sum, entity) => sum + Number(entity.open_jobs || 0), 0).toLocaleString()} open roles</span>
         </div>
