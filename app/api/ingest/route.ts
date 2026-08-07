@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const result = await runUniversalIngest(body.entity_id || null);
+    const result = await runUniversalIngest(body.entity_id || null, { reconcile: body.reconcile === true });
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected ingest error';
