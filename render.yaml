@@ -2,7 +2,7 @@ services:
   - type: web
     name: hiring-trend-dashboard
     env: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && npm run db:migrate && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -34,6 +34,16 @@ services:
         value: "12000"
       - key: INGEST_HTTP_TIMEOUT_MS
         value: "10000"
+      - key: INGEST_RECONCILE_DISCOVERY
+        value: "true"
+      - key: INGEST_UPSERT_CONCURRENCY
+        value: "4"
+      - key: JOB_STALE_AFTER_DAYS
+        value: "30"
+      - key: GEOAPIFY_API_KEY
+        sync: false
+      - key: GEOCODE_MAX_PER_PROCESS
+        value: "100"
       - key: CRON_SECRET
         generateValue: true
       - key: NEXT_PUBLIC_APP_URL
@@ -74,8 +84,18 @@ services:
         value: "12000"
       - key: INGEST_HTTP_TIMEOUT_MS
         value: "10000"
-      - key: INGEST_CRON_TIMEOUT_MS
-        value: "120000"
+      - key: INGEST_ENTITY_TIMEOUT_MS
+        value: "90000"
+      - key: INGEST_RECONCILE_DISCOVERY
+        value: "true"
+      - key: INGEST_UPSERT_CONCURRENCY
+        value: "4"
+      - key: JOB_STALE_AFTER_DAYS
+        value: "30"
+      - key: GEOAPIFY_API_KEY
+        sync: false
+      - key: GEOCODE_MAX_PER_PROCESS
+        value: "100"
       - key: CRON_SECRET
         sync: false
       - key: NEXT_PUBLIC_APP_URL
