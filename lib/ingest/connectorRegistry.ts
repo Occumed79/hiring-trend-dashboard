@@ -28,7 +28,7 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
 
   let atsProvider = entity.ats_provider || 'unknown';
   let boardId = entity.ats_board_id || null;
-  let careerPageUrl = entity.career_page_url || null;
+  let careerPageUrl = entity.career_page_url || knownCareerHint(entity.name) || null;
 
   if ((!careerPageUrl || atsProvider === 'unknown' || (DIRECT_CONNECTORS.has(atsProvider) && !boardId)) && entity.name) {
     detected = await resolveCompany(entity.name, careerPageUrl);
@@ -39,6 +39,16 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
     const ats = await detectATS(careerPageUrl, entity.name);
     atsProvider = ats.ats_provider;
     boardId = ats.ats_board_id;
+    detected = {
+      name: entity.name,
+      aliases: Array.isArray(entity.aliases) ? entity.aliases : [],
+      career_page_url: ats.matched_url || careerPageUrl,
+      ats_provider: ats.ats_provider,
+      ats_board_id: ats.ats_board_id,
+      confidence: ats.confidence,
+      notes: [`Known employer career site resolved${ats.ats_provider !== 'unknown' ? ` to ${ats.ats_provider}` : ''}.`],
+    };
+    careerPageUrl = detected.career_page_url;
   }
 
   const jobs: any[] = [];
@@ -79,4 +89,11 @@ async function fetchDirectAtsJobs(atsProvider: string, boardId: string) {
     case 'workday': return fetchWorkdayJobs(boardId);
     default: return [];
   }
+}
+
+function knownCareerHint(name: unknown) {
+  const normalized = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (/\b(?:v2x|vectrus)\b/.test(normalized)) return 'https://careers.gov2x.com';
+  if (/\bids international\b/.test(normalized)) return 'https://idsinternational.applytojob.com/apply';
+  return null;
 }
