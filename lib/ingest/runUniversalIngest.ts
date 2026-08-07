@@ -6,6 +6,7 @@ import { fetchGovernmentFallbackJobs } from './govFallback';
 import { fetchLangSearchJobs } from './langSearch';
 import { fetchJobApiJobs } from './jobApiAdapters';
 import { dedupeJobsAcrossSources, filterJobApiJobsForEntity, filterWebSearchJobsForEntity } from './jobIdentity';
+import { assessJobQuality, isAuthoritativeJob, isLegacyWeakSource } from './jobQuality';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 
@@ -27,7 +28,7 @@ export async function runUniversalIngest(entityId?: string | null, options: Inge
       const message = errorMessage(error);
       await logEntityIngestError(entity, message);
       results.push({ entity: entity.name, portal: entity.portal, total: 0, new: 0, closed: 0, duplicates_removed: 0,
-        off_target_rejected: 0, sources_used: [], sources_skipped: [], status: 'error', error: message });
+        off_target_rejected: 0, quality_rejected: 0, sources_used: [], sources_skipped: [], status: 'error', error: message });
     }
   }
 
@@ -45,12 +46,15 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
   const skipped: string[] = [];
   let rawDiscovered = 0;
   let offTargetRejected = 0;
+  let qualityRejected = 0;
 
   const primary = await fetchJobsForEntity(entity).catch((error) => ({
     jobs: [], used: [], skipped: [`primary connector (${errorMessage(error)})`], detected: null,
   }));
   rawDiscovered += primary.jobs.length;
-  items.push(...primary.jobs);
+  const primaryQuality = filterQuality(primary.jobs);
+  qualityRejected += primaryQuality.rejected;
+  items.push(...primaryQuality.jobs);
   used.push(...primary.used);
   skipped.push(...primary.skipped);
 
@@ -62,15 +66,17 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
     fetchGovernmentFallbackJobs(resolvedEntity).catch((error) => ({ jobs: [], used: [], skipped: [`government source (${errorMessage(error)})`] })),
   ]);
   rawDiscovered += portal.jobs.length + gov.jobs.length;
-  items.push(...portal.jobs, ...gov.jobs);
+  const baselineQuality = filterQuality([...portal.jobs, ...gov.jobs]);
+  qualityRejected += baselineQuality.rejected;
+  items.push(...baselineQuality.jobs);
   used.push(...portal.used, ...gov.used);
   skipped.push(...portal.skipped, ...gov.skipped);
 
   let deduped = dedupeJobsAcrossSources(items);
-  const authoritativeBeforeFallback = deduped.jobs.filter(job => isAuthoritativeSource(job.source)).length;
+  const authoritativeBeforeFallback = deduped.jobs.filter(isAuthoritativeJob).length;
 
   if (authoritativeBeforeFallback > 0) {
-    skipped.push(`discovery fallback skipped (${authoritativeBeforeFallback} authoritative job${authoritativeBeforeFallback === 1 ? '' : 's'} found)`);
+    skipped.push(`discovery fallback skipped (${authoritativeBeforeFallback} verified authoritative job${authoritativeBeforeFallback === 1 ? '' : 's'} found)`);
   } else {
     const shouldUseAdzuna = ['current_clients', 'prospects', 'private_companies', 'state_agencies', 'counties_and_cities'].includes(entity.portal);
     if (shouldUseAdzuna) {
@@ -78,7 +84,9 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
         .then(({ jobs }) => jobs.length ? { jobs, used: ['adzuna'], skipped: [] } : { jobs: [], used: [], skipped: ['adzuna (0 jobs returned or key missing)'] })
         .catch((error) => ({ jobs: [], used: [], skipped: [`adzuna (${errorMessage(error)})`] }));
       rawDiscovered += adzuna.jobs.length;
-      items.push(...adzuna.jobs);
+      const accepted = filterQuality(adzuna.jobs);
+      qualityRejected += accepted.rejected;
+      items.push(...accepted.jobs);
       used.push(...adzuna.used);
       skipped.push(...adzuna.skipped);
       deduped = dedupeJobsAcrossSources(items);
@@ -89,16 +97,18 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
     if (shouldRunSource(langSearchMode, deduped.jobs.length, langSearchMinimum)) {
       const langSearch = await fetchLangSearchJobs(resolvedEntity);
       rawDiscovered += langSearch.jobs.length;
-      const filtered = filterWebSearchJobsForEntity(langSearch.jobs, resolvedEntity);
-      offTargetRejected += filtered.rejected;
-      items.push(...filtered.jobs);
-      if (filtered.jobs.length) used.push(...langSearch.used);
+      const employerFiltered = filterWebSearchJobsForEntity(langSearch.jobs, resolvedEntity);
+      offTargetRejected += employerFiltered.rejected;
+      const accepted = filterQuality(employerFiltered.jobs);
+      qualityRejected += accepted.rejected;
+      items.push(...accepted.jobs);
+      if (accepted.jobs.length) used.push(...langSearch.used);
       skipped.push(...langSearch.skipped);
-      if (filtered.rejected) skipped.push(`langsearch (${filtered.rejected} off-target result${filtered.rejected === 1 ? '' : 's'} rejected)`);
-      if (langSearch.jobs.length && !filtered.jobs.length) skipped.push('langsearch (all job-detail results failed employer evidence)');
+      if (employerFiltered.rejected) skipped.push(`langsearch (${employerFiltered.rejected} off-target result${employerFiltered.rejected === 1 ? '' : 's'} rejected)`);
+      if (accepted.rejected) skipped.push(`langsearch (${accepted.rejected} low-quality/non-detail result${accepted.rejected === 1 ? '' : 's'} rejected)`);
       deduped = dedupeJobsAcrossSources(items);
     } else {
-      skipped.push(`langsearch skipped (${langSearchMode}; ${deduped.jobs.length} unique existing jobs)`);
+      skipped.push(`langsearch skipped (${langSearchMode}; ${deduped.jobs.length} verified existing jobs)`);
     }
 
     const jobApiMode = getSourceMode('JOB_API_MODE', 'fallback');
@@ -106,16 +116,18 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
     if (shouldRunSource(jobApiMode, deduped.jobs.length, jobApiMinimum)) {
       const jobApi = await fetchJobApiJobs(resolvedEntity);
       rawDiscovered += jobApi.jobs.length;
-      const filtered = filterJobApiJobsForEntity(jobApi.jobs, resolvedEntity);
-      offTargetRejected += filtered.rejected;
-      items.push(...filtered.jobs);
-      if (filtered.jobs.length) used.push(...jobApi.used);
+      const employerFiltered = filterJobApiJobsForEntity(jobApi.jobs, resolvedEntity);
+      offTargetRejected += employerFiltered.rejected;
+      const accepted = filterQuality(employerFiltered.jobs);
+      qualityRejected += accepted.rejected;
+      items.push(...accepted.jobs);
+      if (accepted.jobs.length) used.push(...jobApi.used);
       skipped.push(...jobApi.skipped);
-      if (filtered.rejected) skipped.push(`jobs api (${filtered.rejected} off-target result${filtered.rejected === 1 ? '' : 's'} rejected)`);
-      if (jobApi.jobs.length && !filtered.jobs.length) skipped.push('jobs api (all results failed employer evidence)');
+      if (employerFiltered.rejected) skipped.push(`jobs api (${employerFiltered.rejected} off-target result${employerFiltered.rejected === 1 ? '' : 's'} rejected)`);
+      if (accepted.rejected) skipped.push(`jobs api (${accepted.rejected} low-quality/non-detail result${accepted.rejected === 1 ? '' : 's'} rejected)`);
       deduped = dedupeJobsAcrossSources(items);
     } else {
-      skipped.push(`jobs api skipped (${jobApiMode}; ${deduped.jobs.length} unique existing jobs)`);
+      skipped.push(`jobs api skipped (${jobApiMode}; ${deduped.jobs.length} verified existing jobs)`);
     }
   }
 
@@ -125,13 +137,14 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
   const newCount = upsertResults.filter(Boolean).length;
 
   const duplicateClosures = await retireExactUrlDuplicates(entity.id);
-  const hasAuthoritative = uniqueItems.some(job => isAuthoritativeSource(job.source));
+  const hasAuthoritative = uniqueItems.some(isAuthoritativeJob);
+  const invalidClosures = await retireInvalidLegacyJobs(entity.id, hasAuthoritative);
   const reconcileDiscovery = options.reconcile === true || booleanEnv('INGEST_RECONCILE_DISCOVERY', true);
   const supersededClosures = hasAuthoritative && reconcileDiscovery
     ? await retireSupersededDiscoveryJobs(entity.id, runStartedAt)
     : 0;
   const staleClosures = await retireStaleJobs(entity.id, uniqueItems.length > 0);
-  const closedCount = duplicateClosures + supersededClosures + staleClosures;
+  const closedCount = duplicateClosures + invalidClosures + supersededClosures + staleClosures;
 
   const sourcesUsed = Array.from(new Set(used));
   const sourcesSkipped = Array.from(new Set(skipped));
@@ -150,9 +163,11 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
     raw_discovered: rawDiscovered,
     new: newCount,
     closed: closedCount,
+    invalid_legacy_closed: invalidClosures,
     duplicates_removed: items.length - uniqueItems.length + duplicateClosures,
     superseded_discovery_closed: supersededClosures,
     off_target_rejected: offTargetRejected,
+    quality_rejected: qualityRejected,
     authoritative: hasAuthoritative,
     sources_used: sourcesUsed,
     sources_skipped: sourcesSkipped,
@@ -161,28 +176,48 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
   };
 }
 
-function isAuthoritativeSource(source: unknown) {
-  const value = String(source || '').toLowerCase();
-  if (!value) return false;
-  if (value.startsWith('ats:')) return true;
-  return ['greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'ashby', 'recruitee', 'workday', 'usajobs', 'career_page'].includes(value)
-    || value.startsWith('portal:') || value.startsWith('gov:');
+function filterQuality(rows: any[]) {
+  const jobs: any[] = [];
+  let rejected = 0;
+  for (const row of rows) {
+    if (assessJobQuality(row).ok) jobs.push(row);
+    else rejected++;
+  }
+  return { jobs, rejected };
+}
+
+async function retireInvalidLegacyJobs(entityId: string, hasAuthoritative: boolean) {
+  const rows = await query(
+    `SELECT id, external_id, source, title, location, city, state, country, raw_data
+     FROM jobs WHERE entity_id = $1 AND is_active = true`,
+    [entityId],
+  );
+  const invalidIds = rows
+    .filter((row: any) => !assessJobQuality(row).ok || (hasAuthoritative && isLegacyWeakSource(row.source)))
+    .map((row: any) => row.id);
+  if (!invalidIds.length) return 0;
+
+  const closed = await query(
+    `WITH closed AS (
+       UPDATE jobs SET is_active = false, closed_at = COALESCE(closed_at, NOW()), updated_at = NOW()
+       WHERE entity_id = $1 AND is_active = true AND id = ANY($2::uuid[])
+       RETURNING id
+     ) SELECT COUNT(*) AS cnt FROM closed`,
+    [entityId, invalidIds],
+  );
+  return Number(closed[0]?.cnt || 0);
 }
 
 async function retireSupersededDiscoveryJobs(entityId: string, runStartedAt: string) {
   const rows = await query(
     `WITH closed AS (
        UPDATE jobs
-       SET is_active = false,
-           closed_at = COALESCE(closed_at, NOW()),
-           updated_at = NOW()
-       WHERE entity_id = $1
-         AND is_active = true
-         AND updated_at < $2::timestamptz
-         AND (source = 'adzuna' OR source = 'career_page' OR source LIKE 'web:%' OR source LIKE 'jobapi:%')
+       SET is_active = false, closed_at = COALESCE(closed_at, NOW()), updated_at = NOW()
+       WHERE entity_id = $1 AND is_active = true AND updated_at < $2::timestamptz
+         AND (source = 'adzuna' OR source = 'career_page' OR source LIKE 'web:%' OR source LIKE 'jobapi:%'
+              OR source IN ('serper','linkedin','monster','talent','simplyhired','indeed','glassdoor','ziprecruiter'))
        RETURNING id
-     )
-     SELECT COUNT(*) AS cnt FROM closed`,
+     ) SELECT COUNT(*) AS cnt FROM closed`,
     [entityId, runStartedAt],
   );
   return Number(rows[0]?.cnt || 0);
@@ -263,12 +298,13 @@ function booleanEnv(name: string, fallback: boolean) {
 
 function mergeDetectedEntity(entity: any, detected: any) {
   if (!detected) return entity;
+  const replace = detected.replace_existing === true;
   return {
     ...entity,
     aliases: Array.from(new Set([...(entity.aliases || []), ...(detected.aliases || [])])),
-    career_page_url: detected.career_page_url || entity.career_page_url || null,
-    ats_provider: entity.ats_provider && entity.ats_provider !== 'unknown' ? entity.ats_provider : detected.ats_provider || 'unknown',
-    ats_board_id: entity.ats_board_id || detected.ats_board_id || null,
+    career_page_url: replace ? (detected.career_page_url || null) : (detected.career_page_url || entity.career_page_url || null),
+    ats_provider: replace ? (detected.ats_provider || 'unknown') : (entity.ats_provider && entity.ats_provider !== 'unknown' ? entity.ats_provider : detected.ats_provider || 'unknown'),
+    ats_board_id: replace ? (detected.ats_board_id || null) : (entity.ats_board_id || detected.ats_board_id || null),
   };
 }
 
@@ -282,10 +318,15 @@ async function logEntityIngestError(entity: any, message: string) {
 
 async function saveDetectedMetadata(entity: any, detected: any) {
   const aliases = Array.from(new Set([...(entity.aliases || []), ...(detected.aliases || [])]));
-  const provider = entity.ats_provider && entity.ats_provider !== 'unknown' ? entity.ats_provider : detected.ats_provider || 'unknown';
+  const replace = detected.replace_existing === true;
+  const provider = replace
+    ? (detected.ats_provider || 'unknown')
+    : (entity.ats_provider && entity.ats_provider !== 'unknown' ? entity.ats_provider : detected.ats_provider || 'unknown');
+  const careerUrl = replace ? (detected.career_page_url || null) : (detected.career_page_url || entity.career_page_url || null);
+  const boardId = replace ? (detected.ats_board_id || null) : (entity.ats_board_id || detected.ats_board_id || null);
+
   await query(
-    `UPDATE entities SET career_page_url = COALESCE($2, career_page_url), ats_provider = $3,
-       ats_board_id = COALESCE($4, ats_board_id), aliases = $5, updated_at = NOW() WHERE id = $1`,
-    [entity.id, detected.career_page_url || entity.career_page_url || null, provider, entity.ats_board_id || detected.ats_board_id || null, aliases]
+    `UPDATE entities SET career_page_url = $2, ats_provider = $3, ats_board_id = $4, aliases = $5, updated_at = NOW() WHERE id = $1`,
+    [entity.id, careerUrl, provider, boardId, aliases]
   );
 }
