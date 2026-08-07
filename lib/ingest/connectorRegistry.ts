@@ -8,7 +8,6 @@ import {
   fetchRecruiteeJobs,
   fetchWorkdayJobs,
   fetchHostedAtsJobs,
-  HOSTED_ATS_PROVIDERS,
   STRUCTURED_ATS_PROVIDERS,
 } from './expandedAts';
 import { detectATS, resolveCompany, type CompanyResolution } from './companyResolver';
@@ -20,9 +19,7 @@ interface ConnectorResult {
   detected: CompanyResolution | null;
 }
 
-const DIRECT_CONNECTORS = new Set([
-  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', ...STRUCTURED_ATS_PROVIDERS,
-]);
+const DIRECT_CONNECTORS = new Set(['greenhouse', 'lever', 'smartrecruiters', 'bamboohr', ...STRUCTURED_ATS_PROVIDERS]);
 
 export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> {
   const used: string[] = [];
@@ -53,15 +50,12 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
     else skipped.push(`${atsProvider} (0 jobs returned)`);
   }
 
-  if (!jobs.length && HOSTED_ATS_PROVIDERS.has(atsProvider) && careerPageUrl) {
+  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && !DIRECT_CONNECTORS.has(atsProvider);
+  if (!jobs.length && recognizedHostedProvider && careerPageUrl) {
     const hostedJobs = await fetchHostedAtsJobs(atsProvider, careerPageUrl, entity.name);
     jobs.push(...hostedJobs);
     if (hostedJobs.length) used.push(`ats:${atsProvider}`);
     else skipped.push(`${atsProvider} hosted connector (0 parseable jobs)`);
-  }
-
-  if (!jobs.length && atsProvider && atsProvider !== 'unknown' && !DIRECT_CONNECTORS.has(atsProvider) && !HOSTED_ATS_PROVIDERS.has(atsProvider)) {
-    skipped.push(`${atsProvider} (recognized but no dedicated public connector path)`);
   }
 
   if (careerPageUrl && jobs.length === 0) {
