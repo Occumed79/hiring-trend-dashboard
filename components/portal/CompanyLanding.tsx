@@ -5,6 +5,52 @@ import WorldMap from '@/components/map/WorldMap';
 import USAMap from '@/components/map/USAMap';
 import CompanyRegistry from './CompanyRegistry';
 
+type PortalCopy = {
+  singular: string;
+  plural: string;
+  action: string;
+  description: string;
+};
+
+const PORTAL_COPY: Record<string, PortalCopy> = {
+  current_clients: {
+    singular: 'Client',
+    plural: 'Clients',
+    action: 'Track Client',
+    description: 'Search or add any client and track hiring activity over time.',
+  },
+  prospects: {
+    singular: 'Prospect',
+    plural: 'Prospects',
+    action: 'Track Prospect',
+    description: 'Search or add any prospect and monitor hiring signals over time.',
+  },
+  private_companies: {
+    singular: 'Company',
+    plural: 'Companies',
+    action: 'Track Company',
+    description: 'Search or add any company and track hiring activity over time.',
+  },
+  federal_agencies: {
+    singular: 'Federal Agency',
+    plural: 'Federal Agencies',
+    action: 'Track Agency',
+    description: 'Search or add a federal agency and monitor hiring activity over time.',
+  },
+  state_agencies: {
+    singular: 'State Agency',
+    plural: 'State Agencies',
+    action: 'Track Agency',
+    description: 'Search or add a state agency and monitor hiring activity over time.',
+  },
+  counties_and_cities: {
+    singular: 'Municipality',
+    plural: 'Municipalities',
+    action: 'Track Municipality',
+    description: 'Search or add a county or city and monitor local hiring activity over time.',
+  },
+};
+
 export default function CompanyLanding({ portal, entities, loading, error, onSelectEntity, onAddEntity }: {
   portal: Portal;
   entities: any[];
@@ -16,6 +62,7 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
   const [metrics, setMetrics] = useState<any>(null);
   const [metricsError, setMetricsError] = useState('');
   const [search, setSearch] = useState('');
+  const copy = PORTAL_COPY[portal.id] ?? PORTAL_COPY.private_companies;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -41,8 +88,8 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
     : entities;
 
   const cards = [
-    ['Tracked Companies', metrics?.total_entities ?? entities.length],
-    ['Companies Hiring', metrics?.active_hiring ?? 0],
+    [`Tracked ${copy.plural}`, metrics?.total_entities ?? entities.length],
+    [`${copy.plural} Hiring`, metrics?.active_hiring ?? 0],
     ['Open Roles', metrics?.open_roles ?? 0],
     ['New This Week', metrics?.new_this_week ?? 0],
   ];
@@ -60,13 +107,13 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
                 {loading ? 'Loading…' : `${entities.length} tracked`}
               </span>
             </div>
-            <p className="text-slate-400 text-[13px] lg:text-sm leading-relaxed max-w-2xl">Search or add any company and track hiring activity over time.</p>
+            <p className="text-slate-400 text-[13px] lg:text-sm leading-relaxed max-w-2xl">{copy.description}</p>
           </div>
           <button
             onClick={onAddEntity}
             className="px-5 py-2.5 rounded-xl border border-blue-300/40 bg-blue-500/20 text-blue-50 text-sm font-semibold hover:bg-blue-400/30 hover:border-blue-300/60 transition-all luminous-button shadow-[0_10px_30px_rgba(37,99,235,0.12)]"
           >
-            Track Company
+            {copy.action}
           </button>
         </div>
 
@@ -79,7 +126,7 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search tracked companies…"
+              placeholder={`Search tracked ${copy.plural.toLowerCase()}…`}
               className="w-full rounded-2xl border border-white/10 bg-white/[0.055] pl-11 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-blue-300/50 focus:bg-white/[0.075] transition-all"
             />
           </div>
@@ -115,7 +162,14 @@ export default function CompanyLanding({ portal, entities, loading, error, onSel
           }
         </div>
         <div className="min-w-0 h-full">
-          <CompanyRegistry entities={filtered} loading={loading} onSelect={onSelectEntity} onAdd={onAddEntity} />
+          <CompanyRegistry
+            entities={filtered}
+            loading={loading}
+            onSelect={onSelectEntity}
+            onAdd={onAddEntity}
+            entitySingular={copy.singular}
+            entityPlural={copy.plural}
+          />
         </div>
       </section>
     </div>
