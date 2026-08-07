@@ -1,14 +1,13 @@
 import { query } from '@/db/client';
+import { getVerifiedActiveJobs, hasRealMappedLocation, isNewThisWeek } from '@/lib/verifiedJobs';
 
 export async function getEntityMetrics(entityId: string) {
-  const d7 = new Date(Date.now() - 7 * 86400000).toISOString();
   const d30 = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
   const d60 = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
   const d90 = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
 
-  const [current, snap7, snap30, snap60, snap90, history] = await Promise.all([
-    query(`SELECT COUNT(*) as total FROM jobs WHERE entity_id = $1 AND is_active = true`, [entityId]),
-    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true AND (posted_at >= $2 OR created_at >= $2)`, [entityId, d7]),
+  const [jobs, snap30, snap60, snap90, history] = await Promise.all([
+    getVerifiedActiveJobs(entityId),
     getSnapshotAtOrBefore(entityId, d30),
     getSnapshotAtOrBefore(entityId, d60),
     getSnapshotAtOrBefore(entityId, d90),
@@ -18,8 +17,8 @@ export async function getEntityMetrics(entityId: string) {
            ORDER BY snapshot_date ASC`, [entityId]),
   ]);
 
-  const totalNow = Number(current[0]?.total || 0);
-  const newThisWeek = Number(snap7[0]?.cnt || 0);
+  const totalNow = jobs.length;
+  const newThisWeek = jobs.filter((job) => isNewThisWeek(job)).length;
   const total30 = Number(snap30[0]?.total_active || 0);
   const total60 = Number(snap60[0]?.total_active || 0);
   const total90 = Number(snap90[0]?.total_active || 0);
@@ -37,6 +36,7 @@ export async function getEntityMetrics(entityId: string) {
   return {
     totalActive: totalNow,
     newThisWeek,
+    mappedJobs: jobs.filter(hasRealMappedLocation).length,
     trend30: total30 ? Math.round(((totalNow - total30) / total30) * 100) : 0,
     trend60: total60 ? Math.round(((totalNow - total60) / total60) * 100) : 0,
     trend90: total90 ? Math.round(((totalNow - total90) / total90) * 100) : 0,
@@ -45,28 +45,27 @@ export async function getEntityMetrics(entityId: string) {
 }
 
 export async function getEntityRoleBreakdown(entityId: string) {
-  const rows = await query(
-    `SELECT role_category, COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true GROUP BY role_category`,
-    [entityId]
-  );
+  const jobs = await getVerifiedActiveJobs(entityId);
   const result: Record<string, number> = {};
-  for (const row of rows) result[row.role_category] = Number(row.cnt);
+  for (const job of jobs) {
+    const role = String(job.role_category || 'other');
+    result[role] = (result[role] || 0) + 1;
+  }
   return result;
 }
 
 export async function getEntityMapData(entityId: string) {
-  const rows = await query(
-    `SELECT city, state, country, lat, lng, COUNT(*) as cnt
-     FROM jobs WHERE entity_id = $1 AND is_active = true AND lat IS NOT NULL AND lng IS NOT NULL
-     GROUP BY city, state, country, lat, lng`,
-    [entityId]
-  );
-  return rows.map((r: any) => ({ city: r.city, state: r.state, country: r.country, lat: Number(r.lat), lng: Number(r.lng), count: Number(r.cnt) }));
+  const jobs = (await getVerifiedActiveJobs(entityId)).filter(hasRealMappedLocation);
+  const grouped = new Map<string, any>();
+  for (const job of jobs) {
+    const key = [job.city || '', job.state || '', job.country || '', Number(job.lat).toFixed(5), Number(job.lng).toFixed(5)].join('|');
+    const current = grouped.get(key) || { city: job.city, state: job.state, country: job.country, lat: Number(job.lat), lng: Number(job.lng), count: 0 };
+    current.count += 1;
+    grouped.set(key, current);
+  }
+  return Array.from(grouped.values());
 }
 
 async function getSnapshotAtOrBefore(entityId: string, targetDate: string) {
-  return query(
-    `SELECT total_active FROM hiring_snapshots WHERE entity_id = $1 AND snapshot_date <= $2 ORDER BY snapshot_date DESC LIMIT 1`,
-    [entityId, targetDate]
-  );
+  return query(`SELECT total_active FROM hiring_snapshots WHERE entity_id = $1 AND snapshot_date <= $2 ORDER BY snapshot_date DESC LIMIT 1`, [entityId, targetDate]);
 }
