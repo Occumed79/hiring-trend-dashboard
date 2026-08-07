@@ -4,9 +4,12 @@ import { inferPoint } from '@/lib/geo/locationLookup';
 import { extractLocationCandidates } from '@/lib/geo/locationSignals';
 import { geocodeLocationCandidates } from '@/lib/geo/geocode';
 import { normalizeApplyUrl } from './jobIdentity';
+import { assessJobQuality } from './jobQuality';
 
 export async function upsertIngestedJob(entity: any, item: any): Promise<boolean> {
   if (!item.external_id || !item.source || !item.title) return false;
+  const quality = assessJobQuality(item);
+  if (!quality.ok) return false;
 
   const externalId = String(item.external_id).trim();
   const source = String(item.source).trim();
@@ -47,6 +50,7 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
     normalized_location_quality: locationQuality,
     normalized_fallback_point: inferredIsFallback ? inferred : null,
     normalized_geocoded: !!geocoded,
+    normalized_job_quality: 'accepted',
   };
 
   const roleCategory = classifyRole(title, item.location);

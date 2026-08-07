@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
+import { assessJobQuality } from '@/lib/ingest/jobQuality';
 
 const VALID_ROLE_CATEGORIES = new Set(['security', 'logistics', 'medical', 'admin', 'aviation', 'engineering', 'remote', 'overseas', 'other']);
 
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     let sql = `
       SELECT id, title, department, role_category, location, city, state, country,
-             source, external_id, posted_at, created_at, updated_at, is_active,
+             source, external_id, posted_at, created_at, updated_at, is_active, raw_data,
              COALESCE(raw_data->>'normalized_apply_url', raw_data->>'url', raw_data->>'job_apply_link', raw_data->>'job_url') AS url,
              raw_data->>'careerPageUrl' AS career_page_url
       FROM jobs
@@ -34,11 +35,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sql += ` AND source = $${args.length}`;
     }
 
-    args.push(limit);
+    const fetchLimit = Math.min(Math.max(limit * 4, 500), 2000);
+    args.push(fetchLimit);
     sql += ` ORDER BY COALESCE(posted_at, created_at) DESC NULLS LAST, title ASC LIMIT $${args.length}`;
 
     const rows = await query(sql, args);
-    return NextResponse.json(rows);
+    const verified = rows
+      .filter((row: any) => assessJobQuality(row).ok)
+      .slice(0, limit)
+      .map(({ raw_data, ...row }: any) => row);
+    return NextResponse.json(verified);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error';
     return NextResponse.json({ error: message }, { status: 500 });
