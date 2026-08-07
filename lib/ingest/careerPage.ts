@@ -1,13 +1,15 @@
 import { assessJobQuality, isGenericNavigationTitle, looksLikeJobDetailUrl } from './jobQuality';
+import { crawlCareerListingPages } from './careerPagination';
 
 export async function fetchCareerPageJobs(careerPageUrl: string, companyName: string) {
-  const html = await fetchCareerHtml(careerPageUrl);
-  if (!html) return [];
+  const pages = await crawlCareerListingPages(careerPageUrl, fetchCareerHtml);
+  if (!pages.length) return [];
 
-  const linkedJobs = extractLinkedJobs(html, careerPageUrl);
-  const detailLimit = getPositiveIntegerEnv('CAREER_DETAIL_ENRICH_LIMIT', 100);
+  const linkedJobs = dedupeParsedJobs(pages.flatMap(page => extractLinkedJobs(page.html, page.url)));
+  const jsonLdJobs = dedupeParsedJobs(pages.flatMap(page => extractJsonLdJobs(page.html, page.url)));
+  const detailLimit = getPositiveIntegerEnv('CAREER_DETAIL_ENRICH_LIMIT', 150);
   const enrichedLinkedJobs = await enrichLinkedJobsFromDetailPages(linkedJobs, detailLimit);
-  const parsedJobs = [...extractJsonLdJobs(html, careerPageUrl), ...enrichedLinkedJobs];
+  const parsedJobs = dedupeParsedJobs([...jsonLdJobs, ...enrichedLinkedJobs]);
 
   const seen = new Set<string>();
   return parsedJobs
@@ -29,6 +31,8 @@ export async function fetchCareerPageJobs(careerPageUrl: string, companyName: st
       raw_data: {
         companyName,
         careerPageUrl,
+        listing_page_url: job.listing_page_url || careerPageUrl,
+        pagination_pages_scanned: pages.length,
         url: job.url,
         normalized_apply_url: job.url,
         parser: job.parser,
@@ -56,6 +60,7 @@ interface ParsedJob {
   posted_at?: string | null;
   url: string;
   parser: string;
+  listing_page_url?: string;
   detail_enriched?: boolean;
   detail_location_source?: string | null;
   detail_location_candidates?: string[];
@@ -70,9 +75,16 @@ async function enrichLinkedJobsFromDetailPages(jobs: ParsedJob[], limit: number)
     enriched.push(...await Promise.all(queue.slice(i, i + concurrency).map(enrichOneLinkedJob)));
   }
 
-  // Do not persist unenriched overflow from generic HTML. A row beyond the enrichment
-  // budget must wait for a later run rather than enter the DB without verification.
-  return enriched;
+  // Strong job-detail URLs beyond the enrichment budget are still valid openings.
+  // Keep them rather than silently undercounting a paginated career site; a later
+  // run can enrich their location/metadata if the detail budget is increased.
+  const deferred = jobs.slice(limit).map(job => ({
+    ...job,
+    parser: `${job.parser}+detail_deferred`,
+    detail_enriched: false,
+  }));
+
+  return [...enriched, ...deferred];
 }
 
 async function enrichOneLinkedJob(job: ParsedJob): Promise<ParsedJob> {
@@ -157,6 +169,7 @@ function extractJsonLdJobs(html: string, baseUrl: string): ParsedJob[] {
           posted_at: node.datePosted || node.validThrough || null,
           url,
           parser: 'json_ld',
+          listing_page_url: baseUrl,
         });
       }
     } catch {
@@ -185,10 +198,11 @@ function extractLinkedJobs(html: string, baseUrl: string): ParsedJob[] {
       country: detectCountryFromLocation(text),
       url: absolute,
       parser: 'strong_job_detail_link',
+      listing_page_url: baseUrl,
     });
   }
 
-  return results.slice(0, 500);
+  return results.slice(0, 1000);
 }
 
 function extractLocationCandidatesFromDetailHtml(html: string): string[] {
@@ -279,6 +293,14 @@ function detectCountryFromLocation(value?: string | null) {
 }
 function cleanLocationCandidate(value: string) {
   return value.replace(/\s+/g, ' ').replace(/^(location|work location|job location|primary location|office location)\s*[:\-–—]\s*/i, '').replace(/[.;,\s]+$/g, '').trim();
+}
+function dedupeParsedJobs(jobs: ParsedJob[]) {
+  const byKey = new Map<string, ParsedJob>();
+  for (const job of jobs) {
+    const key = `${normalizeTitle(job.title)}|${job.url.toLowerCase()}`;
+    if (!byKey.has(key)) byKey.set(key, job);
+  }
+  return Array.from(byKey.values());
 }
 function getPositiveIntegerEnv(name: string, fallback: number) { const parsed = Number(process.env[name]); return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback; }
 function hashString(value: string): string { let hash = 5381; for (let i = 0; i < value.length; i++) { hash = ((hash << 5) + hash) + value.charCodeAt(i); hash &= hash; } return `career-${Math.abs(hash)}`; }
