@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const MAP_FILTERS = [
   { id: 'all', label: 'All Jobs' },
@@ -26,6 +26,8 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [MapComponents, setMapComponents] = useState<any>(null);
+  const mapRef = useRef<any>(null);
+  const mapShellRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -46,6 +48,19 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
     });
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    if (!mapShellRef.current || !MapComponents || typeof ResizeObserver === 'undefined') return;
+
+    const invalidate = () => {
+      window.requestAnimationFrame(() => mapRef.current?.invalidateSize?.({ animate: false }));
+    };
+    const observer = new ResizeObserver(invalidate);
+    observer.observe(mapShellRef.current);
+    invalidate();
+
+    return () => observer.disconnect();
+  }, [MapComponents]);
 
   useEffect(() => {
     if (!entityId && !portalId) return;
@@ -92,34 +107,37 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
   const totalJobs = mapMeta?.total_jobs ?? 0;
 
   return (
-    <div className="map-glass-card flex flex-col gap-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-100 tracking-wide">World Hiring Map</h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">
+    <div className="map-glass-card h-full min-h-[520px] flex flex-col gap-3.5">
+      <div className="flex items-start justify-between flex-wrap gap-3 shrink-0">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold text-slate-100 tracking-tight">World Hiring Map</h3>
+          <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
             {mapData.length} locations tracked
             {mapMeta ? ` · ${realMapped}/${totalJobs} real job locations` : ''}
             {mapMeta?.fallback_jobs ? ` · ${mapMeta.fallback_jobs} fallback only` : ''}
             {mapMeta?.unmapped_jobs ? ` · ${mapMeta.unmapped_jobs} unmapped` : ''}
           </p>
         </div>
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap justify-end">
           {MAP_FILTERS.map(f => (
-            <button key={f.id} onClick={() => setFilter(f.id)}
-              className={`text-[10px] px-2.5 py-1 rounded-full border transition-all ${
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`text-[11px] px-2.5 py-1.5 rounded-full border transition-all ${
                 filter === f.id
-                  ? 'bg-blue-500/25 border-blue-400/50 text-blue-300'
+                  ? 'bg-blue-500/25 border-blue-400/50 text-blue-200'
                   : 'bg-white/5 border-white/10 text-slate-500 hover:text-slate-300 hover:border-white/20'
-              }`}>
+              }`}
+            >
               {f.label}
             </button>
           ))}
         </div>
       </div>
 
-      {error && <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100">{error}</div>}
+      {error && <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100 shrink-0">{error}</div>}
 
-      <div className="relative map-container">
+      <div ref={mapShellRef} className="relative map-container flex-1" style={{ minHeight: 420 }}>
         {loading && (
           <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
             <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -129,6 +147,7 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
           <div className="w-full h-full bg-[#080d1a] rounded-xl animate-pulse" />
         ) : (
           <MapComponents.MapContainer
+            ref={mapRef}
             center={[20, 0]}
             zoom={2}
             style={{ height: '100%', width: '100%', borderRadius: '12px', background: '#080d1a' }}
@@ -170,7 +189,7 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
         )}
       </div>
 
-      <div className="flex items-center gap-4 text-[10px] text-slate-500 flex-wrap">
+      <div className="flex items-center gap-x-4 gap-y-2 text-[10px] text-slate-500 flex-wrap shrink-0">
         {[["#ef4444",'High (50+)'],["#f97316",'Medium (20–50)'],["#3b82f6",'Active (5–20)'],["#64748b",'Low/Fallback']].map(([c,l]) => (
           <div key={l} className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full" style={{ background: c }} />

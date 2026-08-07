@@ -12,42 +12,41 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside className={`h-screen flex flex-col glass border-r border-white/8 transition-all duration-300 shrink-0 ${collapsed ? 'w-[60px]' : 'w-[200px]'}`}>
-      {/* Logo */}
-      <div className="px-4 py-5 border-b border-white/7 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-xl shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
+    <aside className={`h-screen flex flex-col glass border-r border-white/10 transition-all duration-300 shrink-0 ${collapsed ? 'w-[68px]' : 'w-[220px]'}`}>
+      <div className="px-4 py-[18px] border-b border-white/10 flex items-center gap-3.5 min-h-[74px]">
+        <div
+          className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
           style={{
-            background: 'linear-gradient(135deg, rgba(59,130,246,0.8) 0%, rgba(99,102,241,0.8) 100%)',
-            boxShadow: '0 0 16px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.2)',
-          }}>
+            background: 'linear-gradient(135deg, rgba(59,130,246,0.88) 0%, rgba(79,70,229,0.82) 100%)',
+            boxShadow: '0 0 18px rgba(59,130,246,0.3), inset 0 1px 0 rgba(255,255,255,0.24)',
+          }}
+        >
           HTD
         </div>
         {!collapsed && (
-          <div>
-            <p className="text-[11px] font-semibold text-slate-100 leading-tight">Hiring Trend</p>
-            <p className="text-[10px] text-slate-500">Dashboard</p>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold text-slate-100 leading-tight tracking-tight">Hiring Trend</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Dashboard</p>
           </div>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto scrollbar-glass">
+      <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto scrollbar-glass">
         {portals.map(portal => (
           <button
             key={portal.id}
             onClick={() => onSelect(portal)}
             title={collapsed ? portal.label : undefined}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left nav-pill ${
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${
               activePortal.id === portal.id ? 'active' : ''
             }`}
           >
-            {!collapsed && (
-              <span className="text-[12px] font-medium text-inherit truncate">
+            {!collapsed ? (
+              <span className="text-[13px] font-medium text-inherit truncate leading-none">
                 {portal.label}
               </span>
-            )}
-            {collapsed && (
-              <span className="text-[11px] font-semibold text-inherit w-full text-center">
+            ) : (
+              <span className="text-[11px] font-semibold text-inherit w-full text-center tracking-wide">
                 {portal.label.slice(0, 2).toUpperCase()}
               </span>
             )}
@@ -55,11 +54,11 @@ export default function Sidebar({
         ))}
       </nav>
 
-      {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="px-4 py-3.5 border-t border-white/7 text-slate-600 hover:text-slate-300 text-[10px] flex items-center gap-2 transition-colors">
-        <span className="text-slate-500">{collapsed ? '›' : '‹'}</span>
+        className="px-4 py-4 border-t border-white/10 text-slate-500 hover:text-slate-200 text-[11px] flex items-center gap-2 transition-colors min-h-[48px]"
+      >
+        <span className="text-slate-400 text-sm leading-none">{collapsed ? '›' : '‹'}</span>
         {!collapsed && <span>Collapse</span>}
       </button>
     </aside>
