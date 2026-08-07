@@ -1,19 +1,17 @@
 import { query } from '@/db/client';
 
 export async function getEntityMetrics(entityId: string) {
-  // Today's snapshot
-  const today = new Date().toISOString().split('T')[0];
-  const d7 = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  const d7 = new Date(Date.now() - 7 * 86400000).toISOString();
   const d30 = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
   const d60 = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
   const d90 = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
 
   const [current, snap7, snap30, snap60, snap90] = await Promise.all([
     query(`SELECT COUNT(*) as total FROM jobs WHERE entity_id = $1 AND is_active = true`, [entityId]),
-    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND posted_at >= $2`, [entityId, d7]),
-    query(`SELECT total_active FROM hiring_snapshots WHERE entity_id = $1 AND snapshot_date = $2`, [entityId, d30]),
-    query(`SELECT total_active FROM hiring_snapshots WHERE entity_id = $1 AND snapshot_date = $2`, [entityId, d60]),
-    query(`SELECT total_active FROM hiring_snapshots WHERE entity_id = $1 AND snapshot_date = $2`, [entityId, d90]),
+    query(`SELECT COUNT(*) as cnt FROM jobs WHERE entity_id = $1 AND is_active = true AND (posted_at >= $2 OR created_at >= $2)`, [entityId, d7]),
+    getSnapshotAtOrBefore(entityId, d30),
+    getSnapshotAtOrBefore(entityId, d60),
+    getSnapshotAtOrBefore(entityId, d90),
   ]);
 
   const totalNow = Number(current[0]?.total || 0);
@@ -33,8 +31,8 @@ export async function getEntityMetrics(entityId: string) {
 
 export async function getEntityRoleBreakdown(entityId: string) {
   const rows = await query(
-    `SELECT role_category, COUNT(*) as cnt 
-     FROM jobs WHERE entity_id = $1 AND is_active = true 
+    `SELECT role_category, COUNT(*) as cnt
+     FROM jobs WHERE entity_id = $1 AND is_active = true
      GROUP BY role_category`,
     [entityId]
   );
@@ -61,4 +59,15 @@ export async function getEntityMapData(entityId: string) {
     lng: Number(r.lng),
     count: Number(r.cnt),
   }));
+}
+
+async function getSnapshotAtOrBefore(entityId: string, targetDate: string) {
+  return query(
+    `SELECT total_active
+     FROM hiring_snapshots
+     WHERE entity_id = $1 AND snapshot_date <= $2
+     ORDER BY snapshot_date DESC
+     LIMIT 1`,
+    [entityId, targetDate]
+  );
 }
