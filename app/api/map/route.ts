@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { inferPoint } from '@/lib/geo/locationLookup';
 import { extractLocationCandidates } from '@/lib/geo/locationSignals';
+import { assessJobQuality } from '@/lib/ingest/jobQuality';
 
 const VALID_PORTALS = new Set(['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities']);
 const VALID_ROLE_CATEGORIES = new Set(['security', 'logistics', 'medical', 'admin', 'aviation', 'engineering', 'remote', 'overseas', 'other']);
@@ -19,12 +20,8 @@ export async function GET(req: NextRequest) {
     const includeMeta = searchParams.get('include_meta') === 'true';
     const includeFallback = searchParams.get('include_fallback') !== 'false';
 
-    if (portal && !VALID_PORTALS.has(portal)) {
-      return NextResponse.json({ error: 'Invalid portal' }, { status: 400 });
-    }
-    if (roleCategory && !VALID_ROLE_CATEGORIES.has(roleCategory)) {
-      return NextResponse.json({ error: 'Invalid role category' }, { status: 400 });
-    }
+    if (portal && !VALID_PORTALS.has(portal)) return NextResponse.json({ error: 'Invalid portal' }, { status: 400 });
+    if (roleCategory && !VALID_ROLE_CATEGORIES.has(roleCategory)) return NextResponse.json({ error: 'Invalid role category' }, { status: 400 });
 
     let sql = `
       SELECT j.id, j.title, j.source, j.city, j.state, j.country, j.location, j.lat, j.lng, j.role_category,
@@ -35,39 +32,16 @@ export async function GET(req: NextRequest) {
       WHERE j.is_active = true AND e.is_active = true
     `;
     const params: any[] = [];
-
-    if (portal) {
-      params.push(portal);
-      sql += ` AND e.portal = $${params.length}`;
-    }
-    if (entityId) {
-      params.push(entityId);
-      sql += ` AND j.entity_id = $${params.length}`;
-    }
-    if (country) {
-      params.push(country.toUpperCase());
-      sql += ` AND UPPER(j.country) = $${params.length}`;
-    }
-    if (roleCategory) {
-      params.push(roleCategory);
-      sql += ` AND j.role_category = $${params.length}`;
-    }
-    if (newOnly) {
-      const d7 = new Date(Date.now() - 7 * 86400000).toISOString();
-      params.push(d7);
-      sql += ` AND COALESCE(j.posted_at, j.created_at) >= $${params.length}`;
-    }
-    if (overseasOnly) {
-      sql += ` AND j.is_overseas = true`;
-    }
-    if (federalOnly) {
-      params.push('federal_agencies');
-      sql += ` AND e.portal = $${params.length}`;
-    }
-
+    if (portal) { params.push(portal); sql += ` AND e.portal = $${params.length}`; }
+    if (entityId) { params.push(entityId); sql += ` AND j.entity_id = $${params.length}`; }
+    if (country) { params.push(country.toUpperCase()); sql += ` AND UPPER(j.country) = $${params.length}`; }
+    if (roleCategory) { params.push(roleCategory); sql += ` AND j.role_category = $${params.length}`; }
+    if (newOnly) { params.push(new Date(Date.now() - 7 * 86400000).toISOString()); sql += ` AND COALESCE(j.posted_at, j.created_at) >= $${params.length}`; }
+    if (overseasOnly) sql += ` AND j.is_overseas = true`;
+    if (federalOnly) { params.push('federal_agencies'); sql += ` AND e.portal = $${params.length}`; }
     sql += ` LIMIT 5000`;
 
-    const rows = await query(sql, params);
+    const rows = (await query(sql, params)).filter((row: any) => assessJobQuality(row).ok);
     const buckets = new Map<string, any>();
     let unmappedJobs = 0;
     let realMappedJobs = 0;
@@ -83,61 +57,26 @@ export async function GET(req: NextRequest) {
       const sourceLng = storedWasFallback ? null : toFiniteNumber(row.lng);
       const lat = sourceLat ?? toFiniteNumber(inferred?.lat);
       const lng = sourceLng ?? toFiniteNumber(inferred?.lng);
-      if (lat === null || lng === null) {
-        unmappedJobs += 1;
-        continue;
-      }
+      if (lat === null || lng === null) { unmappedJobs += 1; continue; }
 
-      const quality = storedWasFallback
-        ? inferred?.note || 'entity fallback'
-        : inferred?.note || (sourceLat !== null && sourceLng !== null ? 'source coordinates' : 'location match');
+      const quality = storedWasFallback ? inferred?.note || 'entity fallback' : inferred?.note || (sourceLat !== null && sourceLng !== null ? 'source coordinates' : 'location match');
       const isFallback = quality.includes('fallback');
-      if (isFallback) {
-        fallbackJobs += 1;
-        if (!includeFallback) continue;
-      } else {
-        realMappedJobs += 1;
-      }
+      if (isFallback) { fallbackJobs += 1; if (!includeFallback) continue; } else realMappedJobs += 1;
 
       const city = storedWasFallback ? inferred?.city || null : row.city || inferred?.city || null;
       const state = storedWasFallback ? inferred?.state || null : row.state || inferred?.state || null;
       const rowCountry = row.country || inferred?.country || 'US';
       const key = [lat.toFixed(4), lng.toFixed(4), city || '', state || '', rowCountry || '', row.entity_name || '', isFallback ? 'fallback' : 'real'].join('|');
-
-      const existing = buckets.get(key) || {
-        city,
-        state,
-        country: rowCountry,
-        lat,
-        lng,
-        role_category: row.role_category,
-        is_remote: row.is_remote,
-        is_overseas: row.is_overseas,
-        entity_name: row.entity_name,
-        portal: row.portal,
-        location_quality: quality,
-        is_fallback: isFallback,
-        cnt: 0,
-      };
+      const existing = buckets.get(key) || { city, state, country: rowCountry, lat, lng, role_category: row.role_category,
+        is_remote: row.is_remote, is_overseas: row.is_overseas, entity_name: row.entity_name, portal: row.portal,
+        location_quality: quality, is_fallback: isFallback, cnt: 0 };
       existing.cnt += 1;
       buckets.set(key, existing);
     }
 
     const locations = Array.from(buckets.values());
-    if (includeMeta) {
-      return NextResponse.json({
-        locations,
-        meta: {
-          total_jobs: rows.length,
-          real_mapped_jobs: realMappedJobs,
-          mapped_jobs: realMappedJobs,
-          fallback_jobs: fallbackJobs,
-          unmapped_jobs: unmappedJobs,
-          location_count: locations.length,
-        },
-      });
-    }
-
+    if (includeMeta) return NextResponse.json({ locations, meta: { total_jobs: rows.length, real_mapped_jobs: realMappedJobs,
+      mapped_jobs: realMappedJobs, fallback_jobs: fallbackJobs, unmapped_jobs: unmappedJobs, location_count: locations.length } });
     return NextResponse.json(locations);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error';
@@ -145,21 +84,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
-function toFiniteNumber(value: unknown) {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
+function toFiniteNumber(value: unknown) { if (value === null || value === undefined || value === '') return null; const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
 function parseRawData(value: unknown) {
   if (!value) return {};
   if (typeof value === 'object') return value as Record<string, any>;
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return {};
-    }
-  }
+  if (typeof value === 'string') { try { return JSON.parse(value); } catch { return {}; } }
   return {};
 }
