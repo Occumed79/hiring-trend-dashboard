@@ -23,15 +23,15 @@ export async function fetchExpandedCoverageSources(entity: any): Promise<Coverag
     tasks.push(fetchPublicSectorBoardJobs(entity).then(result => ({ jobs: result.jobs, checks: result.checks })));
   }
 
-  const settled = await Promise.all(tasks.map(task => task.catch(error => ({
+  const settled: Array<{ jobs: any[]; checks: CoverageCheck[] }> = await Promise.all(tasks.map(task => task.catch(error => ({
     jobs: [],
     checks: [{
       source: 'coverage:internal',
       source_class: 'supplemental' as const,
       status: 'error' as const,
       jobs_found: 0,
-      details: { error: error instanceof Error ? error.message : String(error) },
-    }],
+      details: { reason: null, error: error instanceof Error ? error.message : String(error) },
+    } as CoverageCheck],
   }))));
 
   for (const result of settled) {
