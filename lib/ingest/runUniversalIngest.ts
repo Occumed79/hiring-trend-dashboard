@@ -91,7 +91,7 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
     fetchPortalSpecificJobs(resolvedEntity).catch((error) => ({ jobs: [], used: [], skipped: [`portal connector (${errorMessage(error)})`] })),
     fetchGovernmentFallbackJobs(resolvedEntity).catch((error) => ({ jobs: [], used: [], skipped: [`government source (${errorMessage(error)})`] })),
     fetchExpandedCoverageSources(resolvedEntity).catch((error) => ({
-      jobs: [], checks: [{ source: 'coverage:expanded', source_class: 'supplemental' as const, status: 'error' as const, jobs_found: 0, details: { error: errorMessage(error) } }], authoritativeClaim: false,
+      jobs: [], checks: [{ source: 'coverage:expanded', source_class: 'supplemental' as const, status: 'error' as const, jobs_found: 0, details: { reason: null, error: errorMessage(error) } }], authoritativeClaim: false,
     })),
   ]);
 
