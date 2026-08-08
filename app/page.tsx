@@ -10,7 +10,7 @@ export default function Home() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar portals={[...PORTALS]} activePortal={activePortal} onSelect={setActivePortal} />
-      <main className="flex-1 overflow-y-auto scrollbar-glass">
+      <main className="relative z-0 flex-1 overflow-y-auto scrollbar-glass">
         <CompanyPortalView portal={activePortal} />
       </main>
     </div>
