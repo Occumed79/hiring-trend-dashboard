@@ -78,7 +78,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
   const evaluated = expected.map((source:any) => {
     const check = findCheckForExpectedSource(source, checkByKey, checks);
     const recent = check ? Date.now() - checkedAt(check) <= CHECK_STALE_HOURS * 3600000 : false;
-    const healthy = Boolean(check && recent && ['success','zero'].includes(String(check.status)));
+    const healthy = Boolean(check && recent && isHealthyCheck(source, check));
     return { source, check: check || null, recent, healthy };
   });
 
@@ -92,7 +92,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
     if (lineage && isHiringLineage(lineage)) lineages.add(lineage);
   }
   for (const check of checks) {
-    if (!['success','zero'].includes(String(check.status)) || !isHiringInventoryCheck(check)) continue;
+    if (!isHealthyObservedCheck(check) || !isHiringInventoryCheck(check)) continue;
     const lineage = normalizeLineage(check.lineage_root || check.details?.lineage_root || lineageForObservedSource(check.source));
     if (lineage && isHiringLineage(lineage)) lineages.add(lineage);
   }
@@ -116,6 +116,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
     else if (!row.recent) gaps.push(`Stale check: ${label(row.source)}`);
     else if (row.check.status === 'error') gaps.push(`Source error: ${label(row.source)}`);
     else if (row.check.status === 'skipped') gaps.push(`Source skipped: ${label(row.source)}`);
+    else if (row.source.source_class === 'authoritative' && row.check.status === 'zero' && row.check.authoritative_zero !== true) gaps.push(`Unverified zero: ${label(row.source)}`);
   }
   if (!authoritative.length) gaps.push('No authoritative hiring source is registered.');
   else if (!healthyAuthoritative.length) gaps.push('No authoritative source has a recent healthy check.');
@@ -138,11 +139,22 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
       lineages: Array.from(lineages).sort(),
       observed_sources: checks.length,
       algorithm: 'expected-health-40 + authoritative-health-35 + independent-hiring-lineages-15 + first-party-10',
+      authoritative_zero_requires_verification: true,
       identity_and_discovery_sources_excluded_from_lineage_count: true,
     },
   };
 }
 
+function isHealthyCheck(source:any, check:any) {
+  if (String(check?.status) === 'success') return true;
+  if (String(check?.status) !== 'zero') return false;
+  return source?.source_class === 'authoritative' ? check?.authoritative_zero === true : true;
+}
+function isHealthyObservedCheck(check:any) {
+  if (String(check?.status) === 'success') return true;
+  if (String(check?.status) !== 'zero') return false;
+  return check?.source_class === 'authoritative' ? check?.authoritative_zero === true : true;
+}
 function findCheckForExpectedSource(source:any, checkByKey:Map<string,any>, checks:any[]) {
   const direct = checkByKey.get(String(source.source_key));
   if (direct) return direct;
