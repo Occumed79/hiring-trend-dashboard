@@ -11,6 +11,7 @@ export function evaluateSourceReliability(input: {
   checks?: any[];
   previous?: Record<string, any>;
   assessment?: any;
+  pairBaselines?: any[];
   staleHours?: number;
   nowMs?: number;
 }): ReliabilityIssue[];

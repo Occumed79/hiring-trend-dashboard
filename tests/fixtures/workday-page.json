@@ -1,0 +1,19 @@
+{
+  "total": 2,
+  "jobPostings": [
+    {
+      "title": "Occupational Health Program Manager",
+      "externalPath": "/job/Fresno-CA/Occupational-Health-Program-Manager_R1001",
+      "locationsText": "Fresno, CA",
+      "postedOn": "Posted Today",
+      "bulletFields": ["R1001"]
+    },
+    {
+      "title": "Deployment Medical Coordinator",
+      "externalPath": "/job/Stuttgart-DE/Deployment-Medical-Coordinator_R1002",
+      "locationsText": "Stuttgart, Germany",
+      "postedOn": "Posted 3 Days Ago",
+      "bulletFields": ["R1002"]
+    }
+  ]
+}

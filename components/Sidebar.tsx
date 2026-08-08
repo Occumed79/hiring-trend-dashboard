@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ChevronDown, Map } from 'lucide-react';
+import { Activity, ChevronDown, Map } from 'lucide-react';
 import type { Portal } from '@/lib/portals';
 import {
   HIRING_MAP_STYLES,
@@ -10,11 +10,13 @@ import {
 } from '@/components/map/arcgisBasemap';
 
 export default function Sidebar({
-  portals, activePortal, onSelect,
+  portals, activePortal, onSelect, sourceHealthActive = false, onOpenSourceHealth,
 }: {
   portals: Portal[];
   activePortal: Portal;
   onSelect: (p: Portal) => void;
+  sourceHealthActive?: boolean;
+  onOpenSourceHealth?: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mapStyleOpen, setMapStyleOpen] = useState(false);
@@ -58,7 +60,7 @@ export default function Sidebar({
             key={portal.id}
             onClick={() => onSelect(portal)}
             title={collapsed ? portal.label : undefined}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${activePortal.id === portal.id ? 'active' : ''}`}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${!sourceHealthActive && activePortal.id === portal.id ? 'active' : ''}`}
           >
             {!collapsed ? (
               <span className="text-[13px] font-medium text-inherit truncate leading-none">{portal.label}</span>
@@ -69,6 +71,25 @@ export default function Sidebar({
             )}
           </button>
         ))}
+
+        {onOpenSourceHealth && (
+          <div className="pt-2 mt-2 border-t border-white/[0.08]">
+            <button
+              onClick={onOpenSourceHealth}
+              title={collapsed ? 'Source Health' : undefined}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${sourceHealthActive ? 'active' : ''}`}
+            >
+              {collapsed ? (
+                <Activity size={16} className="mx-auto" strokeWidth={1.8} />
+              ) : (
+                <>
+                  <Activity size={14} strokeWidth={1.8} className="shrink-0" />
+                  <span className="text-[13px] font-medium text-inherit truncate leading-none">Source Health</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </nav>
 
       <div className="relative z-[3100] overflow-visible px-2.5 pb-2.5">

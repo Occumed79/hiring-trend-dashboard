@@ -9,7 +9,7 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
 
   // These reads are intentionally fail-closed. A failed diagnostic read is not
   // evidence of recovery and must never resolve an existing incident.
-  const [checks, previousRows, assessments] = await Promise.all([
+  const [checks, previousRows, assessments, pairBaselines] = await Promise.all([
     query(
       `SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
               lineage_root, details, last_checked_at, last_success_at
@@ -33,6 +33,11 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
        FROM entity_coverage_assessment WHERE entity_id=$1 LIMIT 1`,
       [entityId],
     ),
+    query(
+      `SELECT source_a,source_b,sample_count,median_ratio,p10_ratio,p90_ratio,median_abs_delta,window_days,metadata,updated_at
+       FROM source_pair_baselines
+       WHERE sample_count >= 5 AND updated_at >= NOW() - INTERVAL '3 days'`,
+    ),
   ]);
 
   const previous: Record<string, any> = {};
@@ -41,6 +46,7 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
     checks,
     previous,
     assessment: assessments[0] || null,
+    pairBaselines,
     staleHours: STALE_HOURS,
   });
 
@@ -82,9 +88,6 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
   return issues;
 }
 
-// A total ingest/cron outage cannot call persistSourceCoverage, so stale-source
-// detection also needs an independent path. Entity-detail reads invoke this
-// lightweight guard; it only runs the full evaluator once an inventory source is stale.
 export async function refreshStaleSourceReliabilityOnRead(entityId: string) {
   if (!entityId) return;
   const rows = await query(
