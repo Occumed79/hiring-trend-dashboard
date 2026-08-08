@@ -2,7 +2,8 @@ export type HiringMapStyleId =
   | 'navigation-night'
   | 'streets-night'
   | 'dark-gray'
-  | 'human-geography-dark'
+  | 'navigation'
+  | 'streets'
   | 'light-gray'
   | 'topographic'
   | 'imagery';
@@ -13,6 +14,7 @@ export type HiringMapStyleOption = {
   shortLabel: string;
   description: string;
   arcgisStyle: string;
+  tone: 'dark' | 'light' | 'photo';
   swatch: [string, string];
 };
 
@@ -38,64 +40,81 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     shortLabel: 'Night',
     description: 'Blue-black navigation map',
     arcgisStyle: 'arcgis/navigation-night',
-    swatch: ['#07111f', '#14325d'],
+    tone: 'dark',
+    swatch: ['#07111f', '#173a68'],
   },
   {
     id: 'streets-night',
     label: 'Streets Night',
-    shortLabel: 'Streets',
+    shortLabel: 'Streets Night',
     description: 'Dark street-focused map',
     arcgisStyle: 'arcgis/streets-night',
-    swatch: ['#111827', '#334155'],
+    tone: 'dark',
+    swatch: ['#101827', '#334766'],
   },
   {
     id: 'dark-gray',
     label: 'Dark Gray',
-    shortLabel: 'Gray',
-    description: 'Warm neutral dark canvas',
+    shortLabel: 'Dark Gray',
+    description: 'Neutral charcoal reference map',
     arcgisStyle: 'arcgis/dark-gray',
-    swatch: ['#22262a', '#53575b'],
+    tone: 'dark',
+    swatch: ['#25282b', '#555b60'],
   },
   {
-    id: 'human-geography-dark',
-    label: 'Human Geography Dark',
-    shortLabel: 'Human',
-    description: 'Dark contextual geography',
-    arcgisStyle: 'arcgis/human-geography-dark',
-    swatch: ['#171a21', '#39445a'],
+    id: 'navigation',
+    label: 'Navigation',
+    shortLabel: 'Navigation',
+    description: 'Bright blue-gray navigation map',
+    arcgisStyle: 'arcgis/navigation',
+    tone: 'light',
+    swatch: ['#d9e8f4', '#ffffff'],
+  },
+  {
+    id: 'streets',
+    label: 'Streets',
+    shortLabel: 'Streets',
+    description: 'Clean daytime street map',
+    arcgisStyle: 'arcgis/streets',
+    tone: 'light',
+    swatch: ['#e5edf4', '#f8fafc'],
   },
   {
     id: 'light-gray',
     label: 'Light Gray',
-    shortLabel: 'Light',
-    description: 'Minimal light canvas',
+    shortLabel: 'Light Gray',
+    description: 'Minimal light reference canvas',
     arcgisStyle: 'arcgis/light-gray',
-    swatch: ['#d9dde2', '#f2f4f6'],
+    tone: 'light',
+    swatch: ['#d9dde2', '#f4f5f7'],
   },
   {
     id: 'topographic',
     label: 'Topographic',
     shortLabel: 'Topo',
-    description: 'Terrain and physical detail',
+    description: 'Terrain and physical geography',
     arcgisStyle: 'arcgis/topographic',
-    swatch: ['#c5c9a4', '#e8e3ca'],
+    tone: 'light',
+    swatch: ['#d7ddbc', '#f0ead9'],
   },
   {
     id: 'imagery',
     label: 'Imagery',
     shortLabel: 'Satellite',
-    description: 'Satellite imagery view',
+    description: 'Satellite imagery',
     arcgisStyle: 'arcgis/imagery',
-    swatch: ['#1b3126', '#6b785b'],
+    tone: 'photo',
+    swatch: ['#1d382b', '#78826e'],
   },
 ];
 
 const ARCGIS_STATIC_BASE =
   'https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1';
 
-export function getHiringBasemap(styleId: HiringMapStyleId = DEFAULT_HIRING_MAP_STYLE): HiringBasemapConfig {
+export function getHiringBasemap(styleId?: HiringMapStyleId): HiringBasemapConfig {
   const token = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim();
-  const selected = HIRING_MAP_STYLES.find(style => style.id === styleId) || HIRING_MAP_STYLES[0];
+  const resolvedStyleId = styleId || readHiringMapStyle();
+  const selected = HIRING_MAP_STYLES.find(style => style.id === resolvedStyleId) || HIRING_MAP_STYLES[0];
 
   if (token) {
     return {
