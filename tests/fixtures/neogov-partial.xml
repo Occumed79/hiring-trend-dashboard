@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>GovernmentJobs Partial Feed</title>
+    <item>
+      <title>Valid Job</title>
+      <link>https://www.governmentjobs.com/careers/fresnoca/jobs/200001/valid-job</link>
+      <description>Location: Fresno, CA</description>
+    </item>
+    <item>
+      <title>Broken Job Missing Link</title>
+      <description>Location: Fresno, CA</description>
+    </item>
+  </channel>
+</rss>
