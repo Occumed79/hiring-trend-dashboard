@@ -114,6 +114,33 @@ test('reliability rules flag truncation, unverified zeroes and sudden collapses'
   assert.ok(kinds.has('no_healthy_authoritative_source'));
 });
 
+test('identity and registry checks never create job-inventory incidents', () => {
+  const { evaluateSourceReliability } = require('../lib/ingest/sourceReliabilityRules');
+  const issues = evaluateSourceReliability({
+    checks: [
+      { source: 'identity:sam', source_class: 'authoritative', status: 'zero', jobs_found: 0, authoritative_zero: false, details: {} },
+      { source: 'registry:census_governments', source_class: 'authoritative', status: 'error', jobs_found: 0, details: { error: 'offline' } },
+    ],
+    previous: { 'identity:sam': { status: 'success', jobs_found: 10 } },
+    assessment: null,
+  });
+  assert.equal(issues.length, 0);
+});
+
+test('stale authoritative inventory sources create a reliability finding', () => {
+  const { evaluateSourceReliability } = require('../lib/ingest/sourceReliabilityRules');
+  const nowMs = Date.parse('2026-08-08T22:00:00Z');
+  const issues = evaluateSourceReliability({
+    checks: [{
+      source: 'workday', source_class: 'authoritative', status: 'success', jobs_found: 75,
+      authoritative_zero: false, last_checked_at: '2026-08-05T21:00:00Z', lineage_root: 'ats:workday:acme', details: {},
+    }],
+    staleHours: 48,
+    nowMs,
+  });
+  assert.ok(issues.some(issue => issue.kind === 'stale_authoritative_source'));
+});
+
 test('NLx and CareerOneStop mirror lineage is not counted twice', () => {
   const { collapseIndependentLineages } = require('../lib/ingest/sourceReliabilityRules');
   const collapsed = collapseIndependentLineages([
