@@ -17,6 +17,28 @@ export type GovernmentRegistryMatch = {
   score: number;
 };
 
+export async function enrichEntityFromGovernmentRegistry(entity: any) {
+  if (!entity || !['state_agencies','counties_and_cities'].includes(String(entity.portal || ''))) return entity;
+  if (entity.government_registry_id && entity.government_type) return entity;
+
+  const match = await resolveGovernmentRegistryMatch(entity.name, entity.portal);
+  if (!match) return entity;
+  const metadata = governmentRegistryMetadata(match);
+  const aliases = Array.from(new Set([...(Array.isArray(entity.aliases) ? entity.aliases : []), ...registryAliases(match)]));
+  try {
+    await query(
+      `UPDATE entities
+       SET government_registry_id = $2, government_type = $3, government_state = $4,
+           government_fips = $5, aliases = $6, updated_at = NOW()
+       WHERE id = $1`,
+      [entity.id, metadata.government_registry_id, metadata.government_type, metadata.government_state, metadata.government_fips, aliases],
+    );
+  } catch (error) {
+    console.warn('Could not persist government registry enrichment:', error instanceof Error ? error.message : error);
+  }
+  return { ...entity, ...metadata, aliases, government_registry_match: match };
+}
+
 export async function resolveGovernmentRegistryMatch(name: string, portal: GovernmentPortal): Promise<GovernmentRegistryMatch | null> {
   const canonical = canonicalGovernmentName(name);
   if (!canonical) return null;
