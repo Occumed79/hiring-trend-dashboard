@@ -9,7 +9,7 @@ export async function GET() {
     const latestRun = latestRunRows[0] || null;
     const runId = latestRun?.id || null;
 
-    const [summaryRows, sourceFleet, incidents, releases, benchmarkPortals, pairBaselines, truthCoverage] = await Promise.all([
+    const [summaryRows, sourceFleet, incidents, releases, benchmarkPortals, pairBaselines, truthCoverage, truthCandidates] = await Promise.all([
       query(
         `SELECT
            (SELECT COUNT(*)::int FROM entities WHERE is_active=true) AS active_entities,
@@ -74,6 +74,19 @@ export async function GET() {
          FROM benchmark_truth_snapshots t JOIN entities e ON e.id=t.entity_id
          GROUP BY e.portal ORDER BY e.portal`,
       ),
+      query(
+        `SELECT e.id,e.name,e.portal::text AS portal,e.career_page_url,COALESCE(a.score,0) AS coverage_score,
+                t.captured_at AS latest_truth_at,t.official_job_count AS latest_official_count
+         FROM entities e
+         LEFT JOIN entity_coverage_assessment a ON a.entity_id=e.id
+         LEFT JOIN LATERAL (
+           SELECT captured_at,official_job_count FROM benchmark_truth_snapshots bt
+           WHERE bt.entity_id=e.id ORDER BY captured_at DESC,id DESC LIMIT 1
+         ) t ON true
+         WHERE e.is_active=true
+         ORDER BY (t.captured_at IS NULL) DESC,e.portal,COALESCE(a.score,0) DESC,e.name
+         LIMIT 180`,
+      ),
     ]);
 
     return Response.json({
@@ -85,6 +98,7 @@ export async function GET() {
       benchmark_portals: benchmarkPortals,
       source_pair_baselines: pairBaselines,
       truth_coverage: truthCoverage,
+      truth_candidates: truthCandidates,
       generated_at: new Date().toISOString(),
     });
   } catch (error) {
