@@ -62,6 +62,18 @@ services:
         value: "50"
       - key: NLX_MAX_PAGES
         value: "40"
+      - key: CAREERONESTOP_API_TOKEN
+        sync: false
+      - key: CAREERONESTOP_USER_ID
+        sync: false
+      - key: CAREERONESTOP_API_BASE_URL
+        value: https://api.careeronestop.org
+      - key: CAREERONESTOP_PAGE_SIZE
+        value: "100"
+      - key: CAREERONESTOP_MAX_PAGES
+        value: "20"
+      - key: CAREERONESTOP_DAYS
+        value: "60"
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
@@ -178,6 +190,18 @@ services:
         value: "50"
       - key: NLX_MAX_PAGES
         value: "40"
+      - key: CAREERONESTOP_API_TOKEN
+        sync: false
+      - key: CAREERONESTOP_USER_ID
+        sync: false
+      - key: CAREERONESTOP_API_BASE_URL
+        value: https://api.careeronestop.org
+      - key: CAREERONESTOP_PAGE_SIZE
+        value: "100"
+      - key: CAREERONESTOP_MAX_PAGES
+        value: "20"
+      - key: CAREERONESTOP_DAYS
+        value: "60"
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
