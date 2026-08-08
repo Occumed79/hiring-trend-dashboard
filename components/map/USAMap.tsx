@@ -1,8 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { getHiringBasemap } from './arcgisBasemap';
-
-const BASEMAP = getHiringBasemap();
+import { useHiringBasemap } from './useHiringBasemap';
 
 const MAP_FILTERS = [
   { id: 'all', label: 'All Jobs' },
@@ -39,6 +37,7 @@ export default function USAMap({
   const [MapComponents, setMapComponents] = useState<any>(null);
   const mapRef = useRef<any>(null);
   const mapShellRef = useRef<HTMLDivElement | null>(null);
+  const BASEMAP = useHiringBasemap();
 
   useEffect(() => {
     let mounted = true;
@@ -62,14 +61,12 @@ export default function USAMap({
 
   useEffect(() => {
     if (!mapShellRef.current || !MapComponents || typeof ResizeObserver === 'undefined') return;
-
     const invalidate = () => {
       window.requestAnimationFrame(() => mapRef.current?.invalidateSize?.({ animate: false }));
     };
     const observer = new ResizeObserver(invalidate);
     observer.observe(mapShellRef.current);
     invalidate();
-
     return () => observer.disconnect();
   }, [MapComponents]);
 
@@ -201,6 +198,7 @@ export default function USAMap({
             attributionControl={true}
           >
             <MapComponents.TileLayer
+              key={BASEMAP.url}
               url={BASEMAP.url}
               attribution={BASEMAP.attribution}
               maxZoom={BASEMAP.maxZoom}
@@ -256,7 +254,7 @@ export default function USAMap({
             </div>
           ))}
         </div>
-        <span className="text-[9px] text-slate-600">{BASEMAP.provider === 'arcgis' ? 'ArcGIS Dark Gray' : 'Fallback basemap'}</span>
+        <span className="text-[9px] text-slate-600">{BASEMAP.provider === 'arcgis' ? `ArcGIS ${BASEMAP.styleLabel}` : 'Fallback basemap'}</span>
       </div>
     </div>
   );
