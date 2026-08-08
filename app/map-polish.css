@@ -28,28 +28,44 @@
   stroke-dasharray: 2 2;
 }
 
+/* Keep Esri attribution present, but collapse the long provider string into a
+   tiny right-edge chip. Hover/focus expands leftward to show the full credits. */
 .map-container .leaflet-control-attribution {
-  max-width: min(72%, 560px);
+  width: auto;
+  max-width: 62px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
   margin: 0 8px 7px 0 !important;
-  padding: 3px 7px !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 7px;
-  background: rgba(3, 7, 18, 0.72) !important;
-  color: rgba(148, 163, 184, 0.66) !important;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  padding: 4px 9px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px 4px 4px 999px;
+  background: rgba(3, 7, 18, 0.82) !important;
+  color: rgba(148, 163, 184, 0.72) !important;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   font-size: 8px !important;
   line-height: 1.35 !important;
+  cursor: default;
+  transition: max-width 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.map-container .leaflet-control-attribution:hover,
+.map-container .leaflet-control-attribution:focus-within {
+  max-width: min(76vw, 560px);
+  background: rgba(3, 7, 18, 0.94) !important;
+  border-color: rgba(125, 211, 252, 0.2);
+  color: rgba(203, 213, 225, 0.82) !important;
 }
 
 .map-container .leaflet-control-attribution a {
-  color: rgba(186, 230, 253, 0.72) !important;
+  color: rgba(186, 230, 253, 0.76) !important;
   text-decoration: none !important;
 }
 
 .map-container .leaflet-control-attribution a:hover {
-  color: rgba(224, 242, 254, 0.95) !important;
+  color: rgba(224, 242, 254, 0.98) !important;
 }
 
 .map-container .leaflet-control-zoom {
