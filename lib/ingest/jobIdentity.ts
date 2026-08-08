@@ -37,6 +37,9 @@ export function filterWebSearchJobsForEntity(items: any[], entity: any) {
 export function filterJobApiJobsForEntity(items: any[], entity: any) {
   return filterByEmployerEvidence(items, entity, source => source.startsWith('jobapi:'));
 }
+export function filterAdzunaJobsForEntity(items: any[], entity: any) {
+  return filterByEmployerEvidence(items, entity, source => source === 'adzuna');
+}
 
 function filterByEmployerEvidence(items: any[], entity: any, shouldFilter: (source: string) => boolean) {
   const jobs: any[] = [];
@@ -63,9 +66,28 @@ function getEmployerEvidence(item: any, entity: any): string | null {
   }
 
   const raw = item?.raw_data || {};
-  const searchable = normalizeComparable([item?.title, item?.department, raw.langsearch_title, raw.langsearch_snippet, raw.langsearch_summary,
-    raw.employer_name, raw.company_name, raw.company, raw.hiring_company, raw.organization, raw.job_publisher,
-    raw.normalized_apply_url, raw.url, raw.job_apply_link, raw.job_url].filter(Boolean).join(' '));
+  const searchable = normalizeComparable([
+    item?.title,
+    item?.department,
+    raw.langsearch_title,
+    raw.langsearch_snippet,
+    raw.langsearch_summary,
+    raw.employer_name,
+    raw.company_name,
+    raw.company,
+    raw.company?.display_name,
+    raw.company?.name,
+    raw.hiring_company,
+    raw.organization,
+    raw.organization?.name,
+    raw.employer?.name,
+    raw.job_publisher,
+    raw.normalized_employer,
+    raw.normalized_apply_url,
+    raw.url,
+    raw.job_apply_link,
+    raw.job_url,
+  ].filter(Boolean).join(' '));
   const names = [entity?.name, ...(Array.isArray(entity?.aliases) ? entity.aliases : [])].map(value => String(value || '').trim()).filter(Boolean);
   for (const name of names) {
     const normalizedName = normalizeComparable(name);
