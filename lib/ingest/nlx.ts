@@ -19,30 +19,68 @@ export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: C
   const maxPages = clamp(Number(process.env.NLX_MAX_PAGES || 40), 1, 200);
   const expectedPageSize = clamp(Number(process.env.NLX_PAGE_SIZE || 50), 1, 500);
   const collected: any[] = [];
+  const seenUrls = new Set<string>();
   let pagesFetched = 0;
+  let logicalPage = 1;
+  let nextUrl: string | null = null;
   let lastUrl = '';
   let truncated = false;
 
   try {
-    for (let page = 1; page <= maxPages; page++) {
-      const url = buildUrl(start, end, states, employer, page);
-      lastUrl = url;
-      const response = await fetch(url, {
+    while (pagesFetched < maxPages) {
+      const url = nextUrl || buildUrl(start, end, states, employer, logicalPage);
+      const normalizedRequestUrl = normalizeContinuationUrl(url, lastUrl || url);
+      if (!normalizedRequestUrl) throw new Error('NLx returned an invalid or cross-origin continuation URL.');
+      if (seenUrls.has(normalizedRequestUrl)) throw new Error('NLx pagination loop detected.');
+      seenUrls.add(normalizedRequestUrl);
+      lastUrl = normalizedRequestUrl;
+
+      const response = await fetch(normalizedRequestUrl, {
         headers: { Accept: 'application/json', [headerName]: apiKey },
         signal: AbortSignal.timeout(getIngestTimeout(15000)),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status} on page ${page}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status} on NLx page ${logicalPage}`);
       const payload = await response.json().catch(() => null);
       const rows = extractRows(payload);
       pagesFetched += 1;
       collected.push(...rows);
 
-      const next = readNextPage(payload);
-      if (typeof next === 'number' && next > page) continue;
-      if (typeof next === 'string' && next) continue;
+      const continuation = readContinuation(payload);
+      if (continuation !== null) {
+        if (typeof continuation === 'number') {
+          if (continuation <= logicalPage) throw new Error(`NLx returned non-advancing page ${continuation}.`);
+          logicalPage = continuation;
+          nextUrl = null;
+          continue;
+        }
+
+        const numeric = Number(continuation);
+        if (Number.isFinite(numeric) && numeric > logicalPage) {
+          logicalPage = Math.floor(numeric);
+          nextUrl = null;
+          continue;
+        }
+
+        const continuationUrl = continuationAsUrl(continuation, normalizedRequestUrl);
+        if (continuationUrl) {
+          nextUrl = continuationUrl;
+          logicalPage += 1;
+          continue;
+        }
+
+        // Non-URL strings are treated as opaque cursor tokens. Account/profile
+        // specific cursor parameter names can be changed in Render without code.
+        logicalPage += 1;
+        nextUrl = withCursor(buildUrl(start, end, states, employer, logicalPage), continuation);
+        continue;
+      }
+
       if (rows.length < expectedPageSize) break;
-      if (page === maxPages) truncated = true;
+      logicalPage += 1;
+      nextUrl = null;
     }
+
+    if (pagesFetched >= maxPages && collected.length >= expectedPageSize) truncated = true;
 
     const jobs = dedupeNLxJobs(collected.map((row: any, index: number) => normalizeNLxRow(row, entity, index)).filter(Boolean) as any[]);
     return {
@@ -124,20 +162,61 @@ function buildUrl(start: Date, end: Date, states: string[], employer: string, pa
   return url.toString();
 }
 
+function withCursor(value: string, cursor: string) {
+  const url = new URL(value);
+  url.searchParams.set(process.env.NLX_CURSOR_PARAM || 'cursor', cursor);
+  return url.toString();
+}
+
+function normalizeContinuationUrl(value: string, baseValue: string) {
+  try {
+    const url = new URL(value, baseValue);
+    if (url.protocol !== 'https:') return null;
+    const allowed = new URL(process.env.NLX_API_BASE_URL || DEFAULT_BASE);
+    if (url.origin !== allowed.origin) return null;
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function continuationAsUrl(value: string, currentUrl: string) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const looksLikeUrl = /^https?:\/\//i.test(text) || text.startsWith('/') || text.startsWith('?');
+  if (!looksLikeUrl) return null;
+  return normalizeContinuationUrl(text, currentUrl);
+}
+
 function extractRows(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
   const candidates = [payload?.jobs, payload?.results, payload?.data, payload?.items, payload?.records, payload?.data?.jobs, payload?.data?.results];
   return candidates.find(Array.isArray) || [];
 }
 
-function readNextPage(payload: any): number | string | null {
-  const candidates = [payload?.next_page, payload?.nextPage, payload?.pagination?.next_page, payload?.pagination?.nextPage, payload?.meta?.next_page, payload?.meta?.nextPage, payload?.links?.next];
+function readContinuation(payload: any): number | string | null {
+  const candidates = [
+    payload?.next_page,
+    payload?.nextPage,
+    payload?.next,
+    payload?.cursor,
+    payload?.next_cursor,
+    payload?.nextCursor,
+    payload?.pagination?.next_page,
+    payload?.pagination?.nextPage,
+    payload?.pagination?.next,
+    payload?.pagination?.cursor,
+    payload?.pagination?.next_cursor,
+    payload?.meta?.next_page,
+    payload?.meta?.nextPage,
+    payload?.meta?.next,
+    payload?.meta?.next_cursor,
+    payload?.links?.next,
+  ];
   for (const value of candidates) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string' && value.trim()) {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric : value.trim();
-    }
+    if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
 }
@@ -205,6 +284,6 @@ function startOfTomorrow() { const date = new Date(); date.setUTCHours(0,0,0,0);
 function isoDate(date: Date) { return date.toISOString().slice(0,10); }
 function firstEnv(names: string[]) { for (const name of names) { const value = String(process.env[name] || '').trim(); if (value) return value; } return ''; }
 function skipped(reason: string): CoverageCheck { return { source: SOURCE, source_class: 'verified', status: 'skipped', jobs_found: 0, details: { reason } }; }
-function safeEndpoint(value: string) { try { const url = new URL(value); for (const key of Array.from(url.searchParams.keys())) if (/key|token|secret|auth/i.test(key)) url.searchParams.set(key,'***'); return url.toString(); } catch { return 'configured NLx endpoint'; } }
+function safeEndpoint(value: string) { try { const url = new URL(value); for (const key of Array.from(url.searchParams.keys())) if (/key|token|secret|auth|cursor/i.test(key)) url.searchParams.set(key,'***'); return url.toString(); } catch { return 'configured NLx endpoint'; } }
 function clamp(value: number, min: number, max: number) { return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value),min),max) : min; }
 const STATE_NAME_TO_CODE: Record<string,string> = { alabama:'AL',alaska:'AK',arizona:'AZ',arkansas:'AR',california:'CA',colorado:'CO',connecticut:'CT',delaware:'DE',florida:'FL',georgia:'GA',hawaii:'HI',idaho:'ID',illinois:'IL',indiana:'IN',iowa:'IA',kansas:'KS',kentucky:'KY',louisiana:'LA',maine:'ME',maryland:'MD',massachusetts:'MA',michigan:'MI',minnesota:'MN',mississippi:'MS',missouri:'MO',montana:'MT',nebraska:'NE',nevada:'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND',ohio:'OH',oklahoma:'OK',oregon:'OR',pennsylvania:'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',tennessee:'TN',texas:'TX',utah:'UT',vermont:'VT',virginia:'VA',washington:'WA','west virginia':'WV',wisconsin:'WI',wyoming:'WY','district of columbia':'DC' };
