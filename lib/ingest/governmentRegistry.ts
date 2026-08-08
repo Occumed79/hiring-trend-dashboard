@@ -53,14 +53,11 @@ export async function resolveGovernmentRegistryMatch(name: string, portal: Gover
       FROM government_registry
       WHERE is_active = true AND canonical_name ILIKE $1
     `;
-    if (portal === 'counties_and_cities') {
-      params.push(['county','municipality','township']);
-      sql += ` AND government_type = ANY($2::text[])`;
-    } else {
-      params.push(['state','county','municipality','township','special_district']);
-      sql += ` AND government_type = ANY($2::text[])`;
-    }
-    sql += ` LIMIT 250`;
+    params.push(portal === 'counties_and_cities'
+      ? ['county','municipality','township']
+      : ['state','county','municipality','township','special_district']);
+    sql += ` AND government_type = ANY($${params.length}::text[])`;
+    sql += ` ORDER BY length(canonical_name) ASC, census_government_id ASC LIMIT 250`;
 
     const rows = await query(sql, params);
     const stateHint = extractStateHint(name);
@@ -68,10 +65,10 @@ export async function resolveGovernmentRegistryMatch(name: string, portal: Gover
     const scored = rows
       .map((row: any) => ({ ...row, score: scoreMatch(canonical, row, stateHint, typeHint) }))
       .filter((row: any) => row.score >= minimumScore(portal, typeHint))
-      .sort((a: any, b: any) => b.score - a.score || String(a.name).length - String(b.name).length);
+      .sort((a: any, b: any) => b.score - a.score || String(a.name).length - String(b.name).length || String(a.census_government_id).localeCompare(String(b.census_government_id)));
 
     if (!scored.length) return null;
-    if (scored.length > 1 && scored[0].score === scored[1].score && scored[0].state_code !== scored[1].state_code) return null;
+    if (scored.length > 1 && scored[0].score === scored[1].score && scored[0].census_government_id !== scored[1].census_government_id) return null;
     return scored[0] as GovernmentRegistryMatch;
   } catch (error) {
     // Migration may not have reached a local development database yet. Registry
@@ -86,16 +83,24 @@ export function registryAliases(match: GovernmentRegistryMatch | null): string[]
   const aliases = new Set<string>([match.name]);
   const base = canonicalGovernmentName(match.name);
   if (match.government_type === 'county') {
-    aliases.add(`${base.replace(/ county$/, '')} County`);
-    if (match.state_code) aliases.add(`${base.replace(/ county$/, '')} County, ${match.state_code}`);
+    const stem = titleCase(base.replace(/ county$/, '').replace(/^county of /, '').trim());
+    if (stem) {
+      aliases.add(`${stem} County`);
+      if (match.state_code) aliases.add(`${stem} County, ${match.state_code}`);
+    }
   }
   if (match.government_type === 'municipality') {
-    const stripped = base.replace(/^(city|town|village|borough) of /, '').replace(/ (city|town|village|borough)$/, '');
-    aliases.add(stripped);
-    aliases.add(`City of ${titleCase(stripped)}`);
-    if (match.state_code) aliases.add(`${titleCase(stripped)}, ${match.state_code}`);
+    const stripped = base.replace(/^(city|town|village|borough) of /, '').replace(/ (city|town|village|borough)$/, '').trim();
+    if (stripped) {
+      const place = titleCase(stripped);
+      aliases.add(place);
+      aliases.add(`City of ${place}`);
+      if (match.state_code) aliases.add(`${place}, ${match.state_code}`);
+    }
   }
-  if (match.state_name) aliases.add(match.state_name);
+  // A state name is useful context, but it is not an alias for a county/city.
+  // Persisting "California" as an alias of Fresno County would make downstream
+  // employer matching accept unrelated statewide postings.
   return Array.from(aliases).map(value => value.trim()).filter(Boolean);
 }
 
@@ -139,9 +144,12 @@ function scoreMatch(input: string, row: any, stateHint: string | null, typeHint:
     if (candidate.includes(input) || input.includes(candidate)) score += 15;
   }
   if (stateHint) {
-    const state = String(row.state_code || row.state_name || '').toLowerCase();
-    if (stateHint.toLowerCase() === state || state.includes(stateHint.toLowerCase())) score += 20;
-    else score -= 15;
+    const hint = stateHint.toUpperCase();
+    const code = String(row.state_code || '').trim().toUpperCase()
+      || STATE_NAMES[String(row.state_name || '').trim().toLowerCase()]
+      || '';
+    if (code && code === hint) score += 20;
+    else if (code) score -= 15;
   }
   if (typeHint) {
     if (normalizeType(row.government_type) === typeHint) score += 15;
