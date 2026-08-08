@@ -41,7 +41,7 @@ export async function prepareEntityJobSources(entity: any, detected?: any | null
   if (shouldDiscover(existing)) {
     const discoverySeeds = [
       entity,
-      ...directory.filter(row => row.jobs_url).slice(0, 4).map(row => ({ ...entity, career_page_url: row.jobs_url })),
+      ...directory.filter(row => row.jobs_url).slice(0, 6).map(row => ({ ...entity, career_page_url: row.jobs_url })),
     ];
     for (const seed of discoverySeeds) {
       const discovered = await discoverHiringSurfaces(seed).catch(() => []);
@@ -128,14 +128,30 @@ async function fetchOne(entity: any, source: EntityJobSource) {
         status: success ? 'success' : 'zero',
         jobs_found: jobs.length,
         authoritative_zero: false,
-        details: { lineage_root: source.lineage_root, source_url: source.source_url || null, source_type: source.source_type, ats_provider: source.ats_provider || null, shared_inventory: shared },
+        details: {
+          source_key: source.source_key,
+          lineage_root: source.lineage_root,
+          source_url: source.source_url || null,
+          source_type: source.source_type,
+          ats_provider: source.ats_provider || null,
+          organization_name: source.metadata?.organization_name || null,
+          shared_inventory: shared,
+          off_target_rejected: rejected,
+        },
       } as CoverageCheck,
     };
   } catch (error) {
     await markSourceChecked(entity.id, source.source_key, false).catch(() => {});
     return {
       jobs: [], used: [], skipped: [`${source.source_key} (${message(error)})`], offTargetRejected: 0,
-      check: { source: source.source_key, source_class: source.source_class, status: 'error', jobs_found: 0, authoritative_zero: false, details: { lineage_root: source.lineage_root, source_url: source.source_url || null, source_type: source.source_type, error: message(error) } } as CoverageCheck,
+      check: {
+        source: source.source_key,
+        source_class: source.source_class,
+        status: 'error',
+        jobs_found: 0,
+        authoritative_zero: false,
+        details: { source_key: source.source_key, lineage_root: source.lineage_root, source_url: source.source_url || null, source_type: source.source_type, error: message(error) },
+      } as CoverageCheck,
     };
   }
 }
@@ -168,12 +184,14 @@ function sourceFromEntity(entity:any,method:string):EntityJobSource|null {
   const url=normalizeUrl(entity?.career_page_url); const provider=clean(entity?.ats_provider); const board=clean(entity?.ats_board_id);
   if(!url&&!provider&&!board)return null;
   const key=`primary:${provider||'career'}:${hashString(`${provider||''}|${board||''}|${url||''}`)}`;
-  return {source_key:key,source_type:provider&&provider!=='unknown'&&provider!=='other'?'ats':'career_page',source_class:'authoritative',lineage_root:provider&&board?`ats:${provider}:${board}`:`official-domain:${hostKey(url)}`,source_url:url,ats_provider:provider&&provider!=='unknown'?provider:null,board_id:board,state_code:entity?.government_state||null,discovery_method:method,is_verified:true,metadata:{primary:true,shared_inventory:false}};
+  return {source_key:key,source_type:provider&&provider!=='unknown'&&provider!=='other'?'ats':'career_page',source_class:'authoritative',lineage_root:provider&&board?`ats:${provider}:${board}`:`official-domain:${hostKey(url)}`,source_url:url,ats_provider:provider&&provider!=='unknown'?provider:null,board_id:board,state_code:entity?.government_state||null,discovery_method:method,is_verified:true,metadata:{primary:true,shared_inventory:false,organization_name:entity?.name||null}};
 }
 function sourceFromDirectory(entry:DirectoryEntry,entity:any):EntityJobSource|null {
-  const url=normalizeUrl(entry.jobs_url||entry.source_url); if(!url)return null;
-  const shared=entry.entry_type==='state_jobs' && String(entity?.government_type||'')!=='state';
-  return {source_key:`directory:${entry.directory_key}:${entry.entry_key}`,source_type:'career_page',source_class:entry.source_class,lineage_root:entry.lineage_root,source_url:url,ats_provider:null,board_id:null,state_code:entry.state_code,discovery_method:`directory:${entry.directory_key}`,is_verified:true,metadata:{directory_key:entry.directory_key,entry_type:entry.entry_type,organization_name:entry.organization_name,shared_inventory:shared,...(entry.metadata||{})}};
+  const association = entry.entry_type==='municipal_league' || entry.entry_type==='county_association';
+  const chosen = association ? entry.jobs_url : (entry.jobs_url || entry.source_url);
+  const url=normalizeUrl(chosen); if(!url)return null;
+  const shared=Boolean(entry.metadata?.shared_inventory) || (entry.entry_type==='state_jobs' && String(entity?.name||'').toLowerCase()!==String(entry.organization_name||'').toLowerCase()) || (entry.entry_type==='federal_exception' && entry.lineage_root==='intelligence-community');
+  return {source_key:`directory:${entry.directory_key}:${entry.entry_key}`,source_type:'career_page',source_class:entry.source_class,lineage_root:entry.lineage_root,source_url:url,ats_provider:null,board_id:null,state_code:entry.state_code,discovery_method:`directory:${entry.directory_key}`,is_verified:true,metadata:{directory_key:entry.directory_key,entry_key:entry.entry_key,entry_type:entry.entry_type,organization_name:entry.organization_name,shared_inventory:shared,...(entry.metadata||{})}};
 }
 function shouldDiscover(rows:EntityJobSource[]){if(!rows.length)return true;const newest=rows.reduce((max,row)=>Math.max(max,row.last_seen_at?new Date(row.last_seen_at).getTime():0),0);return !newest||Date.now()-newest>DISCOVERY_STALE_DAYS*86400000;}
 function sameAsPrimary(source:EntityJobSource,entity:any){const provider=clean(entity?.ats_provider),board=clean(entity?.ats_board_id),url=normalizeUrl(entity?.career_page_url);if(provider&&board&&clean(source.ats_provider)===provider&&clean(source.board_id)===board)return true;if(url&&source.source_url&&normalizeUrl(source.source_url)===url&&source.metadata?.primary===true)return true;return false;}
@@ -186,4 +204,4 @@ function hashString(value:string){let hash=2166136261;for(let i=0;i<value.length
 function positiveInt(value:unknown,fallback:number){const n=Number(value);return Number.isFinite(n)&&n>0?Math.floor(n):fallback;}
 function clamp(value:number,min:number,max:number){return Math.max(min,Math.min(max,value));}
 function message(error:unknown){return error instanceof Error?error.message:String(error);}
-async function mapWithConcurrency<T,R>(items:T[],limit:number,worker:(item:T)=>Promise<R>):Promise<R[]>{const results=new Array<R>(items.length);let next=0;async function run(){while(true){const i=next++;if(i>=items.length)return;results[i]=await worker(items[i]);}}await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>run()));return results;}
+async function mapWithConcurrency<T,R>(items:T[],limit:number,worker:(item:T)=>Promise<R>):Promise<R[]>{if(!items.length)return[];const results=new Array<R>(items.length);let next=0;async function run(){while(true){const i=next++;if(i>=items.length)return;results[i]=await worker(items[i]);}}await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>run()));return results;}
