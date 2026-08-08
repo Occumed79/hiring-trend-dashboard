@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>GovernmentJobs Test Agency</title>
+    <item>
+      <title><![CDATA[Public Health Nurse]]></title>
+      <link>https://www.governmentjobs.com/careers/fresnoca/jobs/123456/public-health-nurse</link>
+      <guid>123456</guid>
+      <description><![CDATA[Location: Fresno, CA | Department: Public Health]]></description>
+      <pubDate>Fri, 08 Aug 2026 15:00:00 GMT</pubDate>
+      <category>Public Health</category>
+    </item>
+    <item>
+      <title><![CDATA[Occupational Safety Specialist]]></title>
+      <link>https://www.governmentjobs.com/careers/fresnoca/jobs/123457/occupational-safety-specialist</link>
+      <guid>123457</guid>
+      <description><![CDATA[Job Location - Fresno, CA; full time]]></description>
+      <pubDate>Thu, 07 Aug 2026 15:00:00 GMT</pubDate>
+      <category>Risk Management</category>
+    </item>
+  </channel>
+</rss>
