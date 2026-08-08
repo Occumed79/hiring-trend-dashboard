@@ -26,8 +26,28 @@ export async function fetchNeoGovFeedJobs(entity: any): Promise<{ jobs: any[]; c
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const xml = await response.text();
+    const feedDetected = /<rss\b/i.test(xml) && /<channel\b/i.test(xml);
+    if (!feedDetected) throw new Error('HTTP 200 response was not a recognized GovernmentJobs RSS feed');
+
     const items = parseItems(xml);
     const jobs = items.map((item, index) => normalizeItem(item, entity, slug, index)).filter(Boolean) as any[];
+    const invalidItems = items.length - jobs.length;
+    if (invalidItems > 0) {
+      // Keep valid rows as partial evidence, but do not claim a complete
+      // authoritative inventory or retire jobs while the feed parser is lossy.
+      return {
+        jobs,
+        check: {
+          source: SOURCE,
+          source_class: 'authoritative',
+          status: 'error',
+          jobs_found: jobs.length,
+          authoritative_zero: false,
+          details: { agency: slug, feed_url: feedUrl, rss_items: items.length, invalid_items: invalidItems, feed_detected: true, error: 'one or more RSS items could not be normalized' },
+        },
+      };
+    }
+
     return {
       jobs,
       check: {
@@ -36,7 +56,7 @@ export async function fetchNeoGovFeedJobs(entity: any): Promise<{ jobs: any[]; c
         status: jobs.length ? 'success' : 'zero',
         jobs_found: jobs.length,
         authoritative_zero: jobs.length === 0,
-        details: { agency: slug, feed_url: feedUrl, rss_items: items.length },
+        details: { agency: slug, feed_url: feedUrl, rss_items: items.length, invalid_items: 0, feed_detected: true },
       },
     };
   } catch (error) {
@@ -47,7 +67,8 @@ export async function fetchNeoGovFeedJobs(entity: any): Promise<{ jobs: any[]; c
         source_class: 'authoritative',
         status: 'error',
         jobs_found: 0,
-        details: { agency: slug, feed_url: feedUrl, error: error instanceof Error ? error.message : String(error) },
+        authoritative_zero: false,
+        details: { agency: slug, feed_url: feedUrl, feed_detected: false, error: error instanceof Error ? error.message : String(error) },
       },
     };
   }
