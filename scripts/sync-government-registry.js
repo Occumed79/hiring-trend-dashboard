@@ -6,7 +6,7 @@ try {
   if (err?.code !== 'MODULE_NOT_FOUND') throw err;
 }
 
-const AdmZip = require('adm-zip');
+const zlib = require('zlib');
 const { Client } = require('pg');
 
 const DEFAULT_SOURCE = 'https://www2.census.gov/programs-surveys/gus/datasets/2025/gov_units_2025.zip';
@@ -14,6 +14,7 @@ const SOURCE_YEAR = Number(process.env.CENSUS_GOVERNMENT_REGISTRY_YEAR || 2025);
 const SOURCE_URL = process.env.CENSUS_GOVERNMENT_REGISTRY_URL || DEFAULT_SOURCE;
 const STALE_DAYS = clamp(Number(process.env.CENSUS_GOVERNMENT_REGISTRY_STALE_DAYS || 30), 1, 365);
 const BATCH_SIZE = clamp(Number(process.env.CENSUS_GOVERNMENT_REGISTRY_BATCH_SIZE || 250), 25, 1000);
+const MAX_REGISTRY_FILE_BYTES = clamp(Number(process.env.CENSUS_GOVERNMENT_REGISTRY_MAX_BYTES || 128 * 1024 * 1024), 1024 * 1024, 512 * 1024 * 1024);
 
 const STATE_BY_FIPS = {
   '01':['AL','Alabama'],'02':['AK','Alaska'],'04':['AZ','Arizona'],'05':['AR','Arkansas'],'06':['CA','California'],
@@ -42,13 +43,11 @@ async function main() {
     console.log(`Downloading Census ${SOURCE_YEAR} Government Units Listing...`);
     const response = await fetch(SOURCE_URL, { signal: AbortSignal.timeout(45000), headers: { 'user-agent': 'OccuMedHiringTrendDashboard/1.0' } });
     if (!response.ok) throw new Error(`Census registry download failed: HTTP ${response.status}`);
-    const zip = new AdmZip(Buffer.from(await response.arrayBuffer()));
-    const entry = zip.getEntries()
-      .filter((item) => !item.isDirectory && /\.(?:csv|txt)$/i.test(item.entryName))
-      .sort((a, b) => b.header.size - a.header.size)[0];
-    if (!entry) throw new Error('Census registry ZIP did not contain a CSV/TXT data file.');
+    const archive = Buffer.from(await response.arrayBuffer());
+    const extracted = extractLargestRegistryFile(archive);
+    const text = extracted.data.toString('utf8').replace(/^\uFEFF/, '');
+    console.log(`Using ${extracted.name} from Census archive (${extracted.data.length.toLocaleString()} bytes).`);
 
-    const text = entry.getData().toString('utf8').replace(/^\uFEFF/, '');
     const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
     if (lines.length < 2) throw new Error('Census registry file contained no data rows.');
     const delimiter = detectDelimiter(lines[0]);
@@ -68,7 +67,10 @@ async function main() {
     console.log(`Parsed ${rows.length.toLocaleString()} government units (${skipped.toLocaleString()} rows skipped).`);
 
     await client.query('BEGIN');
-    await client.query('UPDATE government_registry SET is_active = false WHERE source_year = $1', [SOURCE_YEAR]);
+    // The table is an annual Census mirror. Retire all prior active rows before
+    // activating the new release so a government removed/renamed between years
+    // cannot remain selectable forever under an older source_year.
+    await client.query('UPDATE government_registry SET is_active = false WHERE is_active = true');
     for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
       const batch = rows.slice(offset, offset + BATCH_SIZE);
       await upsertBatch(client, batch);
@@ -123,6 +125,64 @@ async function upsertBatch(client, rows) {
       is_active = true,
       updated_at = EXCLUDED.updated_at
   `, params);
+}
+
+function extractLargestRegistryFile(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 22) throw new Error('Census registry ZIP is empty or invalid.');
+  const eocd = findEndOfCentralDirectory(buffer);
+  const totalEntries = buffer.readUInt16LE(eocd + 10);
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  if (totalEntries === 0 || totalEntries === 0xffff || centralOffset === 0xffffffff) throw new Error('Unsupported or empty Census ZIP archive.');
+
+  const candidates = [];
+  let cursor = centralOffset;
+  for (let index = 0; index < totalEntries; index++) {
+    if (cursor + 46 > buffer.length || buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('Malformed Census ZIP central directory.');
+    const flags = buffer.readUInt16LE(cursor + 8);
+    const method = buffer.readUInt16LE(cursor + 10);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const uncompressedSize = buffer.readUInt32LE(cursor + 24);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const nameStart = cursor + 46;
+    const nameEnd = nameStart + nameLength;
+    if (nameEnd > buffer.length) throw new Error('Malformed Census ZIP filename entry.');
+    const name = buffer.subarray(nameStart, nameEnd).toString((flags & 0x800) ? 'utf8' : 'utf8');
+    if (!name.endsWith('/') && /\.(?:csv|txt)$/i.test(name)) {
+      if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) throw new Error('ZIP64 Census registry archives are not supported.');
+      if (uncompressedSize > MAX_REGISTRY_FILE_BYTES) throw new Error(`Census registry file ${name} exceeds the configured extraction limit.`);
+      candidates.push({ name, flags, method, compressedSize, uncompressedSize, localOffset });
+    }
+    cursor = nameEnd + extraLength + commentLength;
+  }
+
+  const entry = candidates.sort((a, b) => b.uncompressedSize - a.uncompressedSize)[0];
+  if (!entry) throw new Error('Census registry ZIP did not contain a CSV/TXT data file.');
+  if (entry.flags & 0x1) throw new Error('Encrypted Census ZIP entries are not supported.');
+  if (entry.localOffset + 30 > buffer.length || buffer.readUInt32LE(entry.localOffset) !== 0x04034b50) throw new Error('Malformed Census ZIP local entry.');
+  const localNameLength = buffer.readUInt16LE(entry.localOffset + 26);
+  const localExtraLength = buffer.readUInt16LE(entry.localOffset + 28);
+  const dataStart = entry.localOffset + 30 + localNameLength + localExtraLength;
+  const dataEnd = dataStart + entry.compressedSize;
+  if (dataStart < 0 || dataEnd > buffer.length) throw new Error('Census ZIP entry data is truncated.');
+  const compressed = buffer.subarray(dataStart, dataEnd);
+  const data = entry.method === 0
+    ? Buffer.from(compressed)
+    : entry.method === 8
+      ? zlib.inflateRawSync(compressed, { maxOutputLength: MAX_REGISTRY_FILE_BYTES })
+      : (() => { throw new Error(`Unsupported Census ZIP compression method ${entry.method}.`); })();
+  if (data.length !== entry.uncompressedSize) throw new Error(`Census ZIP entry size mismatch for ${entry.name}.`);
+  return { name: entry.name, data };
+}
+
+function findEndOfCentralDirectory(buffer) {
+  const min = Math.max(0, buffer.length - 65557);
+  for (let cursor = buffer.length - 22; cursor >= min; cursor--) {
+    if (buffer.readUInt32LE(cursor) === 0x06054b50) return cursor;
+  }
+  throw new Error('Census registry ZIP is missing its end-of-central-directory record.');
 }
 
 function normalizeGovernment(raw, index) {
