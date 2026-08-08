@@ -128,12 +128,12 @@ async function upsertBatch(client, rows) {
 function normalizeGovernment(raw, index) {
   const name = pick(raw, ['GOVNAME','GOVERNMENTNAME','UNITNAME','NAME','GOVTNAME']);
   if (!name) return null;
-  const stateFips = leftPad(pick(raw, ['STATE','STATEFIPS','STATEFP','STATECODE','FIPSTATE']), 2);
+  const stateFips = leftPad(pick(raw, ['STATE','STATEFIPS','STATEFP','STATECODE','FIPSTATE','FSTATE']), 2);
   const stateMeta = STATE_BY_FIPS[stateFips] || [];
   const stateCode = pick(raw, ['STAB','STUSAB','STATEABBR','STATEABBREVIATION']) || stateMeta[0] || null;
   const stateName = pick(raw, ['STNAME','STATENAME']) || stateMeta[1] || null;
-  const countyFips = leftPad(pick(raw, ['COUNTY','COUNTYFIPS','COUNTYFP','FIPCOUNTY']), 3);
-  const id = pick(raw, ['GOVID','GOVERNMENTID','GOV_ID','UNITID','GOVTID','ID']) || `${SOURCE_YEAR}-${stateFips || '00'}-${countyFips || '000'}-${index}`;
+  const countyFips = leftPad(pick(raw, ['COUNTY','COUNTYFIPS','COUNTYFP','FIPCOUNTY','FCOUNTY']), 3);
+  const id = pick(raw, ['GOVID','GOVERNMENTID','GOV_ID','UNITID','GOVTID','GOVIDNU','ID']) || `${SOURCE_YEAR}-${stateFips || '00'}-${countyFips || '000'}-${index}`;
   const typeRaw = pick(raw, ['GOVTYPE','GOVERNMENTTYPE','UNITTYPE','TYPE','GOVTYPECODE']);
   return {
     id: String(id).trim(),
@@ -145,7 +145,7 @@ function normalizeGovernment(raw, index) {
     stateName: stateName ? String(stateName).trim() : null,
     countyFips: countyFips || null,
     countyName: nullable(pick(raw, ['COUNTYNAME','CNTYNAME'])),
-    placeFips: leftPad(pick(raw, ['PLACE','PLACEFIPS','PLACEFP']), 5) || null,
+    placeFips: leftPad(pick(raw, ['PLACE','PLACEFIPS','PLACEFP','FPLACE']), 5) || null,
     website: normalizeUrl(pick(raw, ['WEBSITE','WEBURL','URL','WEB','HOMEPAGE'])),
     raw,
   };
@@ -153,11 +153,20 @@ function normalizeGovernment(raw, index) {
 
 function normalizeGovernmentType(value, name) {
   const raw = String(value || '').trim().toLowerCase();
-  const numeric = { '1':'state', '2':'county', '3':'municipality', '4':'township', '5':'special_district', '6':'school_district' };
+  const numeric = {
+    '0':'state',
+    '1':'county',
+    '2':'municipality',
+    '3':'township',
+    '4':'special_district',
+    '5':'school_district',
+    '6':'federal',
+    '7':'tribal',
+  };
   if (numeric[raw]) return numeric[raw];
   if (/county/.test(raw) || /county\b/i.test(name)) return 'county';
-  if (/municip|city|borough|village/.test(raw) || /\b(city|town|village|borough)\b/i.test(name)) return 'municipality';
-  if (/township|town/.test(raw)) return 'township';
+  if (/municip|city|borough|village/.test(raw) || /\b(city|village|borough)\b/i.test(name)) return 'municipality';
+  if (/township|\btown\b/.test(raw) || /\btownship\b/i.test(name)) return 'township';
   if (/school/.test(raw)) return 'school_district';
   if (/special|district/.test(raw)) return 'special_district';
   if (/state/.test(raw)) return 'state';
