@@ -1,9 +1,9 @@
 /**
  * Portal-specific hiring source ingestion.
  *
- * Each portal can have its own optional API sources.
- * If the required env key is missing, that source is gracefully skipped
- * and reported in the `skipped` array — the ingest never throws.
+ * These are optional user-configured authoritative feeds. Missing credentials
+ * are a normal condition: the portal falls back to employer-owned ATS/career
+ * surfaces and verified discovery instead of fabricating coverage.
  */
 
 import { fetchJson, getIngestTimeout } from './http';
@@ -32,6 +32,7 @@ export async function fetchPortalSpecificJobs(entity: any): Promise<IngestResult
 async function fetchPrivateSectorJobs(entity: any): Promise<IngestResult> {
   const apiKey = process.env.PRIVATE_SECTOR_HIRING_API_KEY;
   const baseUrl = normalizeBaseUrl(process.env.PRIVATE_SECTOR_HIRING_API_BASE_URL);
+  const source = 'portal:private_sector_api';
 
   if (!apiKey || !baseUrl) {
     return { jobs: [], used: [], skipped: ['private_sector_api (key/url missing)'] };
@@ -41,17 +42,18 @@ async function fetchPrivateSectorJobs(entity: any): Promise<IngestResult> {
     const data = await fetchJson(`${baseUrl}/jobs?company=${encodeURIComponent(entity.name)}&limit=200`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     }, getIngestTimeout(10000));
-    const jobs = normalizeGenericJobs(data, 'private_sector_api');
-    return { jobs, used: jobs.length ? ['private_sector_api'] : [], skipped: jobs.length ? [] : ['private_sector_api (0 jobs returned)'] };
+    const jobs = normalizeGenericJobs(data, source);
+    return { jobs, used: jobs.length ? [source] : [], skipped: jobs.length ? [] : ['private_sector_api (0 jobs returned)'] };
   } catch (e) {
-    console.warn(`[private_sector_api] fetch failed for "${entity.name}":`, e);
-    return { jobs: [], used: [], skipped: [`private_sector_api (error)`] };
+    console.warn(`[${source}] fetch failed for "${entity.name}":`, e);
+    return { jobs: [], used: [], skipped: ['private_sector_api (error)'] };
   }
 }
 
 async function fetchFederalJobs(entity: any): Promise<IngestResult> {
   const apiKey = process.env.FEDERAL_HIRING_API_KEY;
   const baseUrl = normalizeBaseUrl(process.env.FEDERAL_HIRING_API_BASE_URL);
+  const source = 'gov:federal_hiring_api';
   const used: string[] = [];
   const skipped: string[] = [];
   const jobs: any[] = [];
@@ -61,13 +63,13 @@ async function fetchFederalJobs(entity: any): Promise<IngestResult> {
       const data = await fetchJson(`${baseUrl}/jobs?agency=${encodeURIComponent(entity.name)}&limit=200`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       }, getIngestTimeout(10000));
-      const fetched = normalizeGenericJobs(data, 'federal_hiring_api');
+      const fetched = normalizeGenericJobs(data, source);
       jobs.push(...fetched);
-      if (fetched.length) used.push('federal_hiring_api');
+      if (fetched.length) used.push(source);
       else skipped.push('federal_hiring_api (0 jobs returned)');
     } catch (e) {
-      console.warn(`[federal_hiring_api] failed for "${entity.name}":`, e);
-      skipped.push(`federal_hiring_api (error)`);
+      console.warn(`[${source}] failed for "${entity.name}":`, e);
+      skipped.push('federal_hiring_api (error)');
     }
   } else {
     skipped.push('federal_hiring_api (key/url missing)');
@@ -79,6 +81,7 @@ async function fetchFederalJobs(entity: any): Promise<IngestResult> {
 async function fetchStateJobs(entity: any): Promise<IngestResult> {
   const apiKey = process.env.STATE_HIRING_API_KEY;
   const baseUrl = normalizeBaseUrl(process.env.STATE_HIRING_API_BASE_URL);
+  const source = 'gov:state_hiring_api';
 
   if (!apiKey || !baseUrl) {
     return { jobs: [], used: [], skipped: ['state_hiring_api (key/url missing)'] };
@@ -88,11 +91,11 @@ async function fetchStateJobs(entity: any): Promise<IngestResult> {
     const data = await fetchJson(`${baseUrl}/jobs?agency=${encodeURIComponent(entity.name)}&limit=200`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     }, getIngestTimeout(10000));
-    const jobs = normalizeGenericJobs(data, 'state_hiring_api');
-    return { jobs, used: jobs.length ? ['state_hiring_api'] : [], skipped: jobs.length ? [] : ['state_hiring_api (0 jobs returned)'] };
+    const jobs = normalizeGenericJobs(data, source);
+    return { jobs, used: jobs.length ? [source] : [], skipped: jobs.length ? [] : ['state_hiring_api (0 jobs returned)'] };
   } catch (e) {
-    console.warn(`[state_hiring_api] failed for "${entity.name}":`, e);
-    return { jobs: [], used: [], skipped: [`state_hiring_api (error)`] };
+    console.warn(`[${source}] failed for "${entity.name}":`, e);
+    return { jobs: [], used: [], skipped: ['state_hiring_api (error)'] };
   }
 }
 
@@ -103,17 +106,20 @@ async function fetchCountyCityJobs(entity: any): Promise<IngestResult> {
 
   const sources = [
     {
-      id: 'county_hiring_api',
+      id: 'gov:county_hiring_api',
+      label: 'county_hiring_api',
       key: process.env.COUNTY_HIRING_API_KEY,
       url: normalizeBaseUrl(process.env.COUNTY_HIRING_API_BASE_URL),
     },
     {
-      id: 'city_hiring_api',
+      id: 'gov:city_hiring_api',
+      label: 'city_hiring_api',
       key: process.env.CITY_HIRING_API_KEY,
       url: normalizeBaseUrl(process.env.CITY_HIRING_API_BASE_URL),
     },
     {
-      id: 'municipal_hiring_api',
+      id: 'gov:municipal_hiring_api',
+      label: 'municipal_hiring_api',
       key: process.env.MUNICIPAL_HIRING_API_KEY,
       url: normalizeBaseUrl(process.env.MUNICIPAL_HIRING_API_BASE_URL),
     },
@@ -121,7 +127,7 @@ async function fetchCountyCityJobs(entity: any): Promise<IngestResult> {
 
   for (const src of sources) {
     if (!src.key || !src.url) {
-      skipped.push(`${src.id} (key/url missing)`);
+      skipped.push(`${src.label} (key/url missing)`);
       continue;
     }
     try {
@@ -131,10 +137,10 @@ async function fetchCountyCityJobs(entity: any): Promise<IngestResult> {
       const fetched = normalizeGenericJobs(data, src.id);
       jobs.push(...fetched);
       if (fetched.length) used.push(src.id);
-      else skipped.push(`${src.id} (0 jobs returned)`);
+      else skipped.push(`${src.label} (0 jobs returned)`);
     } catch (e) {
       console.warn(`[${src.id}] failed for "${entity.name}":`, e);
-      skipped.push(`${src.id} (error)`);
+      skipped.push(`${src.label} (error)`);
     }
   }
 
@@ -154,8 +160,12 @@ function normalizeGenericJobs(data: any, source: string): any[] {
       const title = pickString(item, ['title', 'job_title', 'position_title', 'name']);
       if (!title) return null;
       const country = pickString(item, ['country', 'location.country']) || 'US';
+      const applyUrl = pickString(item, [
+        'apply_url', 'applyUrl', 'url', 'job_url', 'jobUrl', 'posting_url', 'position_url',
+        'links.apply', 'links.self',
+      ]);
       return {
-        external_id: pickString(item, ['id', 'job_id', 'posting_id', 'external_id']) || `${source}-${idx}`,
+        external_id: pickString(item, ['id', 'job_id', 'posting_id', 'external_id']) || applyUrl || `${source}-${idx}`,
         source,
         title,
         department: pickString(item, ['department', 'agency', 'organization']) || null,
@@ -168,7 +178,11 @@ function normalizeGenericJobs(data: any, source: string): any[] {
         is_remote: parseBoolean(pick(item, ['remote', 'is_remote'])) || /remote/i.test(title),
         is_overseas: String(country).toUpperCase() !== 'US',
         posted_at: normalizeDate(pick(item, ['posted_at', 'date_posted', 'created_at', 'publication_date'])) || null,
-        raw_data: item,
+        raw_data: {
+          ...item,
+          normalized_apply_url: applyUrl || null,
+          normalized_employer_source: source,
+        },
       };
     })
     .filter(Boolean);

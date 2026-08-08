@@ -5,7 +5,7 @@ import { fetchJobsForEntity } from './connectorRegistry';
 import { fetchGovernmentFallbackJobs } from './govFallback';
 import { fetchLangSearchJobs } from './langSearch';
 import { fetchJobApiJobs } from './jobApiAdapters';
-import { dedupeJobsAcrossSources, filterJobApiJobsForEntity, filterWebSearchJobsForEntity } from './jobIdentity';
+import { dedupeJobsAcrossSources, filterAdzunaJobsForEntity, filterJobApiJobsForEntity, filterWebSearchJobsForEntity } from './jobIdentity';
 import { assessJobQuality, isAuthoritativeJob, isLegacyWeakSource } from './jobQuality';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
@@ -74,22 +74,36 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
 
   let deduped = dedupeJobsAcrossSources(items);
   const authoritativeBeforeFallback = deduped.jobs.filter(isAuthoritativeJob).length;
+  const authoritativeFederalSource = resolvedEntity.portal === 'federal_agencies'
+    && resolvedEntity.ats_provider === 'usajobs'
+    && Boolean(resolvedEntity.ats_board_id);
 
-  if (authoritativeBeforeFallback > 0) {
-    skipped.push(`discovery fallback skipped (${authoritativeBeforeFallback} verified authoritative job${authoritativeBeforeFallback === 1 ? '' : 's'} found)`);
+  if (authoritativeBeforeFallback > 0 || authoritativeFederalSource) {
+    skipped.push(authoritativeFederalSource && authoritativeBeforeFallback === 0
+      ? `discovery fallback skipped (resolved USAJOBS organization ${resolvedEntity.ats_board_id}; current authoritative inventory is 0)`
+      : `discovery fallback skipped (${authoritativeBeforeFallback} verified authoritative job${authoritativeBeforeFallback === 1 ? '' : 's'} found)`);
   } else {
-    const shouldUseAdzuna = ['current_clients', 'prospects', 'private_companies', 'state_agencies', 'counties_and_cities'].includes(entity.portal);
+    // Adzuna is a private-sector discovery source. It is intentionally excluded
+    // from federal/state/local government portals, where employer-owned systems
+    // and verified web results are required.
+    const shouldUseAdzuna = ['current_clients', 'prospects', 'private_companies'].includes(entity.portal);
     if (shouldUseAdzuna) {
       const adzuna = await fetchAdzunaJobs(entity.name)
         .then(({ jobs }) => jobs.length ? { jobs, used: ['adzuna'], skipped: [] } : { jobs: [], used: [], skipped: ['adzuna (0 jobs returned or key missing)'] })
         .catch((error) => ({ jobs: [], used: [], skipped: [`adzuna (${errorMessage(error)})`] }));
       rawDiscovered += adzuna.jobs.length;
-      const accepted = filterQuality(adzuna.jobs);
+      const employerFiltered = filterAdzunaJobsForEntity(adzuna.jobs, resolvedEntity);
+      offTargetRejected += employerFiltered.rejected;
+      const accepted = filterQuality(employerFiltered.jobs);
       qualityRejected += accepted.rejected;
       items.push(...accepted.jobs);
-      used.push(...adzuna.used);
+      if (accepted.jobs.length) used.push(...adzuna.used);
       skipped.push(...adzuna.skipped);
+      if (employerFiltered.rejected) skipped.push(`adzuna (${employerFiltered.rejected} off-target result${employerFiltered.rejected === 1 ? '' : 's'} rejected)`);
+      if (accepted.rejected) skipped.push(`adzuna (${accepted.rejected} low-quality result${accepted.rejected === 1 ? '' : 's'} rejected)`);
       deduped = dedupeJobsAcrossSources(items);
+    } else if (['federal_agencies', 'state_agencies', 'counties_and_cities'].includes(entity.portal)) {
+      skipped.push('adzuna skipped (government portal requires authoritative or employer-verified sources)');
     }
 
     const langSearchMode = getSourceMode('LANGSEARCH_MODE', 'always');
@@ -137,23 +151,23 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
   const newCount = upsertResults.filter(Boolean).length;
 
   const duplicateClosures = await retireExactUrlDuplicates(entity.id);
-  const hasAuthoritative = uniqueItems.some(isAuthoritativeJob);
+  const hasAuthoritative = uniqueItems.some(isAuthoritativeJob) || authoritativeFederalSource;
   const invalidClosures = await retireInvalidLegacyJobs(entity.id, hasAuthoritative);
   const reconcileDiscovery = options.reconcile === true || booleanEnv('INGEST_RECONCILE_DISCOVERY', true);
   const supersededClosures = hasAuthoritative && reconcileDiscovery
     ? await retireSupersededDiscoveryJobs(entity.id, runStartedAt)
     : 0;
-  const staleClosures = await retireStaleJobs(entity.id, uniqueItems.length > 0);
+  const staleClosures = await retireStaleJobs(entity.id, uniqueItems.length > 0 || authoritativeFederalSource);
   const closedCount = duplicateClosures + invalidClosures + supersededClosures + staleClosures;
 
   const sourcesUsed = Array.from(new Set(used));
   const sourcesSkipped = Array.from(new Set(skipped));
-  const status = uniqueItems.length ? 'success' : 'partial';
+  const status = uniqueItems.length || authoritativeFederalSource ? 'success' : 'partial';
 
   await query(
     `INSERT INTO ingest_log (entity_id, source, status, jobs_found, jobs_new, jobs_closed)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [entity.id, sourcesUsed.join(',') || 'none', status, uniqueItems.length, newCount, closedCount]
+    [entity.id, sourcesUsed.join(',') || (authoritativeFederalSource ? `usajobs:${resolvedEntity.ats_board_id}` : 'none'), status, uniqueItems.length, newCount, closedCount]
   );
 
   return {

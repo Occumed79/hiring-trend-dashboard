@@ -36,7 +36,9 @@ export async function GET(req: NextRequest) {
     if (entityId) { params.push(entityId); sql += ` AND j.entity_id = $${params.length}`; }
     if (country) { params.push(country.toUpperCase()); sql += ` AND UPPER(j.country) = $${params.length}`; }
     if (roleCategory) { params.push(roleCategory); sql += ` AND j.role_category = $${params.length}`; }
-    if (newOnly) { params.push(new Date(Date.now() - 7 * 86400000).toISOString()); sql += ` AND COALESCE(j.posted_at, j.created_at) >= $${params.length}`; }
+    // A database import/first-seen timestamp is not evidence that a role was
+    // posted this week. Match the dashboard metrics and require source posted_at.
+    if (newOnly) { params.push(new Date(Date.now() - 7 * 86400000).toISOString()); sql += ` AND j.posted_at IS NOT NULL AND j.posted_at >= $${params.length}`; }
     if (overseasOnly) sql += ` AND j.is_overseas = true`;
     if (federalOnly) { params.push('federal_agencies'); sql += ` AND e.portal = $${params.length}`; }
     sql += ` LIMIT 5000`;
