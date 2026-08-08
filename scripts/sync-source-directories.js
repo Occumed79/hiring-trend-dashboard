@@ -15,6 +15,11 @@ const SOURCES = {
   nlc: process.env.NLC_MUNICIPAL_LEAGUES_URL || 'https://www.nlc.org/membership/state-municipal-leagues/',
   naco: process.env.NACO_STATE_ASSOCIATIONS_URL || 'https://www.naco.org/page/state-associations-affiliates-and-affinity-organizations',
 };
+const DIRECTORY_MINIMUMS = {
+  'naspe-state-jobs': positiveInt(process.env.NASPE_DIRECTORY_MIN_ROWS, 45),
+  'nlc-municipal-leagues': positiveInt(process.env.NLC_DIRECTORY_MIN_ROWS, 45),
+  'naco-state-associations': positiveInt(process.env.NACO_DIRECTORY_MIN_ROWS, 35),
+};
 
 const STATES = {
   Alabama:'AL',Alaska:'AK',Arizona:'AZ',Arkansas:'AR',California:'CA',Colorado:'CO',Connecticut:'CT',Delaware:'DE',Florida:'FL',Georgia:'GA',Hawaii:'HI',Idaho:'ID',Illinois:'IL',Indiana:'IN',Iowa:'IA',Kansas:'KS',Kentucky:'KY',Louisiana:'LA',Maine:'ME',Maryland:'MD',Massachusetts:'MA',Michigan:'MI',Minnesota:'MN',Mississippi:'MS',Missouri:'MO',Montana:'MT',Nebraska:'NE',Nevada:'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND',Ohio:'OH',Oklahoma:'OK',Oregon:'OR',Pennsylvania:'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD',Tennessee:'TN',Texas:'TX',Utah:'UT',Vermont:'VT',Virginia:'VA',Washington:'WA','West Virginia':'WV',Wisconsin:'WI',Wyoming:'WY','District of Columbia':'DC'
@@ -60,31 +65,28 @@ async function main() {
       return;
     }
 
-    const entries = [];
-    const [naspe, nlc, naco] = await Promise.all([
-      fetchText(SOURCES.naspe).catch(error => { console.warn(`NASPE directory unavailable: ${message(error)}`); return ''; }),
-      fetchText(SOURCES.nlc).catch(error => { console.warn(`NLC directory unavailable: ${message(error)}`); return ''; }),
-      fetchText(SOURCES.naco).catch(error => { console.warn(`NACo directory unavailable: ${message(error)}`); return ''; }),
+    const fetched = await Promise.all([
+      fetchDirectory('naspe-state-jobs', SOURCES.naspe, parseNaspe),
+      fetchDirectory('nlc-municipal-leagues', SOURCES.nlc, parseNlc),
+      fetchDirectory('naco-state-associations', SOURCES.naco, parseNaco),
     ]);
-
-    entries.push(...parseNaspe(naspe));
-    entries.push(...parseNlc(nlc));
-    entries.push(...parseNaco(naco));
-    entries.push(...FEDERAL_EXCEPTION_SEEDS.map(entry => ({ directory_key: 'federal-exceptions', state_code: null, ...entry })));
-
-    const unique = new Map();
-    for (const entry of entries) unique.set(`${entry.directory_key}|${entry.entry_key}`, entry);
-    const rows = Array.from(unique.values());
-    if (rows.length < 40) throw new Error(`Refusing suspicious source-directory sync: only ${rows.length} entries parsed.`);
+    const federalRows = FEDERAL_EXCEPTION_SEEDS.map(entry => ({ directory_key: 'federal-exceptions', state_code: null, ...entry }));
 
     await client.query('BEGIN');
-    for (const directoryKey of ['naspe-state-jobs','nlc-municipal-leagues','naco-state-associations','federal-exceptions']) {
-      await client.query('UPDATE source_directory_entries SET is_active = false WHERE directory_key = $1', [directoryKey]);
+    for (const result of fetched) {
+      if (!result.accepted) {
+        console.warn(`${result.directoryKey} refresh rejected; preserving previous active rows (${result.reason}).`);
+        continue;
+      }
+      await replaceDirectory(client, result.directoryKey, result.rows);
     }
-    for (const row of rows) await upsert(client, row);
+    // Federal exception seeds are local, deterministic configuration rather than
+    // a remote scrape, so they are safe to replace every run.
+    await replaceDirectory(client, 'federal-exceptions', federalRows);
     await client.query('COMMIT');
 
-    const counts = rows.reduce((out, row) => { out[row.directory_key] = (out[row.directory_key] || 0) + 1; return out; }, {});
+    const counts = Object.fromEntries(fetched.map(result => [result.directoryKey, result.accepted ? result.rows.length : `preserved (${result.rows.length} parsed)`]));
+    counts['federal-exceptions'] = federalRows.length;
     console.log('Source directory sync complete:', counts);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
@@ -92,6 +94,26 @@ async function main() {
   } finally {
     await client.end();
   }
+}
+
+async function fetchDirectory(directoryKey, url, parser) {
+  try {
+    const html = await fetchText(url);
+    const parsed = parser(html);
+    const unique = dedupeDirectoryRows(parsed);
+    const minimum = DIRECTORY_MINIMUMS[directoryKey] || 1;
+    if (unique.length < minimum) {
+      return { directoryKey, rows: unique, accepted: false, reason: `only ${unique.length} rows parsed; minimum is ${minimum}` };
+    }
+    return { directoryKey, rows: unique, accepted: true, reason: null };
+  } catch (error) {
+    return { directoryKey, rows: [], accepted: false, reason: message(error) };
+  }
+}
+
+async function replaceDirectory(client, directoryKey, rows) {
+  await client.query('UPDATE source_directory_entries SET is_active = false WHERE directory_key = $1', [directoryKey]);
+  for (const row of rows) await upsert(client, row);
 }
 
 async function shouldRefresh(client) {
@@ -196,6 +218,11 @@ async function upsert(client, row) {
   );
 }
 
+function dedupeDirectoryRows(rows) {
+  const unique = new Map();
+  for (const row of rows) unique.set(`${row.directory_key}|${row.entry_key}`, row);
+  return Array.from(unique.values());
+}
 async function fetchText(url) {
   const response = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'OccuMedHiringTrendDashboard/1.0', accept: 'text/html,*/*;q=0.8' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
