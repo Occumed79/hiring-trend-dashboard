@@ -53,15 +53,26 @@ export async function POST(req: NextRequest) {
     const { portal, career_page_url, ats_provider, ats_board_id, industry, category } = body as any;
     const name = String((body as any).name || '').trim();
     const aliases = Array.isArray((body as any).aliases) ? (body as any).aliases.map((alias: unknown) => String(alias).trim()).filter(Boolean) : [];
+    const requestedRegistryId = String((body as any).government_registry_id || '').trim();
     if (!name || !portal) return NextResponse.json({ error: 'name and portal required' }, { status: 400 });
     if (!VALID_PORTALS.has(portal)) return NextResponse.json({ error: 'Invalid portal' }, { status: 400 });
 
     const duplicate = await query(`SELECT * FROM entities WHERE is_active = true AND portal = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) LIMIT 1`, [portal, name]);
     if (duplicate.length) return NextResponse.json({ ...duplicate[0], duplicate: true }, { status: 200 });
 
-    const registry = portal === 'state_agencies' || portal === 'counties_and_cities'
-      ? await resolveGovernmentRegistryMatch(name, portal)
-      : null;
+    let registry: any = null;
+    if (portal === 'state_agencies' || portal === 'counties_and_cities') {
+      if (requestedRegistryId) {
+        const exact = await query(
+          `SELECT census_government_id, name, canonical_name, government_type, state_fips, state_code, state_name,
+                  county_fips, county_name, place_fips, website, 100 AS score
+           FROM government_registry WHERE census_government_id = $1 AND is_active = true LIMIT 1`,
+          [requestedRegistryId],
+        ).catch(() => []);
+        registry = exact[0] || null;
+      }
+      if (!registry) registry = await resolveGovernmentRegistryMatch(name, portal);
+    }
     const registryMeta = governmentRegistryMetadata(registry);
     const registryName = registry?.name || name;
 
