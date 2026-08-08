@@ -24,14 +24,27 @@ type CoverageAssessment = {
   gaps?: string[];
 } | null;
 
-export default function SourceCoveragePanel({ rows, registry, assessment, loading }: {
+type ReliabilityIncident = {
+  incident_key?: string;
+  kind?: string;
+  severity?: string;
+  source?: string | null;
+  message?: string;
+  details?: Record<string, any>;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+};
+
+export default function SourceCoveragePanel({ rows, registry, assessment, incidents, loading }: {
   rows?: SourceRow[] | null;
   registry?: { id?: string | null; type?: string | null; state?: string | null; fips?: string | null } | null;
   assessment?: CoverageAssessment;
+  incidents?: ReliabilityIncident[] | null;
   loading?: boolean;
 }) {
   const normalized = Array.isArray(rows) ? rows : [];
-  if (!loading && !registry && !normalized.length && !assessment) return null;
+  const reliabilityIncidents = Array.isArray(incidents) ? incidents : [];
+  if (!loading && !registry && !normalized.length && !assessment && !reliabilityIncidents.length) return null;
 
   const authoritative = normalized.filter(row => row.source_class === 'authoritative');
   const verified = normalized.filter(row => row.source_class === 'verified');
@@ -40,6 +53,7 @@ export default function SourceCoveragePanel({ rows, registry, assessment, loadin
   const problems = normalized.filter(row => row.status === 'error').length;
   const score = Number(assessment?.score ?? 0);
   const gaps = Array.isArray(assessment?.gaps) ? assessment!.gaps!.filter(Boolean) : [];
+  const highIncidents = reliabilityIncidents.filter(row => ['critical','high'].includes(String(row.severity || '').toLowerCase())).length;
 
   return (
     <section className="glass-card luminous-panel relative overflow-hidden p-5">
@@ -58,7 +72,12 @@ export default function SourceCoveragePanel({ rows, registry, assessment, loadin
                 {healthy}/{normalized.length} checked cleanly
               </span>
             )}
-            {!loading && problems > 0 && (
+            {!loading && reliabilityIncidents.length > 0 && (
+              <span className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${highIncidents ? 'border-red-400/25 bg-red-500/8 text-red-200' : 'border-amber-400/25 bg-amber-500/8 text-amber-200'}`}>
+                {reliabilityIncidents.length} reliability alert{reliabilityIncidents.length === 1 ? '' : 's'}
+              </span>
+            )}
+            {!loading && problems > 0 && !reliabilityIncidents.length && (
               <span className="rounded-full border border-amber-400/25 bg-amber-500/8 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-200">
                 {problems} source{problems === 1 ? '' : 's'} need attention
               </span>
@@ -85,6 +104,24 @@ export default function SourceCoveragePanel({ rows, registry, assessment, loadin
           </div>
         )}
       </div>
+
+      {!loading && reliabilityIncidents.length > 0 && (
+        <div className="relative z-10 mb-4 rounded-xl border border-amber-400/15 bg-amber-500/[0.035] px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-amber-100/75">Reliability diagnostics</p>
+            <span className="text-[9px] text-slate-600">open findings only</span>
+          </div>
+          <div className="space-y-1.5">
+            {reliabilityIncidents.slice(0, 3).map((incident, index) => (
+              <div key={incident.incident_key || `${incident.kind}-${index}`} className="flex items-start gap-2.5 text-[10px] leading-relaxed">
+                <span className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${incidentDotClass(incident.severity)}`} />
+                <p className="min-w-0 text-slate-400"><span className="font-medium text-slate-200">{incidentLabel(incident)}</span> · {incident.message || 'Source reliability requires review.'}</p>
+              </div>
+            ))}
+            {reliabilityIncidents.length > 3 && <p className="pl-4 text-[9px] text-slate-600">+{reliabilityIncidents.length - 3} additional finding{reliabilityIncidents.length - 3 === 1 ? '' : 's'}</p>}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
@@ -191,6 +228,17 @@ function sourceDetail(row: SourceRow) {
   return row.source_class === 'authoritative' ? 'Primary source' : row.source_class === 'verified' ? 'Verified source' : 'Corroborating source';
 }
 
+function incidentLabel(incident: ReliabilityIncident) {
+  if (incident.source) return sourceLabel(incident.source);
+  const kind = String(incident.kind || 'reliability finding').replace(/_/g, ' ');
+  return titleCase(kind);
+}
+function incidentDotClass(severity?: string) {
+  const value = String(severity || '').toLowerCase();
+  if (value === 'critical' || value === 'high') return 'bg-red-300';
+  if (value === 'medium') return 'bg-amber-300';
+  return 'bg-slate-400';
+}
 function scoreClass(score: number) {
   if (score >= 90) return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200';
   if (score >= 75) return 'border-blue-400/25 bg-blue-500/10 text-blue-200';

@@ -1,6 +1,7 @@
 import { query } from '@/db/client';
 import type { CoverageCheck } from './neogovFeed';
 import { assessAndPersistEntityCoverage } from './coverageAssessment';
+import { evaluateAndPersistSourceReliability } from './sourceReliability';
 
 export async function persistSourceCoverage(entityId: string, checks: CoverageCheck[]) {
   if (!entityId || !checks.length) return;
@@ -14,6 +15,18 @@ export async function persistSourceCoverage(entityId: string, checks: CoverageCh
     const success = check.status === 'success' || check.status === 'zero';
     const sourceKey = clean(check.details?.source_key) || clean(check.source);
     const lineageRoot = clean(check.details?.lineage_root) || lineageForSource(check.source);
+    const values = [entityId, check.source, check.source_class, check.status, Math.max(0, Number(check.jobs_found || 0)), Boolean(check.authoritative_zero), JSON.stringify(check.details || {}), lineageRoot, sourceKey, success];
+
+    // Preserve the evidence before replacing the latest-state row. Runtime reliability
+    // checks compare this immutable history rather than guessing from today's snapshot.
+    await query(
+      `INSERT INTO entity_source_coverage_history (
+         entity_id, source, source_class, status, jobs_found, authoritative_zero,
+         details, lineage_root, source_key, checked_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,NOW())`,
+      values.slice(0, 9),
+    ).catch(error => console.warn(`Could not persist source history ${check.source}:`, error instanceof Error ? error.message : error));
+
     await query(
       `INSERT INTO entity_source_coverage (
          entity_id, source, source_class, status, jobs_found, authoritative_zero, details,
@@ -29,14 +42,17 @@ export async function persistSourceCoverage(entityId: string, checks: CoverageCh
          source_key = COALESCE(EXCLUDED.source_key, entity_source_coverage.source_key),
          last_checked_at = NOW(),
          last_success_at = CASE WHEN $10 THEN NOW() ELSE entity_source_coverage.last_success_at END`,
-      [entityId, check.source, check.source_class, check.status, Math.max(0, Number(check.jobs_found || 0)), Boolean(check.authoritative_zero), JSON.stringify(check.details || {}), lineageRoot, sourceKey, success],
+      values,
     ).catch(error => console.warn(`Could not persist source coverage ${check.source}:`, error instanceof Error ? error.message : error));
   }
 
-  // Coverage scoring is observability, not a prerequisite for ingest. A scoring
-  // failure must never discard otherwise valid jobs or source-health records.
+  // Coverage scoring and reliability diagnostics are observability, not prerequisites
+  // for ingest. Their failures must never discard otherwise valid jobs.
   await assessAndPersistEntityCoverage(entityId).catch(error =>
     console.warn('Could not assess source completeness:', error instanceof Error ? error.message : error)
+  );
+  await evaluateAndPersistSourceReliability(entityId).catch(error =>
+    console.warn('Could not assess source reliability:', error instanceof Error ? error.message : error)
   );
 }
 
