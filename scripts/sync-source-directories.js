@@ -225,7 +225,8 @@ async function upsert(client, row) {
     ON CONFLICT (directory_key, entry_key) DO UPDATE SET
       entry_type=EXCLUDED.entry_type, state_code=EXCLUDED.state_code, organization_name=EXCLUDED.organization_name,
       source_url=EXCLUDED.source_url, jobs_url=COALESCE(EXCLUDED.jobs_url, source_directory_entries.jobs_url),
-      source_class=EXCLUDED.source_class, lineage_root=EXCLUDED.lineage_root, metadata=EXCLUDED.metadata,
+      source_class=EXCLUDED.source_class, lineage_root=EXCLUDED.lineage_root,
+      metadata=source_directory_entries.metadata || EXCLUDED.metadata,
       is_active=true, last_seen_at=NOW(), updated_at=NOW()`,
     [row.directory_key,row.entry_key,row.entry_type,row.state_code,row.organization_name,row.source_url,row.jobs_url,row.source_class,row.lineage_root,JSON.stringify(row.metadata || {})]
   );
