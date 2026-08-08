@@ -14,6 +14,7 @@ async function main() {
   const client = new Client({ connectionString, ssl: connectionString.includes('sslmode=require') ? { rejectUnauthorized:false } : undefined });
   await client.connect();
   try {
+    const rebuildStartedAt = new Date();
     const result = await client.query(
       `SELECT DISTINCT ON (entity_id, date_trunc('day',checked_at), source)
               entity_id, date_trunc('day',checked_at) AS day, source, lineage_root, jobs_found, checked_at
@@ -69,7 +70,14 @@ async function main() {
       );
       persisted++;
     }
-    console.log(`Source-pair baseline rebuild complete: ${persisted} pairs from ${result.rows.length} healthy daily observations.`);
+
+    // Only prune after a fully successful rebuild. If the query/upsert phase throws,
+    // existing baselines remain available instead of being destroyed by a partial run.
+    const pruned = await client.query(
+      `DELETE FROM source_pair_baselines WHERE updated_at < $1 RETURNING source_a,source_b`,
+      [rebuildStartedAt],
+    );
+    console.log(`Source-pair baseline rebuild complete: ${persisted} pairs persisted, ${pruned.rowCount || 0} obsolete pairs pruned, from ${result.rows.length} healthy daily observations.`);
   } finally { await client.end(); }
 }
 
