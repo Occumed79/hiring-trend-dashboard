@@ -27,7 +27,9 @@ export async function captureEntityBenchmarkTruth(entityId: string) {
   const sourceRows = await query(
     `SELECT source_key,source_type,source_class,lineage_root,source_url,ats_provider,board_id,is_verified,metadata,last_verified_at
      FROM entity_job_sources
-     WHERE entity_id=$1 AND is_active=true AND source_class='authoritative' AND source_type<>'identity'
+     WHERE entity_id=$1 AND is_active=true AND source_class='authoritative'
+       AND source_type IN ('ats','career_page')
+       AND (is_verified=true OR metadata->>'primary'='true')
      ORDER BY (metadata->>'primary'='true') DESC,last_verified_at DESC NULLS LAST,source_key`,
     [entityId],
   ).catch(() => []);
