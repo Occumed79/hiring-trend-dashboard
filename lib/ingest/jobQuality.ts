@@ -1,8 +1,8 @@
 import { normalizeApplyUrl } from './jobIdentity';
 
 const STRUCTURED_SOURCES = new Set([
-  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'ashby', 'recruitee', 'workday', 'usajobs',
-  'jazzhr', 'jibeapply', 'amentum_careers',
+  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'ashby', 'recruitee', 'workday', 'workable', 'personio', 'usajobs',
+  'official_sitemap', 'jazzhr', 'jibeapply', 'amentum_careers',
 ]);
 
 const LEGACY_WEAK_SOURCES = new Set([
@@ -44,7 +44,7 @@ export function assessJobQuality(item: any): JobQualityResult {
 
   const raw = item?.raw_data && typeof item.raw_data === 'object' ? item.raw_data : {};
   const parser = String(raw.parser || '').toLowerCase();
-  const hasStructuredEvidence = parser.includes('json_ld') || parser.includes('structured') || raw.normalized_employer_source
+  const hasStructuredEvidence = parser.includes('json_ld') || parser.includes('jsonld') || parser.includes('structured') || raw.normalized_employer_source
     || STRUCTURED_SOURCES.has(source) || source.startsWith('portal:') || source.startsWith('gov:');
 
   if (source === 'career_page' || source.startsWith('ats:')) {
@@ -59,6 +59,8 @@ export function isAuthoritativeJob(item: any) {
   const source = String(item?.source || '').trim().toLowerCase();
   const quality = assessJobQuality(item);
   if (!quality.ok) return false;
+  const raw = item?.raw_data && typeof item.raw_data === 'object' ? item.raw_data : {};
+  if (raw.source_graph_class === 'authoritative' && raw.source_graph_verified_for_entity === true) return true;
   if (STRUCTURED_SOURCES.has(source) || source.startsWith('portal:') || source.startsWith('gov:')) return true;
   if (source.startsWith('ats:')) return quality.strongDetailUrl || hasStructuredParser(item);
   if (source === 'career_page') return quality.strongDetailUrl || hasStructuredParser(item);
@@ -94,6 +96,8 @@ export function looksLikeJobDetailUrl(value: unknown): boolean {
     /jobvite\.com\/.+(?:job|position)/i,
     /usajobs\.gov\/job\/\d+/i,
     /governmentjobs\.com\/careers\/[^/]+\/jobs\/\d+/i,
+    /apply\.workable\.com\/[^/]+\/j\/[A-Za-z0-9]+/i,
+    /jobs\.personio\.(?:com|de)\/.+\/job\/\d+/i,
     /linkedin\.com\/jobs\/view\/\d+/i,
     /indeed\.com\/viewjob/i,
     /\/jobs?\/(?!search(?:\/|$)|categories(?:\/|$)|locations(?:\/|$))[^/?#]{4,}/i,
@@ -107,7 +111,7 @@ export function isGenericNavigationTitle(value: unknown) {
   if (!title) return true;
   return GENERIC_TITLE_PATTERNS.some((pattern) => pattern.test(title.replace(/\s+/g, ' ').trim()));
 }
-function hasStructuredParser(item: any) { const parser = String(item?.raw_data?.parser || '').toLowerCase(); return parser.includes('json_ld') || parser.includes('structured'); }
+function hasStructuredParser(item: any) { const parser = String(item?.raw_data?.parser || '').toLowerCase(); return parser.includes('json_ld') || parser.includes('jsonld') || parser.includes('structured'); }
 function looksLikeMarkupOrCss(title: string) { return /[{}<>]|(?:^|\s)\.[a-z0-9_-]+\s*\{|display\s*:\s*(?:inline|block)|vertical-align\s*:/i.test(title) || /^(?:css|style|script)\b/i.test(title); }
 function cleanTitle(value: unknown) { return String(value || '').replace(/\s+/g, ' ').trim(); }
 function reject(reason: string, applyUrl: string | null, strongDetailUrl: boolean): JobQualityResult { return { ok: false, reason, applyUrl, strongDetailUrl }; }
