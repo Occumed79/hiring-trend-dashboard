@@ -1,5 +1,6 @@
 import { fetchNeoGovFeedJobs, type CoverageCheck } from './neogovFeed';
 import { fetchNLxJobs } from './nlx';
+import { fetchCareerOneStopJobs } from './careerOneStop';
 import { fetchPublicSectorBoardJobs } from './publicSectorBoards';
 import { prepareEntityJobSources, fetchEntitySourceGraphJobs } from './entityJobSources';
 import { enrichEntityFromContractorIdentity } from './contractorIdentity';
@@ -14,9 +15,6 @@ export async function fetchExpandedCoverageSources(entity: any): Promise<Coverag
   const jobs: any[] = [];
   const checks: CoverageCheck[] = [];
 
-  // Contractor identity enrichment is intentionally performed before NLx and the
-  // multi-source graph. Legal-name aliases can improve employer verification, but
-  // only conservative equivalent names are promoted by contractorIdentity.ts.
   const identity = await enrichEntityFromContractorIdentity(entity).catch(error => ({
     entity,
     checks: [{
@@ -37,9 +35,10 @@ export async function fetchExpandedCoverageSources(entity: any): Promise<Coverag
   // federal/state exception source no longer has to replace the entity's primary ATS.
   tasks.push(fetchEntitySourceGraphJobs(effectiveEntity, sourceGraph).then(result => ({ jobs: result.jobs, checks: result.checks })));
 
-  // NLx is useful across employer types. If credentials/location are unavailable,
-  // it records a skipped check instead of silently disappearing.
+  // NLx direct plus CareerOneStop resilience mirror. Both deliberately share the
+  // same lineage so the confidence engine cannot count them as independent proof.
   tasks.push(fetchNLxJobs(effectiveEntity).then(result => ({ jobs: result.jobs, checks: [result.check] })));
+  tasks.push(fetchCareerOneStopJobs(effectiveEntity).then(result => ({ jobs: result.jobs, checks: [result.check] })));
 
   if (['state_agencies','counties_and_cities'].includes(String(effectiveEntity?.portal || ''))) {
     tasks.push(fetchNeoGovFeedJobs(effectiveEntity).then(result => ({ jobs: result.jobs, checks: [result.check] })));
