@@ -19,6 +19,7 @@ export type EntityJobSource = ConfiguredJobSource & {
 
 const DISCOVERY_STALE_DAYS = positiveInt(process.env.SOURCE_DISCOVERY_STALE_DAYS, 14);
 const SOURCE_CONCURRENCY = clamp(positiveInt(process.env.ENTITY_SOURCE_CONCURRENCY, 4), 1, 8);
+const DISCOVERY_MARKER_KEY = 'discovery:surface-scan';
 
 export async function prepareEntityJobSources(entity: any, detected?: any | null): Promise<EntityJobSource[]> {
   if (!entity?.id) return [];
@@ -48,6 +49,7 @@ export async function prepareEntityJobSources(entity: any, detected?: any | null
       const discovered = await discoverHiringSurfaces(seed).catch(() => []);
       for (const source of discovered) await upsertEntitySource(entity.id, source);
     }
+    await upsertEntitySource(entity.id, discoveryMarker());
   }
 
   return readEntityJobSources(entity.id);
@@ -112,7 +114,7 @@ async function fetchOne(entity: any, source: EntityJobSource) {
         source_graph_key: source.source_key,
         source_graph_lineage: source.lineage_root,
         source_graph_class: source.source_class,
-        source_graph_verified_for_entity: Boolean(source.is_verified || source.source_class === 'authoritative' || (requiresEmployerVerification && rejected >= 0)),
+        source_graph_verified_for_entity: Boolean(source.is_verified || source.source_class === 'authoritative' || requiresEmployerVerification),
         source_graph_shared_inventory: shared,
         source_graph_required_employer_verification: requiresEmployerVerification,
       },
@@ -184,6 +186,20 @@ async function upsertEntitySource(entityId: string, source: EntityJobSource | Di
   ).catch(() => {});
 }
 
+function discoveryMarker(): EntityJobSource {
+  return {
+    source_key: DISCOVERY_MARKER_KEY,
+    source_type: 'identity',
+    source_class: 'supplemental',
+    lineage_root: 'coverage:source-discovery',
+    source_url: null,
+    ats_provider: null,
+    board_id: null,
+    discovery_method: 'surface-scan',
+    is_verified: true,
+    metadata: { last_scan_at: new Date().toISOString(), purpose: 'source discovery freshness marker' },
+  };
+}
 function sourceFromEntity(entity:any,method:string):EntityJobSource|null {
   const url=normalizeUrl(entity?.career_page_url); const provider=clean(entity?.ats_provider); const board=clean(entity?.ats_board_id);
   if(!url&&!provider&&!board)return null;
@@ -200,7 +216,7 @@ function sourceFromDirectory(entry:DirectoryEntry,entity:any):EntityJobSource|nu
     || (entry.entry_type==='federal_exception' && entry.lineage_root==='intelligence-community');
   return {source_key:`directory:${entry.directory_key}:${entry.entry_key}`,source_type:'career_page',source_class:entry.source_class,lineage_root:entry.lineage_root,source_url:url,ats_provider:null,board_id:null,state_code:entry.state_code,discovery_method:`directory:${entry.directory_key}`,is_verified:true,metadata:{directory_key:entry.directory_key,entry_key:entry.entry_key,entry_type:entry.entry_type,organization_name:entry.organization_name,shared_inventory:shared,...(entry.metadata||{})}};
 }
-function shouldDiscover(rows:EntityJobSource[]){if(!rows.length)return true;const newest=rows.reduce((max,row)=>Math.max(max,row.last_seen_at?new Date(row.last_seen_at).getTime():0),0);return !newest||Date.now()-newest>DISCOVERY_STALE_DAYS*86400000;}
+function shouldDiscover(rows:EntityJobSource[]){const marker=rows.find(row=>row.source_key===DISCOVERY_MARKER_KEY);const scannedAt=marker?.metadata?.last_scan_at?new Date(marker.metadata.last_scan_at).getTime():0;return !scannedAt||!Number.isFinite(scannedAt)||Date.now()-scannedAt>DISCOVERY_STALE_DAYS*86400000;}
 function sameAsPrimary(source:EntityJobSource,entity:any){const provider=clean(entity?.ats_provider),board=clean(entity?.ats_board_id),url=normalizeUrl(entity?.career_page_url);if(provider&&board&&clean(source.ats_provider)===provider&&clean(source.board_id)===board)return true;if(url&&source.source_url&&normalizeUrl(source.source_url)===url&&source.metadata?.primary===true)return true;return false;}
 async function markSourceChecked(entityId:string,key:string,success:boolean){await query(`UPDATE entity_job_sources SET last_seen_at=NOW(),last_verified_at=CASE WHEN $3 THEN NOW() ELSE last_verified_at END,updated_at=NOW() WHERE entity_id=$1 AND source_key=$2`,[entityId,key,success]);}
 function dedupeSources<T extends {source_key:string}>(rows:T[]){const seen=new Set<string>();return rows.filter(row=>{if(seen.has(row.source_key))return false;seen.add(row.source_key);return true;});}
