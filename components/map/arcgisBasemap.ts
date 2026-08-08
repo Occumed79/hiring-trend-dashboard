@@ -4,7 +4,6 @@ export type HiringMapStyleId =
   | 'dark-gray'
   | 'navigation'
   | 'streets'
-  | 'light-gray'
   | 'topographic'
   | 'imagery';
 
@@ -80,35 +79,26 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     swatch: ['#e5edf4', '#f8fafc'],
   },
   {
-    id: 'light-gray',
-    label: 'Light Gray',
-    shortLabel: 'Light Gray',
-    description: 'Minimal light reference canvas',
-    arcgisStyle: 'arcgis/light-gray',
-    tone: 'light',
-    swatch: ['#d9dde2', '#f4f5f7'],
-  },
-  {
     id: 'topographic',
     label: 'Topographic',
     shortLabel: 'Topo',
     description: 'Terrain and physical geography',
-    // The Static Basemap Tiles service exposes the supported raster topo-style
-    // basemap as ArcGIS Outdoor. `arcgis/topographic` is not a valid static tile path.
+    // ArcGIS Outdoor is the supported terrain/topography-oriented style on
+    // the Static Basemap Tiles raster endpoint.
     arcgisStyle: 'arcgis/outdoor',
     tone: 'light',
     swatch: ['#d7ddbc', '#f0ead9'],
   },
   {
     id: 'imagery',
-    label: 'Imagery',
+    label: 'Satellite',
     shortLabel: 'Satellite',
-    description: 'Satellite imagery',
-    // Imagery is handled through Esri World Imagery below. The Static Basemap
-    // Tiles endpoint only exposes imagery/labels, which is a reference overlay.
+    description: 'Esri World Imagery satellite view',
+    // Satellite imagery is served by Esri World Imagery below. The static
+    // basemap imagery/labels style is only a reference-label overlay.
     arcgisStyle: 'arcgis/imagery/labels',
     tone: 'photo',
-    swatch: ['#1d382b', '#78826e'],
+    swatch: ['#11271f', '#62785f'],
   },
 ];
 
@@ -129,7 +119,7 @@ export function getHiringBasemap(styleId?: HiringMapStyleId): HiringBasemapConfi
         styleId: selected.id,
         styleLabel: selected.label,
         url: ESRI_WORLD_IMAGERY,
-        attribution: 'Tiles © Esri · Maxar · Earthstar Geographics · GIS User Community',
+        attribution: '© Esri · Maxar · Earthstar Geographics · GIS User Community',
         tileSize: 256,
         zoomOffset: 0,
         maxZoom: 19,
