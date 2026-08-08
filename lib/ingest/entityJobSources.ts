@@ -190,7 +190,10 @@ function sourceFromDirectory(entry:DirectoryEntry,entity:any):EntityJobSource|nu
   const association = entry.entry_type==='municipal_league' || entry.entry_type==='county_association';
   const chosen = association ? entry.jobs_url : (entry.jobs_url || entry.source_url);
   const url=normalizeUrl(chosen); if(!url)return null;
-  const shared=Boolean(entry.metadata?.shared_inventory) || (entry.entry_type==='state_jobs' && String(entity?.name||'').toLowerCase()!==String(entry.organization_name||'').toLowerCase()) || (entry.entry_type==='federal_exception' && entry.lineage_root==='intelligence-community');
+  const shared = Boolean(entry.metadata?.shared_inventory)
+    || association
+    || entry.entry_type==='state_jobs'
+    || (entry.entry_type==='federal_exception' && entry.lineage_root==='intelligence-community');
   return {source_key:`directory:${entry.directory_key}:${entry.entry_key}`,source_type:'career_page',source_class:entry.source_class,lineage_root:entry.lineage_root,source_url:url,ats_provider:null,board_id:null,state_code:entry.state_code,discovery_method:`directory:${entry.directory_key}`,is_verified:true,metadata:{directory_key:entry.directory_key,entry_key:entry.entry_key,entry_type:entry.entry_type,organization_name:entry.organization_name,shared_inventory:shared,...(entry.metadata||{})}};
 }
 function shouldDiscover(rows:EntityJobSource[]){if(!rows.length)return true;const newest=rows.reduce((max,row)=>Math.max(max,row.last_seen_at?new Date(row.last_seen_at).getTime():0),0);return !newest||Date.now()-newest>DISCOVERY_STALE_DAYS*86400000;}
