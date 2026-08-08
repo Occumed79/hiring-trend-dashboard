@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
+import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const [entities, logs, jobs] = await Promise.all([
-      query(`SELECT id, created_at, updated_at, ats_provider, ats_board_id, career_page_url FROM entities WHERE id = $1 LIMIT 1`, [params.id]),
+    const [entities, logs, jobs, sourceCoverage] = await Promise.all([
+      query(`SELECT id, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
+                    government_registry_id, government_type, government_state, government_fips
+             FROM entities WHERE id = $1 LIMIT 1`, [params.id]),
       query(`SELECT status, source, jobs_found, jobs_new, jobs_closed, error_message, ran_at
              FROM ingest_log WHERE entity_id = $1 ORDER BY ran_at DESC LIMIT 1`, [params.id]),
       getVerifiedActiveJobs(params.id),
+      readSourceCoverage(params.id),
     ]);
 
     if (!entities.length) return NextResponse.json({ error: 'Entity not found' }, { status: 404 });
@@ -32,6 +36,13 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       ats_provider: entity.ats_provider || 'unknown',
       ats_board_id: entity.ats_board_id || null,
       career_page_url: entity.career_page_url || null,
+      government_registry: entity.government_registry_id ? {
+        id: entity.government_registry_id,
+        type: entity.government_type || null,
+        state: entity.government_state || null,
+        fips: entity.government_fips || null,
+      } : null,
+      source_coverage: sourceCoverage,
       coverage: {
         active_jobs: jobs.length,
         mapped_jobs: mapped.length,
