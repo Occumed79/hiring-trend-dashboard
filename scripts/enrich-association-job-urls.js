@@ -9,6 +9,7 @@ try {
 const { Client } = require('pg');
 const CONCURRENCY = clamp(positiveInt(process.env.ASSOCIATION_DISCOVERY_CONCURRENCY, 6), 1, 10);
 const TIMEOUT_MS = positiveInt(process.env.ASSOCIATION_DISCOVERY_TIMEOUT_MS, 12000);
+const STALE_DAYS = positiveInt(process.env.ASSOCIATION_DISCOVERY_STALE_DAYS, 30);
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -23,34 +24,46 @@ async function main() {
         AND source_url IS NOT NULL
       ORDER BY directory_key, state_code, organization_name
     `);
-    const rows = result.rows;
+    const cutoff = Date.now() - STALE_DAYS * 86400000;
+    const rows = result.rows.filter(row => {
+      const checkedAt = row?.metadata?.jobs_discovery?.checked_at;
+      const checked = checkedAt ? new Date(checkedAt).getTime() : 0;
+      return !checked || !Number.isFinite(checked) || checked < cutoff;
+    });
     let found = 0;
     let retained = 0;
     let missed = 0;
     await mapWithConcurrency(rows, CONCURRENCY, async row => {
+      const checkedAt = new Date().toISOString();
       if (row.jobs_url && await validatesJobSurface(row.jobs_url).catch(() => false)) {
+        await markDiscovery(client,row,{method:'retained-existing',score:100,checked_at:checkedAt},row.jobs_url);
         retained++;
         return;
       }
       const discovered = await discoverJobsUrl(row.source_url).catch(() => null);
       if (!discovered) {
+        await markDiscovery(client,row,{method:'unresolved',score:0,checked_at:checkedAt},row.jobs_url||null);
         missed++;
         return;
       }
-      await client.query(
-        `UPDATE source_directory_entries
-         SET jobs_url=$3,
-             metadata=COALESCE(metadata,'{}'::jsonb) || $4::jsonb,
-             updated_at=NOW()
-         WHERE directory_key=$1 AND entry_key=$2`,
-        [row.directory_key,row.entry_key,discovered.url,JSON.stringify({ jobs_discovery:{ method:discovered.method, score:discovered.score, checked_at:new Date().toISOString() } })],
-      );
+      await markDiscovery(client,row,{method:discovered.method,score:discovered.score,checked_at:checkedAt},discovered.url);
       found++;
     });
-    console.log(`Association job-board enrichment complete: ${found} discovered, ${retained} retained, ${missed} unresolved.`);
+    console.log(`Association job-board enrichment complete: ${found} discovered, ${retained} retained, ${missed} unresolved, ${result.rows.length - rows.length} fresh/skipped.`);
   } finally {
     await client.end();
   }
+}
+
+async function markDiscovery(client,row,discovery,jobsUrl) {
+  await client.query(
+    `UPDATE source_directory_entries
+     SET jobs_url=$3,
+         metadata=COALESCE(metadata,'{}'::jsonb) || $4::jsonb,
+         updated_at=NOW()
+     WHERE directory_key=$1 AND entry_key=$2`,
+    [row.directory_key,row.entry_key,jobsUrl,JSON.stringify({ jobs_discovery:discovery })],
+  );
 }
 
 async function discoverJobsUrl(homeUrl) {
@@ -105,6 +118,6 @@ function normalizeUrl(value){try{const url=new URL(String(value||'').trim());if(
 function sameDomain(a,b){try{const x=new URL(a).hostname.toLowerCase().replace(/^www\./,''),y=new URL(b).hostname.toLowerCase().replace(/^www\./,'');return x===y||x.endsWith(`.${y}`)||y.endsWith(`.${x}`);}catch{return false;}}
 function positiveInt(value,fallback){const n=Number(value);return Number.isFinite(n)&&n>0?Math.floor(n):fallback;}
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
-async function mapWithConcurrency(items,limit,worker){let next=0;async function run(){while(true){const i=next++;if(i>=items.length)return;await worker(items[i]);}}await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>run()));}
+async function mapWithConcurrency(items,limit,worker){if(!items.length)return;let next=0;async function run(){while(true){const i=next++;if(i>=items.length)return;await worker(items[i]);}}await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>run()));}
 
 main().catch(error => { console.error('Association job-board enrichment failed:', error); process.exitCode=1; });
