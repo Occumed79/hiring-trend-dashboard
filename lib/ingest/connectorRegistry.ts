@@ -12,6 +12,7 @@ import {
 } from './expandedAts';
 import { fetchSpecializedEmployerJobs } from './employerConnectors';
 import { detectATS, resolveCompany, type CompanyResolution, type AtsProvider } from './companyResolver';
+import { isGovernmentPortal, resolveGovernmentEntity } from './governmentResolver';
 
 type DetectedResolution = CompanyResolution & { replace_existing?: boolean };
 interface ConnectorResult { jobs: any[]; used: string[]; skipped: string[]; detected: DetectedResolution | null; }
@@ -43,9 +44,11 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
       replace_existing: true,
     };
   } else if ((!careerPageUrl || atsProvider === 'unknown' || (DIRECT_CONNECTORS.has(atsProvider) && !boardId)) && entity.name) {
-    detected = await resolveCompany(entity.name, careerPageUrl);
+    detected = isGovernmentPortal(entity.portal)
+      ? await resolveGovernmentEntity(entity.name, entity.portal, careerPageUrl)
+      : await resolveCompany(entity.name, careerPageUrl);
     careerPageUrl = detected.career_page_url || careerPageUrl;
-    atsProvider = atsProvider !== 'unknown' ? atsProvider : detected.ats_provider;
+    atsProvider = atsProvider !== 'unknown' && atsProvider !== 'other' ? atsProvider : detected.ats_provider;
     boardId = boardId || detected.ats_board_id;
   } else if (careerPageUrl && atsProvider === 'unknown') {
     detected = asResolution(entity, await detectATS(careerPageUrl, entity.name), careerPageUrl, false);
@@ -88,7 +91,7 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
     }
   }
 
-  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && !DIRECT_CONNECTORS.has(atsProvider);
+  const recognizedHostedProvider = atsProvider && atsProvider !== 'unknown' && atsProvider !== 'other' && atsProvider !== 'usajobs' && !DIRECT_CONNECTORS.has(atsProvider);
   if (!jobs.length && recognizedHostedProvider && careerPageUrl) {
     const hostedJobs = await fetchHostedAtsJobs(atsProvider, careerPageUrl, entity.name);
     jobs.push(...hostedJobs);
@@ -96,7 +99,7 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
     else skipped.push(`${atsProvider} hosted connector (0 verified jobs)`);
   }
 
-  if (careerPageUrl && jobs.length === 0) {
+  if (careerPageUrl && jobs.length === 0 && atsProvider !== 'usajobs') {
     const careerJobs = await fetchCareerPageJobs(careerPageUrl, entity.name);
     jobs.push(...careerJobs);
     if (careerJobs.length) used.push('career_page');
