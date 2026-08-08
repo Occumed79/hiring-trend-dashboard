@@ -48,9 +48,10 @@ async function fetchOneBoard(board: Board, entity: any, keys: string[]) {
       const payload = await response.json().catch(() => null);
       const pages = Array.isArray(payload?.data?.webPages?.value) ? payload.data.webPages.value : [];
       const jobs = pages.map((page: any, index: number) => normalizeBoardPage(page, board, entity, index)).filter(Boolean) as any[];
+      const uniqueJobs = dedupe(jobs);
       return {
-        jobs: dedupe(jobs),
-        check: { source: board.id, source_class: 'supplemental', status: jobs.length ? 'success' : 'zero', jobs_found: jobs.length, details: { board: board.label, search_results: pages.length } } as CoverageCheck,
+        jobs: uniqueJobs,
+        check: { source: board.id, source_class: 'supplemental', status: uniqueJobs.length ? 'success' : 'zero', jobs_found: uniqueJobs.length, details: { board: board.label, search_results: pages.length } } as CoverageCheck,
       };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
