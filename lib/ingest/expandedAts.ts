@@ -1,7 +1,9 @@
 import { fetchCareerPageJobs } from './careerPage';
 import { fetchJson, getIngestTimeout } from './http';
+export { fetchWorkableJobs } from './workable';
+export { fetchPersonioJobs } from './personio';
 
-export const STRUCTURED_ATS_PROVIDERS = new Set(['ashby', 'recruitee', 'workday']);
+export const STRUCTURED_ATS_PROVIDERS = new Set(['ashby', 'recruitee', 'workday', 'workable', 'personio']);
 
 export const HOSTED_ATS_PROVIDERS = new Set([
   'icims',
@@ -9,9 +11,7 @@ export const HOSTED_ATS_PROVIDERS = new Set([
   'oracle',
   'jobvite',
   'successfactors',
-  'workable',
   'teamtailor',
-  'personio',
   'comeet',
   'breezyhr',
   'jazzhr',
@@ -332,20 +332,19 @@ function normalizeWorkdayDate(value: unknown) {
     if (token === 'today') return now.toISOString();
     if (token === 'yesterday') return new Date(now.getTime() - 86400000).toISOString();
     const days = Number(token.match(/\d+/)?.[0] || 0);
-    if (days > 0) return new Date(now.getTime() - days * 86400000).toISOString();
+    if (days > 0) return new Date(now.getTime() - Math.min(days, 3650) * 86400000).toISOString();
   }
   return normalizeDate(raw);
 }
 
 function toNumber(value: unknown) {
-  if (value === undefined || value === null || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
-function clean(value: unknown): string | null {
+function clean(value: unknown) {
   if (value === undefined || value === null) return null;
-  const text = String(value).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const text = String(value).replace(/\s+/g, ' ').trim();
   return text || null;
 }
 
