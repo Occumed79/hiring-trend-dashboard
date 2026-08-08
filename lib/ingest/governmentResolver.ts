@@ -64,17 +64,18 @@ export async function resolveGovernmentEntity(
   }
 
   const discovered = await discoverGovernmentCareerSurface(cleanName, portal);
-  if (discovered) {
-    const detection = await detectATS(discovered.url, cleanName);
-    const provider = normalizeGovernmentProvider(detection.ats_provider, discovered.url);
+  const discoveredUrl = discovered?.url || null;
+  if (discovered && discoveredUrl) {
+    const detection = await detectATS(discoveredUrl, cleanName);
+    const provider = normalizeGovernmentProvider(detection.ats_provider, discoveredUrl);
     notes.push(`Discovered ${discovered.reason}.`);
     if (provider !== 'unknown') notes.push(`Detected hiring platform: ${provider}.`);
     return {
       name: cleanName,
       aliases,
-      career_page_url: detection.matched_url || discovered.url,
+      career_page_url: detection.matched_url || discoveredUrl,
       ats_provider: provider,
-      ats_board_id: detection.ats_board_id || governmentJobsBoardId(discovered.url),
+      ats_board_id: detection.ats_board_id || governmentJobsBoardId(discoveredUrl),
       confidence: discovered.score >= 95 ? 'high' : 'medium',
       notes,
     };
@@ -208,6 +209,7 @@ async function tryGovernmentJobsCandidates(name: string, portal: GovernmentPorta
       });
       if (!response.ok) continue;
       const finalUrl = canonicalizeGovernmentJobsUrl(response.url || url);
+      if (!finalUrl) continue;
       const html = await response.text();
       const searchable = normalizeComparable(`${html.slice(0, 160000)} ${finalUrl}`);
       const score = entityNameEvidence(name, searchable);
