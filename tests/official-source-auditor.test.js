@@ -9,6 +9,7 @@ const FIXTURES=path.join(__dirname,'fixtures');
 function mockFetch(handler){const original=global.fetch;global.fetch=handler;return()=>{global.fetch=original;};}
 function response({status=200,json,text='',contentType='application/json'}){return{ok:status>=200&&status<300,status,headers:{get:(name)=>String(name).toLowerCase()==='content-type'?contentType:null},json:async()=>json,text:async()=>text};}
 function diagnostic(result){return JSON.stringify({status:result?.status,complete:result?.complete,officialCount:result?.officialCount,jobUrls:result?.jobUrls,metadata:result?.metadata});}
+function workdayRows(count){return Array.from({length:count},(_,index)=>({title:`Role ${index+1}`,externalPath:`/job/Test/Role-${index+1}_R${index+1}`,locationsText:'Fresno, CA',bulletFields:[`R${index+1}`]}));}
 
 test('GovernmentJobs auditor independently captures complete RSS URL truth',async()=>{
   const xml=fs.readFileSync(path.join(FIXTURES,'neogov-valid.xml'),'utf8');
@@ -28,6 +29,18 @@ test('Workday auditor independently paginates official inventory and builds stab
   try{const result=await auditor.auditOfficialSource({name:'Acme'},{source_class:'authoritative',is_verified:true,ats_provider:'workday',board_id:'https://acme.wd5.myworkdayjobs.com/en-US/External',metadata:{shared_inventory:false}});assert.equal(result.status,'complete',diagnostic(result));assert.equal(result.officialCount,2);assert.equal(result.jobUrls.length,2);assert.ok(result.jobUrls.some(url=>url.includes('R1001')));}finally{restore();}
 });
 
+test('Workday without reported total requires observed pagination exhaustion',async()=>{
+  const rows=workdayRows(50);let calls=0;
+  const restore=mockFetch(async(url,options)=>{assert.equal(options.method,'POST');calls++;const body=JSON.parse(options.body||'{}');return response({json:{jobPostings:Number(body.offset||0)===0?rows:[]}});});
+  try{const result=await auditor.auditOfficialSource({name:'Acme'},{source_class:'authoritative',is_verified:true,ats_provider:'workday',board_id:'https://acme.wd5.myworkdayjobs.com/en-US/External',metadata:{shared_inventory:false}});assert.equal(result.status,'complete',diagnostic(result));assert.equal(result.officialCount,50);assert.equal(result.jobUrls.length,50);assert.equal(result.metadata.exhausted,true);assert.ok(calls>=2);}finally{restore();}
+});
+
+test('repeated Workday pages without a total are incomplete, never inferred complete',async()=>{
+  const rows=workdayRows(50);let calls=0;
+  const restore=mockFetch(async()=>{calls++;return response({json:{jobPostings:rows}});});
+  try{const result=await auditor.auditOfficialSource({name:'Acme'},{source_class:'authoritative',is_verified:true,ats_provider:'workday',board_id:'https://acme.wd5.myworkdayjobs.com/en-US/External',metadata:{shared_inventory:false}});assert.equal(result.status,'incomplete',diagnostic(result));assert.equal(result.complete,false);assert.equal(result.metadata.repeated_page,true);assert.ok(calls>=2);}finally{restore();}
+});
+
 test('Greenhouse auditor refuses partial URL evidence',async()=>{
   const restore=mockFetch(async()=>response({json:{jobs:[{id:1,absolute_url:'https://boards.greenhouse.io/acme/jobs/1'},{id:2}]}}));
   try{const result=await auditor.auditOfficialSource({name:'Acme'},{source_class:'authoritative',is_verified:true,ats_provider:'greenhouse',board_id:'acme',metadata:{shared_inventory:false}});assert.equal(result.status,'incomplete',diagnostic(result));assert.equal(result.complete,false);assert.equal(result.officialCount,2);assert.equal(result.jobUrls.length,1);}finally{restore();}
@@ -45,6 +58,28 @@ test('shared inventories are never promoted to entity ground truth by the audito
 });
 
 test('recognized V2X Jibe source can be audited independently from ingest parser',async()=>{
-  const restore=mockFetch(async(url)=>response({json:{totalCount:2,jobs:[{data:{title:'One',slug:'REQ1'}},{data:{title:'Two',slug:'REQ2'}}]}}));
+  const restore=mockFetch(async()=>response({json:{totalCount:2,jobs:[{data:{title:'One',slug:'REQ1'}},{data:{title:'Two',slug:'REQ2'}}]}}));
   try{const result=await auditor.auditOfficialSource({name:'V2X'},{source_class:'authoritative',is_verified:true,ats_provider:'icims',source_url:'https://careers.gov2x.com/why-gov2x/jobs',metadata:{shared_inventory:false}});assert.equal(result.status,'complete',diagnostic(result));assert.equal(result.officialCount,2);assert.equal(result.jobUrls.length,2);}finally{restore();}
+});
+
+test('V2X Jibe without a total is complete only after an empty page proves exhaustion',async()=>{
+  let calls=0;const restore=mockFetch(async(url)=>{calls++;const page=Number(new URL(String(url)).searchParams.get('page')||1);return response({json:{jobs:page===1?[{data:{slug:'REQ1'}},{data:{slug:'REQ2'}}]:[]}});});
+  try{const result=await auditor.auditOfficialSource({name:'V2X'},{source_class:'authoritative',is_verified:true,ats_provider:'icims',source_url:'https://careers.gov2x.com/why-gov2x/jobs',metadata:{shared_inventory:false}});assert.equal(result.status,'complete',diagnostic(result));assert.equal(result.officialCount,2);assert.equal(result.metadata.exhausted,true);assert.ok(calls>=2);}finally{restore();}
+});
+
+test('repeated V2X Jibe pages without a total are incomplete',async()=>{
+  const restore=mockFetch(async()=>response({json:{jobs:[{data:{slug:'REQ1'}},{data:{slug:'REQ2'}}]}}));
+  try{const result=await auditor.auditOfficialSource({name:'V2X'},{source_class:'authoritative',is_verified:true,ats_provider:'icims',source_url:'https://careers.gov2x.com/why-gov2x/jobs',metadata:{shared_inventory:false}});assert.equal(result.status,'incomplete',diagnostic(result));assert.equal(result.metadata.repeated_page,true);}finally{restore();}
+});
+
+test('Amentum without displayed total requires an empty page to prove exhaustion',async()=>{
+  const pageOne='<html><body><a href="/jobs/program-manager">Program Manager</a><a href="/jobs/medical-coordinator">Medical Coordinator</a></body></html>';
+  const restore=mockFetch(async(url)=>Number(new URL(String(url)).searchParams.get('page')||1)===1?response({text:pageOne,contentType:'text/html'}):response({text:'<html><body>No jobs</body></html>',contentType:'text/html'}));
+  try{const result=await auditor.auditOfficialSource({name:'Amentum'},{source_class:'authoritative',is_verified:true,source_url:'https://www.amentumcareers.com/jobs/search',metadata:{shared_inventory:false}});assert.equal(result.status,'complete',diagnostic(result));assert.equal(result.officialCount,2);assert.equal(result.metadata.exhausted,true);}finally{restore();}
+});
+
+test('repeated Amentum pages without displayed total are incomplete',async()=>{
+  const pageOne='<html><body><a href="/jobs/program-manager">Program Manager</a><a href="/jobs/medical-coordinator">Medical Coordinator</a></body></html>';
+  const restore=mockFetch(async()=>response({text:pageOne,contentType:'text/html'}));
+  try{const result=await auditor.auditOfficialSource({name:'Amentum'},{source_class:'authoritative',is_verified:true,source_url:'https://www.amentumcareers.com/jobs/search',metadata:{shared_inventory:false}});assert.equal(result.status,'incomplete',diagnostic(result));assert.equal(result.metadata.repeated_page,true);}finally{restore();}
 });
