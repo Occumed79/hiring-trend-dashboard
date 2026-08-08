@@ -20,6 +20,7 @@ const DIRECTORY_MINIMUMS = {
   'nlc-municipal-leagues': positiveInt(process.env.NLC_DIRECTORY_MIN_ROWS, 45),
   'naco-state-associations': positiveInt(process.env.NACO_DIRECTORY_MIN_ROWS, 35),
 };
+const REMOTE_DIRECTORY_KEYS = Object.keys(DIRECTORY_MINIMUMS);
 
 const STATES = {
   Alabama:'AL',Alaska:'AK',Arizona:'AZ',Arkansas:'AR',California:'CA',Colorado:'CO',Connecticut:'CT',Delaware:'DE',Florida:'FL',Georgia:'GA',Hawaii:'HI',Idaho:'ID',Illinois:'IL',Indiana:'IN',Iowa:'IA',Kansas:'KS',Kentucky:'KY',Louisiana:'LA',Maine:'ME',Maryland:'MD',Massachusetts:'MA',Michigan:'MI',Minnesota:'MN',Mississippi:'MS',Missouri:'MO',Montana:'MT',Nebraska:'NE',Nevada:'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND',Ohio:'OH',Oklahoma:'OK',Oregon:'OR',Pennsylvania:'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD',Tennessee:'TN',Texas:'TX',Utah:'UT',Vermont:'VT',Virginia:'VA',Washington:'WA','West Virginia':'WV',Wisconsin:'WI',Wyoming:'WY','District of Columbia':'DC'
@@ -80,8 +81,6 @@ async function main() {
       }
       await replaceDirectory(client, result.directoryKey, result.rows);
     }
-    // Federal exception seeds are local, deterministic configuration rather than
-    // a remote scrape, so they are safe to replace every run.
     await replaceDirectory(client, 'federal-exceptions', federalRows);
     await client.query('COMMIT');
 
@@ -118,10 +117,24 @@ async function replaceDirectory(client, directoryKey, rows) {
 
 async function shouldRefresh(client) {
   try {
-    const rows = await client.query(`SELECT COUNT(*)::int AS cnt, MAX(last_seen_at) AS newest FROM source_directory_entries WHERE is_active = true`);
-    const count = Number(rows.rows[0]?.cnt || 0);
-    const newest = rows.rows[0]?.newest ? new Date(rows.rows[0].newest).getTime() : 0;
-    return count < 40 || !newest || Date.now() - newest > STALE_DAYS * 86400000;
+    const result = await client.query(
+      `SELECT directory_key, COUNT(*) FILTER (WHERE is_active=true)::int AS cnt,
+              MAX(last_seen_at) FILTER (WHERE is_active=true) AS newest
+       FROM source_directory_entries
+       WHERE directory_key = ANY($1::text[])
+       GROUP BY directory_key`,
+      [REMOTE_DIRECTORY_KEYS],
+    );
+    const byKey = new Map(result.rows.map(row => [row.directory_key, row]));
+    const staleMs = STALE_DAYS * 86400000;
+    for (const directoryKey of REMOTE_DIRECTORY_KEYS) {
+      const row = byKey.get(directoryKey);
+      const minimum = DIRECTORY_MINIMUMS[directoryKey] || 1;
+      const count = Number(row?.cnt || 0);
+      const newest = row?.newest ? new Date(row.newest).getTime() : 0;
+      if (count < minimum || !newest || Date.now() - newest > staleMs) return true;
+    }
+    return false;
   } catch {
     return true;
   }
