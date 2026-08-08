@@ -109,7 +109,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
       </section>
       {ingest?.status === 'queued' && <div className="rounded-2xl border border-blue-400/20 bg-blue-500/8 px-4 py-3 text-xs text-blue-100 flex items-center gap-3"><span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />Resolving authoritative and corroborating hiring sources and building the first hiring snapshot. This view will refresh automatically.</div>}
       {error && <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>}
-      <SourceCoveragePanel rows={ingest?.source_coverage} registry={ingest?.government_registry} assessment={ingest?.coverage_assessment} loading={loading} />
+      <SourceCoveragePanel rows={ingest?.source_coverage} registry={ingest?.government_registry} assessment={ingest?.coverage_assessment} incidents={ingest?.source_incidents} loading={loading} />
       <TrendCard metrics={data?.metrics} loading={loading} entityName={entity.name} />
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.15fr)_minmax(320px,0.85fr)] gap-5 items-stretch"><div className="min-w-0">{useWorldMap ? <WorldMap entityId={entity.id} /> : <USAMap entityId={entity.id} title={`${entity.name} Hiring Map`} />}</div><RoleBreakdown roles={data?.roles} loading={loading} /></div>
       <OpenRolesList rows={roles} loading={loading} totalRows={activeJobs} />
