@@ -36,7 +36,6 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.379.0",
     "framer-motion": "^11.2.6",
-    "adm-zip": "^0.5.16",
     "@types/leaflet": "^1.9.12",
     "@types/pg": "^8.11.6",
     "typescript": "^5",
