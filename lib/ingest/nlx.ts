@@ -15,18 +15,36 @@ export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: C
   const end = startOfTomorrow();
   const start = new Date(end.getTime() - clamp(Number(process.env.NLX_LOOKBACK_DAYS || 30), 1, 34) * 86400000);
   const employer = String(entity?.name || '').trim();
-  const url = buildUrl(start, end, states, employer);
   const headerName = process.env.NLX_API_KEY_HEADER || 'X-API-Key';
+  const maxPages = clamp(Number(process.env.NLX_MAX_PAGES || 40), 1, 200);
+  const expectedPageSize = clamp(Number(process.env.NLX_PAGE_SIZE || 50), 1, 500);
+  const collected: any[] = [];
+  let pagesFetched = 0;
+  let lastUrl = '';
+  let truncated = false;
 
   try {
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json', [headerName]: apiKey },
-      signal: AbortSignal.timeout(getIngestTimeout(15000)),
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const payload = await response.json().catch(() => null);
-    const rows = extractRows(payload);
-    const jobs = rows.map((row: any, index: number) => normalizeNLxRow(row, entity, index)).filter(Boolean) as any[];
+    for (let page = 1; page <= maxPages; page++) {
+      const url = buildUrl(start, end, states, employer, page);
+      lastUrl = url;
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json', [headerName]: apiKey },
+        signal: AbortSignal.timeout(getIngestTimeout(15000)),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status} on page ${page}`);
+      const payload = await response.json().catch(() => null);
+      const rows = extractRows(payload);
+      pagesFetched += 1;
+      collected.push(...rows);
+
+      const next = readNextPage(payload);
+      if (typeof next === 'number' && next > page) continue;
+      if (typeof next === 'string' && next) continue;
+      if (rows.length < expectedPageSize) break;
+      if (page === maxPages) truncated = true;
+    }
+
+    const jobs = dedupeNLxJobs(collected.map((row: any, index: number) => normalizeNLxRow(row, entity, index)).filter(Boolean) as any[]);
     return {
       jobs,
       check: {
@@ -34,7 +52,15 @@ export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: C
         source_class: 'verified',
         status: jobs.length ? 'success' : 'zero',
         jobs_found: jobs.length,
-        details: { states: states.length === ALL_STATES.length ? 'all US states + DC' : states, start: isoDate(start), end: isoDate(end), rows_returned: rows.length, endpoint: safeEndpoint(url) },
+        details: {
+          states: states.length === ALL_STATES.length ? 'all US states + DC' : states,
+          start: isoDate(start),
+          end: isoDate(end),
+          rows_returned: collected.length,
+          pages_fetched: pagesFetched,
+          truncated,
+          endpoint: safeEndpoint(lastUrl || buildUrl(start, end, states, employer, 1)),
+        },
       },
     };
   } catch (error) {
@@ -45,7 +71,12 @@ export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: C
         source_class: 'verified',
         status: 'error',
         jobs_found: 0,
-        details: { states: states.length === ALL_STATES.length ? 'all US states + DC' : states, endpoint: safeEndpoint(url), error: error instanceof Error ? error.message : String(error) },
+        details: {
+          states: states.length === ALL_STATES.length ? 'all US states + DC' : states,
+          pages_fetched: pagesFetched,
+          endpoint: safeEndpoint(lastUrl || buildUrl(start, end, states, employer, 1)),
+          error: error instanceof Error ? error.message : String(error),
+        },
       },
     };
   }
@@ -58,14 +89,11 @@ function nlxStatesForEntity(entity: any) {
   if (configured.length) return Array.from(new Set(configured));
   const fallback = normalizeState(process.env.NLX_DEFAULT_STATE);
   if (fallback) return [fallback];
-  // Business entities can hire nationally. NLx documents one-or-more state
-  // filters, so the default employer query spans all states rather than silently
-  // reducing a national company to an arbitrary single state.
   if (['current_clients','prospects','private_companies'].includes(String(entity?.portal || ''))) return ALL_STATES;
   return [];
 }
 
-function buildUrl(start: Date, end: Date, states: string[], employer: string) {
+function buildUrl(start: Date, end: Date, states: string[], employer: string, page: number) {
   const template = process.env.NLX_API_URL_TEMPLATE;
   if (template) {
     return template
@@ -73,7 +101,8 @@ function buildUrl(start: Date, end: Date, states: string[], employer: string) {
       .replaceAll('{end}', encodeURIComponent(isoDate(end)))
       .replaceAll('{state}', encodeURIComponent(states.join(',')))
       .replaceAll('{states}', encodeURIComponent(states.join(',')))
-      .replaceAll('{employer}', encodeURIComponent(employer));
+      .replaceAll('{employer}', encodeURIComponent(employer))
+      .replaceAll('{page}', encodeURIComponent(String(page)));
   }
 
   const base = (process.env.NLX_API_BASE_URL || DEFAULT_BASE).replace(/\/+$/,'');
@@ -82,6 +111,7 @@ function buildUrl(start: Date, end: Date, states: string[], employer: string) {
   for (const state of states) url.searchParams.append(stateParam, state);
   if (employer) url.searchParams.set(process.env.NLX_EMPLOYER_PARAM || 'employer', employer);
   url.searchParams.set(process.env.NLX_EXPIRED_PARAM || 'expired', 'false');
+  url.searchParams.set(process.env.NLX_PAGE_PARAM || 'page', String(page));
   const extra = process.env.NLX_EXTRA_QUERY_JSON;
   if (extra) {
     try {
@@ -98,6 +128,18 @@ function extractRows(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
   const candidates = [payload?.jobs, payload?.results, payload?.data, payload?.items, payload?.records, payload?.data?.jobs, payload?.data?.results];
   return candidates.find(Array.isArray) || [];
+}
+
+function readNextPage(payload: any): number | string | null {
+  const candidates = [payload?.next_page, payload?.nextPage, payload?.pagination?.next_page, payload?.pagination?.nextPage, payload?.meta?.next_page, payload?.meta?.nextPage, payload?.links?.next];
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : value.trim();
+    }
+  }
+  return null;
 }
 
 function normalizeNLxRow(row: any, entity: any, index: number) {
@@ -137,6 +179,15 @@ function normalizeNLxRow(row: any, entity: any, index: number) {
   };
 }
 
+function dedupeNLxJobs(jobs: any[]) {
+  const seen = new Set<string>();
+  return jobs.filter(job => {
+    const key = String(job.raw_data?.normalized_apply_url || job.external_id || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 function employerMatches(value: string, entity: any) {
   const haystack = comparable(value);
   const names = [entity?.name, ...(Array.isArray(entity?.aliases) ? entity.aliases : [])].map(comparable).filter(text => text.length >= 3);
