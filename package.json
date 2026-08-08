@@ -11,6 +11,7 @@
     "ci": "npm run typecheck && npm run build",
     "db:migrate": "node scripts/migrate.js",
     "ingest": "node scripts/ingest.js",
+    "sync:government-registry": "node scripts/sync-government-registry.js",
     "import:crawler": "node scripts/import-crawler-jsonl.js",
     "crawler:batch": "python3 scrapers/run_batch.py"
   },
