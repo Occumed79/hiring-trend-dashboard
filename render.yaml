@@ -114,7 +114,12 @@ services:
     env: node
     buildCommand: npm install && node scripts/migrate.js
     schedule: "0 6 * * *"
-    startCommand: node scripts/sync-government-registry.js --if-stale || true; node scripts/sync-source-directories.js --if-stale || true; node scripts/enrich-association-job-urls.js || true; node scripts/ingest.js; node scripts/rebuild-source-pair-baselines.js || true; node scripts/run-benchmarks.js --scheduled || true
+    startCommand: >-
+      node scripts/sync-government-registry.js --if-stale || true;
+      node scripts/sync-source-directories.js --if-stale || true;
+      node scripts/enrich-association-job-urls.js || true;
+      node scripts/ingest.js &&
+      { node scripts/rebuild-source-pair-baselines.js || true; node scripts/run-benchmarks.js --scheduled || true; }
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -152,6 +157,8 @@ services:
         value: "25"
       - key: BENCHMARK_JOB_STALE_DAYS
         value: "30"
+      - key: BENCHMARK_TRUTH_MAX_AGE_HOURS
+        value: "36"
       - key: BENCHMARK_MIN_ENTITIES
         value: "5"
       - key: BENCHMARK_MIN_TRUTH_ENTITIES
