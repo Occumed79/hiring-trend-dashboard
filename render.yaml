@@ -20,6 +20,16 @@ services:
         value: "500"
       - key: USAJOBS_MAX_PAGES
         value: "20"
+      - key: SAM_API_KEY
+        sync: false
+      - key: CONTRACTOR_IDENTITY_STALE_DAYS
+        value: "30"
+      - key: SOURCE_DISCOVERY_STALE_DAYS
+        value: "14"
+      - key: ENTITY_SOURCE_CONCURRENCY
+        value: "4"
+      - key: SOURCE_CHECK_STALE_HOURS
+        value: "48"
       - key: LANGSEARCH_API_KEY
         sync: false
       - key: LANGSEARCH_API_KEY_2
@@ -92,7 +102,7 @@ services:
     env: node
     buildCommand: npm install
     schedule: "0 6 * * *"
-    startCommand: node scripts/sync-government-registry.js --if-stale || true; node scripts/ingest.js
+    startCommand: node scripts/sync-government-registry.js --if-stale || true; node scripts/sync-source-directories.js --if-stale || true; node scripts/enrich-association-job-urls.js || true; node scripts/ingest.js
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -104,6 +114,26 @@ services:
         value: "30"
       - key: CENSUS_GOVERNMENT_REGISTRY_BATCH_SIZE
         value: "250"
+      - key: SOURCE_DIRECTORY_STALE_DAYS
+        value: "14"
+      - key: SOURCE_DIRECTORY_TIMEOUT_MS
+        value: "20000"
+      - key: ASSOCIATION_DISCOVERY_STALE_DAYS
+        value: "30"
+      - key: ASSOCIATION_DISCOVERY_CONCURRENCY
+        value: "6"
+      - key: ASSOCIATION_DISCOVERY_TIMEOUT_MS
+        value: "12000"
+      - key: SOURCE_DISCOVERY_STALE_DAYS
+        value: "14"
+      - key: ENTITY_SOURCE_CONCURRENCY
+        value: "4"
+      - key: SOURCE_CHECK_STALE_HOURS
+        value: "48"
+      - key: CONTRACTOR_IDENTITY_STALE_DAYS
+        value: "30"
+      - key: SAM_API_KEY
+        sync: false
       - key: ADZUNA_APP_ID
         sync: false
       - key: ADZUNA_APP_KEY
