@@ -1,1 +1,0 @@
-PR scope: source coverage graph, government directories, federal exception sources, ATS expansion, contractor identity, official-site discovery, NLx mirror lineage, completeness scoring, deployment maintenance and UI trust signals.
