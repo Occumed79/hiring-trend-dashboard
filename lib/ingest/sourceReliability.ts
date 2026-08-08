@@ -35,7 +35,8 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
     ),
     query(
       `SELECT source_a,source_b,sample_count,median_ratio,p10_ratio,p90_ratio,median_abs_delta,window_days,metadata,updated_at
-       FROM source_pair_baselines WHERE sample_count >= 5`,
+       FROM source_pair_baselines
+       WHERE sample_count >= 5 AND updated_at >= NOW() - INTERVAL '3 days'`,
     ),
   ]);
 
@@ -87,9 +88,6 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
   return issues;
 }
 
-// A total ingest/cron outage cannot call persistSourceCoverage, so stale-source
-// detection also needs an independent path. Entity-detail reads invoke this
-// lightweight guard; it only runs the full evaluator once an inventory source is stale.
 export async function refreshStaleSourceReliabilityOnRead(entityId: string) {
   if (!entityId) return;
   const rows = await query(
