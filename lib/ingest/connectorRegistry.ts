@@ -7,11 +7,11 @@ import {
   fetchAshbyJobs,
   fetchRecruiteeJobs,
   fetchWorkdayJobs,
-  fetchWorkableJobs,
-  fetchPersonioJobs,
   fetchHostedAtsJobs,
   STRUCTURED_ATS_PROVIDERS,
 } from './expandedAts';
+import { fetchWorkableJobs } from './workable';
+import { fetchPersonioJobs } from './personio';
 import { fetchSpecializedEmployerJobs } from './employerConnectors';
 import { detectATS, resolveCompany, type CompanyResolution, type AtsProvider } from './companyResolver';
 import { isGovernmentPortal, resolveGovernmentEntity } from './governmentResolver';
@@ -31,7 +31,7 @@ export type ConfiguredJobSource = {
 };
 
 const DIRECT_CONNECTORS = new Set([
-  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', ...Array.from(STRUCTURED_ATS_PROVIDERS),
+  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'workable', 'personio', ...Array.from(STRUCTURED_ATS_PROVIDERS),
 ]);
 
 export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> {
@@ -146,9 +146,6 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
   return { jobs, used: Array.from(new Set(used)), skipped: Array.from(new Set(skipped)), detected };
 }
 
-// Execute one already-resolved source node without allowing the entity-level
-// resolver or pinned profile to replace it. This is what makes multi-board
-// entities possible: every node can be fetched independently and deduplicated later.
 export async function fetchJobsForConfiguredSource(entity: any, source: ConfiguredJobSource): Promise<{ jobs: any[]; used: string[]; skipped: string[] }> {
   const provider = String(source.ats_provider || '').toLowerCase();
   const boardId = source.board_id || null;
