@@ -28,6 +28,22 @@ services:
         value: always
       - key: LANGSEARCH_FRESHNESS
         value: oneMonth
+      - key: LANGSEARCH_TIMEOUT_MS
+        value: "12000"
+      - key: NLX_API_KEY
+        sync: false
+      - key: NLX_API_KEY_HEADER
+        value: X-API-Key
+      - key: NLX_API_BASE_URL
+        value: https://api.nlxresearchhub.com/v2/jobs
+      - key: NLX_LOOKBACK_DAYS
+        value: "30"
+      - key: NLX_STATE_PARAM
+        value: state
+      - key: NLX_EMPLOYER_PARAM
+        value: employer
+      - key: NLX_EXPIRED_PARAM
+        value: expired
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
@@ -68,10 +84,18 @@ services:
     env: node
     buildCommand: npm install
     schedule: "0 6 * * *"
-    startCommand: node scripts/ingest.js
+    startCommand: node scripts/sync-government-registry.js --if-stale && node scripts/ingest.js
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: CENSUS_GOVERNMENT_REGISTRY_YEAR
+        value: "2025"
+      - key: CENSUS_GOVERNMENT_REGISTRY_URL
+        value: https://www2.census.gov/programs-surveys/gus/datasets/2025/gov_units_2025.zip
+      - key: CENSUS_GOVERNMENT_REGISTRY_STALE_DAYS
+        value: "30"
+      - key: CENSUS_GOVERNMENT_REGISTRY_BATCH_SIZE
+        value: "250"
       - key: ADZUNA_APP_ID
         sync: false
       - key: ADZUNA_APP_KEY
@@ -92,6 +116,22 @@ services:
         value: always
       - key: LANGSEARCH_FRESHNESS
         value: oneMonth
+      - key: LANGSEARCH_TIMEOUT_MS
+        value: "12000"
+      - key: NLX_API_KEY
+        sync: false
+      - key: NLX_API_KEY_HEADER
+        value: X-API-Key
+      - key: NLX_API_BASE_URL
+        value: https://api.nlxresearchhub.com/v2/jobs
+      - key: NLX_LOOKBACK_DAYS
+        value: "30"
+      - key: NLX_STATE_PARAM
+        value: state
+      - key: NLX_EMPLOYER_PARAM
+        value: employer
+      - key: NLX_EXPIRED_PARAM
+        value: expired
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
