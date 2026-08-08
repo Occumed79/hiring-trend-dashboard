@@ -16,6 +16,18 @@ services:
         sync: false
       - key: USAJOBS_USER_AGENT
         sync: false
+      - key: USAJOBS_RESULTS_PER_PAGE
+        value: "500"
+      - key: USAJOBS_MAX_PAGES
+        value: "20"
+      - key: LANGSEARCH_API_KEY
+        sync: false
+      - key: LANGSEARCH_API_KEY_2
+        sync: false
+      - key: LANGSEARCH_MODE
+        value: always
+      - key: LANGSEARCH_FRESHNESS
+        value: oneMonth
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
@@ -68,6 +80,18 @@ services:
         sync: false
       - key: USAJOBS_USER_AGENT
         sync: false
+      - key: USAJOBS_RESULTS_PER_PAGE
+        value: "500"
+      - key: USAJOBS_MAX_PAGES
+        value: "20"
+      - key: LANGSEARCH_API_KEY
+        sync: false
+      - key: LANGSEARCH_API_KEY_2
+        sync: false
+      - key: LANGSEARCH_MODE
+        value: always
+      - key: LANGSEARCH_FRESHNESS
+        value: oneMonth
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
