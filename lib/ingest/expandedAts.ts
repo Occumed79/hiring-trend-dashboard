@@ -338,6 +338,7 @@ function normalizeWorkdayDate(value: unknown) {
 }
 
 function toNumber(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
