@@ -77,7 +77,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
 
   const evaluated = expected.map((source:any) => {
     const check = findCheckForExpectedSource(source, checkByKey, checks);
-    const recent = check ? Date.now() - checkedAt(check) <= CHECK_STALE_HOURS * 3600000 : false;
+    const recent = isRecent(check);
     const healthy = Boolean(check && recent && isHealthyCheck(source, check));
     return { source, check: check || null, recent, healthy };
   });
@@ -92,7 +92,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
     if (lineage && isHiringLineage(lineage)) lineages.add(lineage);
   }
   for (const check of checks) {
-    if (!isHealthyObservedCheck(check) || !isHiringInventoryCheck(check)) continue;
+    if (!isRecent(check) || !isHealthyObservedCheck(check) || !isHiringInventoryCheck(check)) continue;
     const lineage = normalizeLineage(check.lineage_root || check.details?.lineage_root || lineageForObservedSource(check.source));
     if (lineage && isHiringLineage(lineage)) lineages.add(lineage);
   }
@@ -120,7 +120,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
   }
   if (!authoritative.length) gaps.push('No authoritative hiring source is registered.');
   else if (!healthyAuthoritative.length) gaps.push('No authoritative source has a recent healthy check.');
-  if (lineages.size < 2 && checks.some((row:any) => isHiringInventoryCheck(row) && (row.source_class === 'verified' || row.source_class === 'supplemental'))) gaps.push('Coverage has fewer than two independent healthy hiring-source lineages.');
+  if (lineages.size < 2 && checks.some((row:any) => isRecent(row) && isHiringInventoryCheck(row) && (row.source_class === 'verified' || row.source_class === 'supplemental'))) gaps.push('Coverage has fewer than two independent healthy hiring-source lineages.');
 
   return {
     score,
@@ -140,11 +140,16 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
       observed_sources: checks.length,
       algorithm: 'expected-health-40 + authoritative-health-35 + independent-hiring-lineages-15 + first-party-10',
       authoritative_zero_requires_verification: true,
+      stale_checks_excluded_from_lineage_score: true,
       identity_and_discovery_sources_excluded_from_lineage_count: true,
     },
   };
 }
 
+function isRecent(row:any) {
+  const time = checkedAt(row);
+  return time > 0 && Date.now() - time <= CHECK_STALE_HOURS * 3600000;
+}
 function isHealthyCheck(source:any, check:any) {
   if (String(check?.status) === 'success') return true;
   if (String(check?.status) !== 'zero') return false;
