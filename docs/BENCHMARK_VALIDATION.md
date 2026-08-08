@@ -8,6 +8,10 @@ The benchmark system deliberately separates three evidence levels:
 
 A portal must never be shown as production-ready from live parity alone.
 
+## Truth freshness
+
+Ground-truth evidence is time-sensitive. By default, a truth snapshot is valid for **36 hours** (`BENCHMARK_TRUTH_MAX_AGE_HOURS`). Once it expires, the benchmark preserves it as history but stops using it for current precision/recall or release-gate evidence. The entity falls back to official-count/live-parity/insufficient evidence until a new independent snapshot is captured.
+
 ## Default release gates
 
 - At least 5 benchmark entities per portal.
@@ -21,7 +25,7 @@ A portal must never be shown as production-ready from live parity alone.
 - Healthy authoritative-source rate >= 95%.
 - High-severity source-incident entity rate <= 5%.
 
-Until the minimum truth evidence is present, the portal status is **insufficient_evidence**, even when all operational metrics are excellent.
+Until the minimum fresh truth evidence is present, the portal status is **insufficient_evidence**, even when all operational metrics are excellent.
 
 ## Stable cohort
 
@@ -37,12 +41,16 @@ After the daily ingest:
 4. Portal release assessments are updated.
 5. Source Health displays the latest source fleet, incidents, learned source-pair ranges, benchmark run, truth coverage, and release gates.
 
+A failed primary ingest retains a failed cron exit status. Baseline/benchmark diagnostics only run after a successful ingest.
+
 ## Learned source-pair baselines
 
 Pairs are learned from recent healthy, independent source observations. The runtime incident engine uses learned p10/p90 behavior when enough samples exist; otherwise it falls back to the conservative extreme-disagreement rule. CareerOneStop and NLx share lineage and do not count as independent corroboration.
+
+Each successful rebuild prunes pairs that no longer meet the current observation threshold. Runtime reliability also refuses to use learned baselines older than three days, so a stopped validation cron cannot leave a stale learned model active indefinitely.
 
 ## Truth capture
 
 The Source Health workspace can save an official count and complete official job URLs for a tracked entity. The complete URL set is strongly preferred: an official count alone cannot prove posting-level precision or recall.
 
-Do not fabricate or infer ground-truth counts. If independent truth has not been captured, keep the evidence level as live parity / insufficient evidence.
+Do not fabricate or infer ground-truth counts. If independent truth has not been captured, or the captured truth has expired, keep the evidence level as live parity / insufficient evidence.
