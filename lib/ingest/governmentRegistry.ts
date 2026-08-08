@@ -106,13 +106,24 @@ export function governmentRegistryMetadata(match: GovernmentRegistryMatch | null
     government_state: null,
     government_fips: null,
   };
-  const fips = [match.state_fips, match.county_fips, match.place_fips].filter(Boolean).join('');
   return {
     government_registry_id: match.census_government_id,
     government_type: match.government_type,
     government_state: match.state_code || match.state_name || null,
-    government_fips: fips || match.state_fips || null,
+    government_fips: governmentGeographicFips(match),
   };
+}
+
+export function governmentGeographicFips(match: Pick<GovernmentRegistryMatch, 'government_type'|'state_fips'|'county_fips'|'place_fips'> | null) {
+  if (!match?.state_fips) return null;
+  const type = normalizeType(match.government_type);
+  if (type === 'state') return match.state_fips;
+  if (type === 'county' && match.county_fips) return `${match.state_fips}${match.county_fips}`;
+  if (type === 'municipality' && match.place_fips) return `${match.state_fips}${match.place_fips}`;
+  // Township/county-subdivision and special-district GEOIDs require identifiers
+  // not represented by the generic county/place fields in this registry mirror.
+  // Do not manufacture a plausible-looking but wrong geographic FIPS.
+  return null;
 }
 
 function scoreMatch(input: string, row: any, stateHint: string | null, typeHint: string | null) {
