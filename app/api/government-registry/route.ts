@@ -22,22 +22,22 @@ export async function GET(req: NextRequest) {
       FROM government_registry
       WHERE is_active = true AND canonical_name ILIKE $1
     `;
-    if (portal === 'counties_and_cities') {
-      params.push(['county','municipality','township']);
-      sql += ` AND government_type = ANY($2::text[])`;
-    }
+    params.push(portal === 'counties_and_cities'
+      ? ['county','municipality','township']
+      : ['state','county','municipality','township','special_district']);
+    sql += ` AND government_type = ANY($${params.length}::text[])`;
     if (stateHint) {
       params.push(stateHint);
       sql += ` AND UPPER(COALESCE(state_code,'')) = $${params.length}`;
     }
-    sql += ` LIMIT 250`;
+    sql += ` ORDER BY length(canonical_name) ASC, census_government_id ASC LIMIT 250`;
 
     const rows = await query(sql, params);
     const canonicalQuery = canonical(q);
     const results = rows
       .map((row: any) => ({ ...row, score: score(row, canonicalQuery, tokens, typeHint) }))
       .filter((row: any) => row.score >= 35)
-      .sort((a: any, b: any) => b.score - a.score || String(a.name).localeCompare(String(b.name)))
+      .sort((a: any, b: any) => b.score - a.score || String(a.name).localeCompare(String(b.name)) || String(a.census_government_id).localeCompare(String(b.census_government_id)))
       .slice(0, 12)
       .map((row: any) => ({
         id: row.census_government_id,
