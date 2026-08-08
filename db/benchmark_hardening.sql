@@ -18,6 +18,19 @@ CREATE TABLE IF NOT EXISTS benchmark_truth_snapshots (
 CREATE INDEX IF NOT EXISTS idx_benchmark_truth_entity_captured
   ON benchmark_truth_snapshots(entity_id, captured_at DESC);
 
+CREATE TABLE IF NOT EXISTS benchmark_cohort_members (
+  entity_id UUID PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+  portal TEXT NOT NULL,
+  cohort_key TEXT NOT NULL DEFAULT 'default',
+  selection_reason TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_included_at TIMESTAMPTZ,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_benchmark_cohort_portal
+  ON benchmark_cohort_members(cohort_key, portal, is_active, added_at);
+
 CREATE TABLE IF NOT EXISTS benchmark_runs (
   id BIGSERIAL PRIMARY KEY,
   mode TEXT NOT NULL DEFAULT 'scheduled',
