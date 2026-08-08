@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { resolveCompany } from '@/lib/ingest/companyResolver';
+import { isGovernmentPortal, resolveGovernmentEntity } from '@/lib/ingest/governmentResolver';
 import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
 import { filterVerifiedJobs, isNewThisWeek } from '@/lib/verifiedJobs';
 
@@ -58,7 +59,11 @@ export async function POST(req: NextRequest) {
     if (duplicate.length) return NextResponse.json({ ...duplicate[0], duplicate: true }, { status: 200 });
 
     const needsResolve = !career_page_url || !ats_provider || ats_provider === 'unknown' || !ats_board_id;
-    const resolved = needsResolve ? await resolveCompany(name, career_page_url || null) : null;
+    const resolved = needsResolve
+      ? isGovernmentPortal(portal)
+        ? await resolveGovernmentEntity(name, portal, career_page_url || null)
+        : await resolveCompany(name, career_page_url || null)
+      : null;
     const finalAliases = Array.from(new Set([...aliases, ...(resolved?.aliases || [])]));
     const finalCareerUrl = career_page_url || resolved?.career_page_url || null;
     const finalAtsProvider = ats_provider && ats_provider !== 'unknown' ? ats_provider : resolved?.ats_provider || 'unknown';
