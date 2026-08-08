@@ -112,9 +112,9 @@ services:
   - type: cron
     name: daily-ingest
     env: node
-    buildCommand: npm install
+    buildCommand: npm install && node scripts/migrate.js
     schedule: "0 6 * * *"
-    startCommand: node scripts/sync-government-registry.js --if-stale || true; node scripts/sync-source-directories.js --if-stale || true; node scripts/enrich-association-job-urls.js || true; node scripts/ingest.js
+    startCommand: node scripts/sync-government-registry.js --if-stale || true; node scripts/sync-source-directories.js --if-stale || true; node scripts/enrich-association-job-urls.js || true; node scripts/ingest.js; node scripts/rebuild-source-pair-baselines.js || true; node scripts/run-benchmarks.js --scheduled || true
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -142,6 +142,36 @@ services:
         value: "4"
       - key: SOURCE_CHECK_STALE_HOURS
         value: "48"
+      - key: SOURCE_HISTORY_RETENTION_DAYS
+        value: "180"
+      - key: SOURCE_PAIR_BASELINE_DAYS
+        value: "30"
+      - key: SOURCE_PAIR_MIN_SAMPLES
+        value: "5"
+      - key: BENCHMARK_ENTITIES_PER_PORTAL
+        value: "25"
+      - key: BENCHMARK_JOB_STALE_DAYS
+        value: "30"
+      - key: BENCHMARK_MIN_ENTITIES
+        value: "5"
+      - key: BENCHMARK_MIN_TRUTH_ENTITIES
+        value: "3"
+      - key: BENCHMARK_MIN_PRECISION
+        value: "0.98"
+      - key: BENCHMARK_MIN_RECALL
+        value: "0.90"
+      - key: BENCHMARK_MIN_PARITY
+        value: "0.90"
+      - key: BENCHMARK_MAX_DUPLICATE_RATE
+        value: "0.01"
+      - key: BENCHMARK_MAX_STALE_RATE
+        value: "0.03"
+      - key: BENCHMARK_MIN_MAPPED_RATE
+        value: "0.85"
+      - key: BENCHMARK_MIN_AUTHORITATIVE_HEALTH
+        value: "0.95"
+      - key: BENCHMARK_MAX_HIGH_INCIDENT_RATE
+        value: "0.05"
       - key: CONTRACTOR_IDENTITY_STALE_DAYS
         value: "30"
       - key: SAM_API_KEY
