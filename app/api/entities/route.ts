@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { resolveCompany } from '@/lib/ingest/companyResolver';
 import { isGovernmentPortal, resolveGovernmentEntity } from '@/lib/ingest/governmentResolver';
+import { governmentRegistryMetadata, registryAliases, resolveGovernmentRegistryMatch } from '@/lib/ingest/governmentRegistry';
 import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
 import { filterVerifiedJobs, isNewThisWeek } from '@/lib/verifiedJobs';
 
@@ -58,24 +59,40 @@ export async function POST(req: NextRequest) {
     const duplicate = await query(`SELECT * FROM entities WHERE is_active = true AND portal = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2)) LIMIT 1`, [portal, name]);
     if (duplicate.length) return NextResponse.json({ ...duplicate[0], duplicate: true }, { status: 200 });
 
+    const registry = portal === 'state_agencies' || portal === 'counties_and_cities'
+      ? await resolveGovernmentRegistryMatch(name, portal)
+      : null;
+    const registryMeta = governmentRegistryMetadata(registry);
+    const registryName = registry?.name || name;
+
     const needsResolve = !career_page_url || !ats_provider || ats_provider === 'unknown' || !ats_board_id;
     const resolved = needsResolve
       ? isGovernmentPortal(portal)
-        ? await resolveGovernmentEntity(name, portal, career_page_url || null)
+        ? await resolveGovernmentEntity(registryName, portal, career_page_url || null)
         : await resolveCompany(name, career_page_url || null)
       : null;
-    const finalAliases = Array.from(new Set([...aliases, ...(resolved?.aliases || [])]));
+    const finalAliases = Array.from(new Set([
+      ...aliases,
+      ...registryAliases(registry),
+      ...(registry && registry.name.toLowerCase() !== name.toLowerCase() ? [name] : []),
+      ...(resolved?.aliases || []),
+    ]));
     const finalCareerUrl = career_page_url || resolved?.career_page_url || null;
     const finalAtsProvider = ats_provider && ats_provider !== 'unknown' ? ats_provider : resolved?.ats_provider || 'unknown';
     const finalBoardId = ats_board_id || resolved?.ats_board_id || null;
 
     const rows = await query(
-      `INSERT INTO entities (name, aliases, portal, career_page_url, ats_provider, ats_board_id, industry, category)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [name, finalAliases, portal, finalCareerUrl, finalAtsProvider, finalBoardId, industry || null, category || null]
+      `INSERT INTO entities (
+         name, aliases, portal, career_page_url, ats_provider, ats_board_id, industry, category,
+         government_registry_id, government_type, government_state, government_fips
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+      [
+        name, finalAliases, portal, finalCareerUrl, finalAtsProvider, finalBoardId, industry || null, category || null,
+        registryMeta.government_registry_id, registryMeta.government_type, registryMeta.government_state, registryMeta.government_fips,
+      ]
     );
     void runUniversalIngest(rows[0].id).catch((error) => console.error(`Background ingest failed for entity ${rows[0].id}:`, error));
-    return NextResponse.json({ ...rows[0], resolution: resolved }, { status: 201 });
+    return NextResponse.json({ ...rows[0], resolution: resolved, government_registry: registry }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
