@@ -93,7 +93,9 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     label: 'Topographic',
     shortLabel: 'Topo',
     description: 'Terrain and physical geography',
-    arcgisStyle: 'arcgis/topographic',
+    // The Static Basemap Tiles service exposes the supported raster topo-style
+    // basemap as ArcGIS Outdoor. `arcgis/topographic` is not a valid static tile path.
+    arcgisStyle: 'arcgis/outdoor',
     tone: 'light',
     swatch: ['#d7ddbc', '#f0ead9'],
   },
@@ -102,7 +104,9 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     label: 'Imagery',
     shortLabel: 'Satellite',
     description: 'Satellite imagery',
-    arcgisStyle: 'arcgis/imagery',
+    // Imagery is handled through Esri World Imagery below. The Static Basemap
+    // Tiles endpoint only exposes imagery/labels, which is a reference overlay.
+    arcgisStyle: 'arcgis/imagery/labels',
     tone: 'photo',
     swatch: ['#1d382b', '#78826e'],
   },
@@ -110,6 +114,8 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
 
 const ARCGIS_STATIC_BASE =
   'https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1';
+const ESRI_WORLD_IMAGERY =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 export function getHiringBasemap(styleId?: HiringMapStyleId): HiringBasemapConfig {
   const token = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim();
@@ -117,6 +123,19 @@ export function getHiringBasemap(styleId?: HiringMapStyleId): HiringBasemapConfi
   const selected = HIRING_MAP_STYLES.find(style => style.id === resolvedStyleId) || HIRING_MAP_STYLES[0];
 
   if (token) {
+    if (selected.id === 'imagery') {
+      return {
+        provider: 'arcgis',
+        styleId: selected.id,
+        styleLabel: selected.label,
+        url: ESRI_WORLD_IMAGERY,
+        attribution: 'Tiles © Esri · Maxar · Earthstar Geographics · GIS User Community',
+        tileSize: 256,
+        zoomOffset: 0,
+        maxZoom: 19,
+      };
+    }
+
     return {
       provider: 'arcgis',
       styleId: selected.id,
