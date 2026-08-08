@@ -13,6 +13,7 @@ const LIMIT_PER_PORTAL = clampInt(process.env.BENCHMARK_ENTITIES_PER_PORTAL, 25,
 const JOB_STALE_DAYS = clampInt(process.env.BENCHMARK_JOB_STALE_DAYS || process.env.JOB_STALE_AFTER_DAYS, 30, 1, 365);
 const MODE = process.argv.includes('--scheduled') ? 'scheduled' : 'manual';
 const PORTAL_ARG = argValue('--portal');
+const COHORT_KEY = String(process.env.BENCHMARK_COHORT_KEY || 'default').trim() || 'default';
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -23,7 +24,7 @@ async function main() {
   try {
     const run = await client.query(
       `INSERT INTO benchmark_runs(mode, scope, status) VALUES ($1,$2,'running') RETURNING id`,
-      [MODE, PORTAL_ARG ? `portal:${PORTAL_ARG}` : `tracked_entities:${LIMIT_PER_PORTAL}_per_portal`],
+      [MODE, PORTAL_ARG ? `portal:${PORTAL_ARG}` : `cohort:${COHORT_KEY}:${LIMIT_PER_PORTAL}_per_portal`],
     );
     runId = run.rows[0].id;
 
@@ -64,22 +65,76 @@ async function main() {
 }
 
 async function loadCohort(client) {
-  const params = [];
-  let portalClause = '';
-  if (PORTAL_ARG) { params.push(PORTAL_ARG); portalClause = `AND e.portal::text=$${params.length}`; }
-  const result = await client.query(
-    `WITH ranked AS (
-       SELECT e.id,e.name,e.portal::text AS portal,e.updated_at,
-              COALESCE(a.score,0) AS coverage_score,
-              ROW_NUMBER() OVER (PARTITION BY e.portal ORDER BY COALESCE(a.score,0) DESC, e.updated_at DESC, e.name) AS rn
-       FROM entities e
-       LEFT JOIN entity_coverage_assessment a ON a.entity_id=e.id
-       WHERE e.is_active=true ${portalClause}
-     )
-     SELECT * FROM ranked WHERE rn <= $${params.length + 1}
-     ORDER BY portal,rn`,
-    [...params, LIMIT_PER_PORTAL],
+  // Membership is persistent. Inactive tracked entities leave the active cohort;
+  // reactivated entities can return without changing their original added_at.
+  await client.query(
+    `UPDATE benchmark_cohort_members m SET is_active=false
+     WHERE cohort_key=$1 AND NOT EXISTS (SELECT 1 FROM entities e WHERE e.id=m.entity_id AND e.is_active=true)`,
+    [COHORT_KEY],
   );
+
+  const portalsResult = PORTAL_ARG
+    ? await client.query(`SELECT DISTINCT portal::text AS portal FROM entities WHERE is_active=true AND portal::text=$1`, [PORTAL_ARG])
+    : await client.query(`SELECT DISTINCT portal::text AS portal FROM entities WHERE is_active=true ORDER BY portal`);
+  const portals = portalsResult.rows.map(row => row.portal);
+
+  for (const portal of portals) {
+    await client.query(
+      `UPDATE benchmark_cohort_members m SET is_active=true
+       WHERE cohort_key=$1 AND portal=$2 AND EXISTS (SELECT 1 FROM entities e WHERE e.id=m.entity_id AND e.is_active=true)`,
+      [COHORT_KEY, portal],
+    );
+    const countRows = await client.query(
+      `SELECT COUNT(*)::int AS count FROM benchmark_cohort_members m
+       JOIN entities e ON e.id=m.entity_id
+       WHERE m.cohort_key=$1 AND m.portal=$2 AND m.is_active=true AND e.is_active=true`, [COHORT_KEY, portal]);
+    const needed = Math.max(0, LIMIT_PER_PORTAL - Number(countRows.rows[0]?.count || 0));
+    if (needed > 0) {
+      await client.query(
+        `INSERT INTO benchmark_cohort_members(entity_id,portal,cohort_key,selection_reason,is_active,metadata)
+         SELECT e.id,e.portal::text,$1,'stable tracked-entity benchmark selection',true,
+                jsonb_build_object('coverage_score',COALESCE(a.score,0),'truth_backed',EXISTS(SELECT 1 FROM benchmark_truth_snapshots t WHERE t.entity_id=e.id))
+         FROM entities e
+         LEFT JOIN entity_coverage_assessment a ON a.entity_id=e.id
+         WHERE e.is_active=true AND e.portal::text=$2
+           AND NOT EXISTS (
+             SELECT 1 FROM benchmark_cohort_members m
+             WHERE m.entity_id=e.id AND m.cohort_key=$1 AND m.is_active=true
+           )
+         ORDER BY EXISTS(SELECT 1 FROM benchmark_truth_snapshots t WHERE t.entity_id=e.id) DESC,
+                  COALESCE(a.score,0) DESC,e.updated_at DESC,e.name
+         LIMIT $3
+         ON CONFLICT (entity_id) DO UPDATE SET
+           portal=EXCLUDED.portal,cohort_key=EXCLUDED.cohort_key,is_active=true,
+           selection_reason=EXCLUDED.selection_reason,metadata=EXCLUDED.metadata`,
+        [COHORT_KEY, portal, needed],
+      );
+    }
+  }
+
+  const result = await client.query(
+    `WITH selected AS (
+       SELECT m.entity_id,m.portal,m.added_at,
+              ROW_NUMBER() OVER (PARTITION BY m.portal ORDER BY m.added_at,m.entity_id) AS rn
+       FROM benchmark_cohort_members m
+       JOIN entities e ON e.id=m.entity_id
+       WHERE m.cohort_key=$1 AND m.is_active=true AND e.is_active=true
+         AND ($2::text IS NULL OR m.portal=$2)
+     )
+     SELECT e.id,e.name,e.portal::text AS portal,e.updated_at,COALESCE(a.score,0) AS coverage_score
+     FROM selected s JOIN entities e ON e.id=s.entity_id
+     LEFT JOIN entity_coverage_assessment a ON a.entity_id=e.id
+     WHERE s.rn <= $3
+     ORDER BY e.portal,s.rn`,
+    [COHORT_KEY, PORTAL_ARG, LIMIT_PER_PORTAL],
+  );
+  if (result.rows.length) {
+    await client.query(
+      `UPDATE benchmark_cohort_members SET last_included_at=NOW()
+       WHERE cohort_key=$1 AND entity_id = ANY($2::uuid[])`,
+      [COHORT_KEY, result.rows.map(row => row.id)],
+    );
+  }
   return result.rows;
 }
 
@@ -99,9 +154,10 @@ async function benchmarkEntity(client, entity) {
   ]);
 
   const jobs = jobRows.rows;
-  const appUrlsRaw = jobs.map(row => row.apply_url).filter(Boolean);
-  const appUrls = Array.from(new Set(appUrlsRaw.map(normalizeJobUrl).filter(Boolean)));
-  const duplicateCount = Math.max(0, appUrlsRaw.map(normalizeJobUrl).filter(Boolean).length - appUrls.length);
+  const normalizedRawUrls = jobs.map(row => normalizeJobUrl(row.apply_url)).filter(Boolean);
+  const appUrls = Array.from(new Set(normalizedRawUrls));
+  const appCount = appUrls.length || jobs.length;
+  const duplicateCount = Math.max(0, normalizedRawUrls.length - appUrls.length);
   const cutoff = Date.now() - JOB_STALE_DAYS * 86400000;
   const staleCount = jobs.filter(row => {
     const seen = row.raw_data?.normalized_seen_at || row.updated_at;
@@ -118,13 +174,13 @@ async function benchmarkEntity(client, entity) {
   const officialCount = truth?.official_job_count === null || truth?.official_job_count === undefined ? null : Number(truth.official_job_count);
   const referenceCount = officialCount !== null && Number.isFinite(officialCount)
     ? officialCount
-    : envelopeReference(jobs.length, envelope);
+    : envelopeReference(appCount, envelope);
   const highIncidentCount = incidentRows.rows.filter(row => ['critical','high'].includes(String(row.severity || '').toLowerCase())).length;
 
   const assessment = assessEntityBenchmark({
     appUrls,
     truthUrls,
-    appCount: appUrls.length || jobs.length,
+    appCount,
     referenceCount,
     duplicateCount,
     staleCount,
@@ -150,6 +206,7 @@ async function benchmarkEntity(client, entity) {
       truth_source_url: truth?.source_url || null,
       truth_sample_size: jsonArray(truth?.sampled_job_urls).length,
       open_incidents: incidentRows.rows,
+      cohort_key: COHORT_KEY,
     },
   };
 }
@@ -198,6 +255,7 @@ function thresholdsFromEnv() {
 }
 function summarize(results, portals) {
   return {
+    cohort_key: COHORT_KEY,
     entities: results.length,
     ground_truth_entities: results.filter(row=>row.assessment.evidenceLevel==='ground_truth').length,
     official_count_entities: results.filter(row=>row.assessment.evidenceLevel==='official_count').length,
