@@ -76,7 +76,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
   }
 
   const evaluated = expected.map((source:any) => {
-    const check = checkByKey.get(String(source.source_key));
+    const check = findCheckForExpectedSource(source, checkByKey, checks);
     const recent = check ? Date.now() - checkedAt(check) <= CHECK_STALE_HOURS * 3600000 : false;
     const healthy = Boolean(check && recent && ['success','zero'].includes(String(check.status)));
     return { source, check: check || null, recent, healthy };
@@ -87,11 +87,14 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
   const checkedExpected = evaluated.filter(row => row.check && row.recent);
 
   const lineages = new Set<string>();
-  for (const row of evaluated.filter(row => row.healthy)) lineages.add(normalizeLineage(row.source.lineage_root || row.check?.lineage_root || row.source.source_key));
+  for (const row of evaluated.filter(row => row.healthy)) {
+    const lineage = normalizeLineage(row.source.lineage_root || row.check?.lineage_root || row.source.source_key);
+    if (lineage && isHiringLineage(lineage)) lineages.add(lineage);
+  }
   for (const check of checks) {
-    if (!['success','zero'].includes(String(check.status))) continue;
+    if (!['success','zero'].includes(String(check.status)) || !isHiringInventoryCheck(check)) continue;
     const lineage = normalizeLineage(check.lineage_root || check.details?.lineage_root || lineageForObservedSource(check.source));
-    if (lineage) lineages.add(lineage);
+    if (lineage && isHiringLineage(lineage)) lineages.add(lineage);
   }
 
   const firstPartyHealthy = evaluated.some(row => row.healthy && isFirstParty(row.source));
@@ -116,9 +119,9 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
   }
   if (!authoritative.length) gaps.push('No authoritative hiring source is registered.');
   else if (!healthyAuthoritative.length) gaps.push('No authoritative source has a recent healthy check.');
-  if (lineages.size < 2 && checks.some((row:any) => row.source_class === 'verified' || row.source_class === 'supplemental')) gaps.push('Coverage has fewer than two independent healthy source lineages.');
+  if (lineages.size < 2 && checks.some((row:any) => isHiringInventoryCheck(row) && (row.source_class === 'verified' || row.source_class === 'supplemental'))) gaps.push('Coverage has fewer than two independent healthy hiring-source lineages.');
 
-  const assessment: CoverageAssessment = {
+  return {
     score,
     grade: grade(score),
     expected_sources: expected.length,
@@ -134,16 +137,29 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
       first_party_healthy: firstPartyHealthy,
       lineages: Array.from(lineages).sort(),
       observed_sources: checks.length,
-      algorithm: 'expected-health-40 + authoritative-health-35 + independent-lineages-15 + first-party-10',
+      algorithm: 'expected-health-40 + authoritative-health-35 + independent-hiring-lineages-15 + first-party-10',
+      identity_and_discovery_sources_excluded_from_lineage_count: true,
     },
   };
-  return assessment;
 }
 
+function findCheckForExpectedSource(source:any, checkByKey:Map<string,any>, checks:any[]) {
+  const direct = checkByKey.get(String(source.source_key));
+  if (direct) return direct;
+  if (source?.metadata?.primary === true) {
+    const provider = String(source?.ats_provider || '').trim().toLowerCase();
+    const aliases = [provider, provider ? `ats:${provider}` : '', source.source_type === 'career_page' ? 'career_page' : ''].filter(Boolean);
+    const candidates = checks.filter(check => aliases.includes(String(check.source || '').toLowerCase()));
+    if (candidates.length) return candidates.sort((a,b)=>checkedAt(b)-checkedAt(a))[0];
+  }
+  return null;
+}
 function emptyAssessment(): CoverageAssessment {
   return { score:0, grade:'unknown', expected_sources:0, checked_sources:0, authoritative_sources:0, healthy_authoritative_sources:0, independent_lineages:0, gaps:['No hiring sources have been registered yet.'], details:{ algorithm:'source graph not initialized' } };
 }
 function isFirstParty(source:any) { const lineage=String(source?.lineage_root||'').toLowerCase(); return source?.source_class==='authoritative' && (/^ats:/.test(lineage)||/^official-domain:/.test(lineage)||/^state-jobs:/.test(lineage)||/^usps$/.test(lineage)||/^federal-/.test(lineage)); }
+function isHiringInventoryCheck(check:any) { const source=String(check?.source||'').toLowerCase(); return !source.startsWith('identity:') && source!=='registry:census_governments' && !source.startsWith('coverage:') && source!=='web:langsearch' && source!=='adzuna' && !source.startsWith('jobapi:'); }
+function isHiringLineage(lineage:string) { return !lineage.startsWith('identity:') && !lineage.startsWith('registry:') && !lineage.startsWith('coverage:') && lineage!=='web:langsearch' && lineage!=='adzuna' && !lineage.startsWith('jobapi:'); }
 function normalizeLineage(value:unknown) { const text=String(value||'').trim().toLowerCase(); if(!text)return ''; if(text==='careeronestop'||text.startsWith('nlx-mirror:'))return 'nlx'; return text; }
 function lineageForObservedSource(source:unknown) { const value=String(source||'').toLowerCase(); if(value==='nlx')return 'nlx'; if(value.startsWith('board:'))return value; if(value==='usajobs')return 'usajobs'; if(value==='gov:neogov_rss')return 'neogov'; if(value.startsWith('ats:'))return value; if(['workday','greenhouse','lever','smartrecruiters','bamboohr','ashby','recruitee','workable','personio'].includes(value))return `ats:${value}`; return value; }
 function label(source:any) { return String(source?.metadata?.organization_name||source?.source_key||source?.source_url||'source'); }
