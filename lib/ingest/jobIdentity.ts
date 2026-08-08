@@ -1,7 +1,11 @@
 const SOURCE_PRIORITY: Record<string, number> = {
   greenhouse: 100, lever: 100, smartrecruiters: 100, bamboohr: 100,
-  ashby: 100, recruitee: 100, workday: 100, usajobs: 98,
-  career_page: 80, adzuna: 65, 'web:langsearch': 45,
+  ashby: 100, recruitee: 100, workday: 100, usajobs: 100,
+  'gov:neogov_rss': 99,
+  nlx: 90,
+  career_page: 80,
+  'board:icma': 72, 'board:naco': 72, 'board:careersingovernment': 70,
+  adzuna: 65, 'web:langsearch': 45,
 };
 const TRACKING_PARAMS = new Set(['gh_src','source','src','trackingid','trk','referrer','referral','lever-origin','lever-source']);
 
