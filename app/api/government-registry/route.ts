@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
+import { governmentGeographicFips } from '@/lib/ingest/governmentRegistry';
 
 export async function GET(req: NextRequest) {
   try {
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
         type: row.government_type,
         state: row.state_code || row.state_name || null,
         county: row.county_name || null,
-        fips: [row.state_fips, row.county_fips, row.place_fips].filter(Boolean).join('') || null,
+        fips: governmentGeographicFips(row),
         website: row.website || null,
       }));
 
