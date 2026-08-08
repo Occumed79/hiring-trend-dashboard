@@ -11,6 +11,7 @@ const { assessEntityBenchmark, assessPortalRelease, normalizeJobUrl } = require(
 
 const LIMIT_PER_PORTAL = clampInt(process.env.BENCHMARK_ENTITIES_PER_PORTAL, 25, 1, 100);
 const JOB_STALE_DAYS = clampInt(process.env.BENCHMARK_JOB_STALE_DAYS || process.env.JOB_STALE_AFTER_DAYS, 30, 1, 365);
+const TRUTH_MAX_AGE_HOURS = clampInt(process.env.BENCHMARK_TRUTH_MAX_AGE_HOURS, 36, 1, 720);
 const MODE = process.argv.includes('--scheduled') ? 'scheduled' : 'manual';
 const PORTAL_ARG = argValue('--portal');
 const COHORT_KEY = String(process.env.BENCHMARK_COHORT_KEY || 'default').trim() || 'default';
@@ -65,8 +66,6 @@ async function main() {
 }
 
 async function loadCohort(client) {
-  // Membership is persistent. Inactive tracked entities leave the active cohort;
-  // reactivated entities can return without changing their original added_at.
   await client.query(
     `UPDATE benchmark_cohort_members m SET is_active=false
      WHERE cohort_key=$1 AND NOT EXISTS (SELECT 1 FROM entities e WHERE e.id=m.entity_id AND e.is_active=true)`,
@@ -141,7 +140,7 @@ async function loadCohort(client) {
 async function benchmarkEntity(client, entity) {
   const [jobRows, coverageRows, incidentRows, truthRows] = await Promise.all([
     client.query(
-      `SELECT source, external_id, updated_at, posted_at, lat, lng, raw_data,
+      `SELECT source, external_id, title, location, updated_at, posted_at, lat, lng, raw_data,
               COALESCE(raw_data->>'normalized_apply_url', raw_data->>'apply_url', raw_data->>'url') AS apply_url
        FROM jobs WHERE entity_id=$1 AND is_active=true`, [entity.id]),
     client.query(
@@ -153,23 +152,26 @@ async function benchmarkEntity(client, entity) {
       `SELECT * FROM benchmark_truth_snapshots WHERE entity_id=$1 ORDER BY captured_at DESC,id DESC LIMIT 1`, [entity.id]),
   ]);
 
-  const jobs = jobRows.rows;
-  const normalizedRawUrls = jobs.map(row => normalizeJobUrl(row.apply_url)).filter(Boolean);
-  const appUrls = Array.from(new Set(normalizedRawUrls));
-  const appCount = appUrls.length || jobs.length;
-  const duplicateCount = Math.max(0, normalizedRawUrls.length - appUrls.length);
+  const rawJobs = jobRows.rows;
+  const benchmarkJobs = dedupeBenchmarkJobs(rawJobs);
+  const appUrls = Array.from(new Set(benchmarkJobs.map(row => normalizeJobUrl(row.apply_url)).filter(Boolean)));
+  const appCount = benchmarkJobs.length;
+  const duplicateCount = Math.max(0, rawJobs.length - benchmarkJobs.length);
   const cutoff = Date.now() - JOB_STALE_DAYS * 86400000;
-  const staleCount = jobs.filter(row => {
+  const staleCount = benchmarkJobs.filter(row => {
     const seen = row.raw_data?.normalized_seen_at || row.updated_at;
     const timestamp = seen ? new Date(seen).getTime() : 0;
     return !timestamp || timestamp < cutoff;
   }).length;
-  const mappedCount = jobs.filter(row => validCoordinate(row.lat, row.lng)).length;
+  const mappedCount = benchmarkJobs.filter(row => validCoordinate(row.lat, row.lng)).length;
   const inventoryCoverage = coverageRows.rows.filter(isInventoryCoverage);
   const authoritative = inventoryCoverage.filter(row => row.source_class === 'authoritative');
   const authoritativeHealthy = authoritative.filter(row => row.status === 'success' || (row.status === 'zero' && row.authoritative_zero === true));
   const envelope = authoritativeEnvelope(authoritativeHealthy);
-  const truth = truthRows.rows[0] || null;
+  const latestTruth = truthRows.rows[0] || null;
+  const truthCapturedMs = latestTruth?.captured_at ? new Date(latestTruth.captured_at).getTime() : 0;
+  const truthFresh = Boolean(latestTruth && truthCapturedMs && Date.now() - truthCapturedMs <= TRUTH_MAX_AGE_HOURS * 3600000);
+  const truth = truthFresh ? latestTruth : null;
   const truthUrls = jsonArray(truth?.job_urls);
   const officialCount = truth?.official_job_count === null || truth?.official_job_count === undefined ? null : Number(truth.official_job_count);
   const referenceCount = officialCount !== null && Number.isFinite(officialCount)
@@ -198,13 +200,17 @@ async function benchmarkEntity(client, entity) {
     portal: entity.portal,
     assessment,
     details: {
-      raw_active_rows: jobs.length,
+      raw_active_rows: rawJobs.length,
+      deduped_active_jobs: benchmarkJobs.length,
       unique_apply_urls: appUrls.length,
       authoritative_envelope: envelope,
-      truth_snapshot_id: truth?.id || null,
-      truth_captured_at: truth?.captured_at || null,
-      truth_source_url: truth?.source_url || null,
-      truth_sample_size: jsonArray(truth?.sampled_job_urls).length,
+      truth_snapshot_id: latestTruth?.id || null,
+      truth_captured_at: latestTruth?.captured_at || null,
+      truth_source_url: latestTruth?.source_url || null,
+      truth_sample_size: jsonArray(latestTruth?.sampled_job_urls).length,
+      truth_fresh: truthFresh,
+      truth_expired: Boolean(latestTruth && !truthFresh),
+      truth_max_age_hours: TRUTH_MAX_AGE_HOURS,
       open_incidents: incidentRows.rows,
       cohort_key: COHORT_KEY,
     },
@@ -226,6 +232,26 @@ async function persistResult(client, runId, entity, row) {
   );
 }
 
+function dedupeBenchmarkJobs(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const normalizedUrl = normalizeJobUrl(row.apply_url);
+    const key = normalizedUrl
+      ? `url:${normalizedUrl}`
+      : `source:${String(row.source||'').toLowerCase()}:${String(row.external_id||'').toLowerCase() || `${String(row.title||'').toLowerCase()}|${String(row.location||'').toLowerCase()}`}`;
+    const existing = map.get(key);
+    if (!existing || jobQualityScore(row) > jobQualityScore(existing)) map.set(key,row);
+  }
+  return Array.from(map.values());
+}
+function jobQualityScore(row) {
+  let score=0;
+  if(normalizeJobUrl(row.apply_url))score+=4;
+  if(validCoordinate(row.lat,row.lng))score+=2;
+  if(row.posted_at)score+=1;
+  const updated=row.updated_at?new Date(row.updated_at).getTime():0;
+  return score+(Number.isFinite(updated)?updated/1e15:0);
+}
 function authoritativeEnvelope(rows) {
   const counts = rows.map(row => Math.max(0, Number(row.jobs_found || 0))).filter(Number.isFinite);
   return { sources: rows.length, lower: counts.length ? Math.max(...counts) : null, upper: counts.length ? counts.reduce((a,b)=>a+b,0) : null };
@@ -256,11 +282,13 @@ function thresholdsFromEnv() {
 function summarize(results, portals) {
   return {
     cohort_key: COHORT_KEY,
+    truth_max_age_hours: TRUTH_MAX_AGE_HOURS,
     entities: results.length,
     ground_truth_entities: results.filter(row=>row.assessment.evidenceLevel==='ground_truth').length,
     official_count_entities: results.filter(row=>row.assessment.evidenceLevel==='official_count').length,
     live_parity_entities: results.filter(row=>row.assessment.evidenceLevel==='live_parity').length,
     insufficient_entities: results.filter(row=>row.assessment.evidenceLevel==='insufficient').length,
+    expired_truth_snapshots: results.filter(row=>row.details.truth_expired).length,
     portals: portals.map(row=>({ portal:row.portal,status:row.status,benchmark_entities:row.benchmarkEntityCount,truth_entities:row.truthEntityCount,blockers:row.blockers })),
   };
 }
