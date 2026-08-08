@@ -31,6 +31,13 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
   let atsProvider = pinned?.ats_provider || entity.ats_provider || 'unknown';
   let boardId = pinned?.ats_board_id ?? entity.ats_board_id ?? null;
   let careerPageUrl = pinned?.career_page_url || entity.career_page_url || null;
+  const federalSourceResolved = entity.portal === 'federal_agencies' && atsProvider === 'usajobs' && Boolean(boardId);
+  const needsResolution = !federalSourceResolved && (
+    !careerPageUrl
+    || atsProvider === 'unknown'
+    || atsProvider === 'other'
+    || (DIRECT_CONNECTORS.has(atsProvider) && !boardId)
+  );
 
   if (pinned) {
     detected = {
@@ -43,7 +50,7 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
       notes: ['Pinned authoritative employer career surface.'],
       replace_existing: true,
     };
-  } else if ((!careerPageUrl || atsProvider === 'unknown' || atsProvider === 'other' || (DIRECT_CONNECTORS.has(atsProvider) && !boardId)) && entity.name) {
+  } else if (needsResolution && entity.name) {
     const governmentPortal = isGovernmentPortal(entity.portal);
     detected = governmentPortal
       ? await resolveGovernmentEntity(entity.name, entity.portal, careerPageUrl)
