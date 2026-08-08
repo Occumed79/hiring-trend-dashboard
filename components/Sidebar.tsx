@@ -33,7 +33,7 @@ export default function Sidebar({
   const selectedStyle = HIRING_MAP_STYLES.find(style => style.id === mapStyle) || HIRING_MAP_STYLES[0];
 
   return (
-    <aside className={`h-screen flex flex-col glass border-r border-white/10 transition-all duration-300 shrink-0 ${collapsed ? 'w-[68px]' : 'w-[220px]'}`}>
+    <aside className={`relative z-[3000] overflow-visible h-screen flex flex-col glass border-r border-white/10 transition-all duration-300 shrink-0 ${collapsed ? 'w-[68px]' : 'w-[220px]'}`}>
       <div className="px-4 py-[18px] border-b border-white/10 flex items-center gap-3.5 min-h-[74px]">
         <div
           className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
@@ -71,7 +71,7 @@ export default function Sidebar({
         ))}
       </nav>
 
-      <div className="relative px-2.5 pb-2.5">
+      <div className="relative z-[3100] overflow-visible px-2.5 pb-2.5">
         <button
           onClick={() => setMapStyleOpen(open => !open)}
           className={`mx-auto border transition-all rounded-full flex items-center justify-center ${
@@ -100,7 +100,7 @@ export default function Sidebar({
 
         {mapStyleOpen && (
           <div
-            className={`absolute z-[2200] bottom-[48px] rounded-2xl border border-white/15 bg-[#07101f]/96 backdrop-blur-2xl shadow-[0_22px_70px_rgba(0,0,0,0.55)] p-2 ${
+            className={`absolute z-[3200] bottom-[48px] rounded-2xl border border-white/15 bg-[#07101f]/96 backdrop-blur-2xl shadow-[0_22px_70px_rgba(0,0,0,0.55)] p-2 ${
               collapsed ? 'left-[58px] w-[270px]' : 'left-2.5 w-[270px]'
             }`}
             role="menu"
@@ -120,7 +120,7 @@ export default function Sidebar({
                   <button
                     key={style.id}
                     onClick={() => chooseMapStyle(style.id)}
-                    className={`group rounded-xl border p-2 text-left transition-all ${
+                    className={`group rounded-xl border p-2 text-left transition-all ${style.id === 'imagery' ? 'col-span-2' : ''} ${
                       active
                         ? 'bg-blue-500/15 border-blue-400/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                         : 'bg-white/[0.025] border-white/[0.07] hover:bg-white/[0.06] hover:border-white/15'

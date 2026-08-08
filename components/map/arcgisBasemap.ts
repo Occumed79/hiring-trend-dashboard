@@ -4,7 +4,6 @@ export type HiringMapStyleId =
   | 'dark-gray'
   | 'navigation'
   | 'streets'
-  | 'light-gray'
   | 'topographic'
   | 'imagery';
 
@@ -80,36 +79,33 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     swatch: ['#e5edf4', '#f8fafc'],
   },
   {
-    id: 'light-gray',
-    label: 'Light Gray',
-    shortLabel: 'Light Gray',
-    description: 'Minimal light reference canvas',
-    arcgisStyle: 'arcgis/light-gray',
-    tone: 'light',
-    swatch: ['#d9dde2', '#f4f5f7'],
-  },
-  {
     id: 'topographic',
     label: 'Topographic',
     shortLabel: 'Topo',
     description: 'Terrain and physical geography',
-    arcgisStyle: 'arcgis/topographic',
+    // ArcGIS Outdoor is the supported terrain/topography-oriented style on
+    // the Static Basemap Tiles raster endpoint.
+    arcgisStyle: 'arcgis/outdoor',
     tone: 'light',
     swatch: ['#d7ddbc', '#f0ead9'],
   },
   {
     id: 'imagery',
-    label: 'Imagery',
+    label: 'Satellite',
     shortLabel: 'Satellite',
-    description: 'Satellite imagery',
-    arcgisStyle: 'arcgis/imagery',
+    description: 'Esri World Imagery satellite view',
+    // Satellite imagery is served by Esri World Imagery below. The static
+    // basemap imagery/labels style is only a reference-label overlay.
+    arcgisStyle: 'arcgis/imagery/labels',
     tone: 'photo',
-    swatch: ['#1d382b', '#78826e'],
+    swatch: ['#11271f', '#62785f'],
   },
 ];
 
 const ARCGIS_STATIC_BASE =
   'https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1';
+const ESRI_WORLD_IMAGERY =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 export function getHiringBasemap(styleId?: HiringMapStyleId): HiringBasemapConfig {
   const token = process.env.NEXT_PUBLIC_ARCGIS_API_KEY?.trim();
@@ -117,6 +113,19 @@ export function getHiringBasemap(styleId?: HiringMapStyleId): HiringBasemapConfi
   const selected = HIRING_MAP_STYLES.find(style => style.id === resolvedStyleId) || HIRING_MAP_STYLES[0];
 
   if (token) {
+    if (selected.id === 'imagery') {
+      return {
+        provider: 'arcgis',
+        styleId: selected.id,
+        styleLabel: selected.label,
+        url: ESRI_WORLD_IMAGERY,
+        attribution: '© Esri · Maxar · Earthstar Geographics · GIS User Community',
+        tileSize: 256,
+        zoomOffset: 0,
+        maxZoom: 19,
+      };
+    }
+
     return {
       provider: 'arcgis',
       styleId: selected.id,
