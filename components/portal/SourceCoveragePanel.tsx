@@ -2,36 +2,57 @@
 
 type SourceRow = {
   source: string;
+  source_key?: string | null;
   source_class?: string;
   status?: string;
   jobs_found?: number;
   authoritative_zero?: boolean;
+  lineage_root?: string | null;
   details?: Record<string, any>;
   last_checked_at?: string | null;
   last_success_at?: string | null;
 };
 
-export default function SourceCoveragePanel({ rows, registry, loading }: {
+type CoverageAssessment = {
+  score?: number;
+  grade?: string;
+  expected_sources?: number;
+  checked_sources?: number;
+  authoritative_sources?: number;
+  healthy_authoritative_sources?: number;
+  independent_lineages?: number;
+  gaps?: string[];
+} | null;
+
+export default function SourceCoveragePanel({ rows, registry, assessment, loading }: {
   rows?: SourceRow[] | null;
   registry?: { id?: string | null; type?: string | null; state?: string | null; fips?: string | null } | null;
+  assessment?: CoverageAssessment;
   loading?: boolean;
 }) {
   const normalized = Array.isArray(rows) ? rows : [];
-  if (!loading && !registry && !normalized.length) return null;
+  if (!loading && !registry && !normalized.length && !assessment) return null;
 
   const authoritative = normalized.filter(row => row.source_class === 'authoritative');
   const verified = normalized.filter(row => row.source_class === 'verified');
   const supplemental = normalized.filter(row => row.source_class !== 'authoritative' && row.source_class !== 'verified');
   const healthy = normalized.filter(row => row.status === 'success' || row.status === 'zero').length;
   const problems = normalized.filter(row => row.status === 'error').length;
+  const score = Number(assessment?.score ?? 0);
+  const gaps = Array.isArray(assessment?.gaps) ? assessment!.gaps!.filter(Boolean) : [];
 
   return (
     <section className="glass-card luminous-panel relative overflow-hidden p-5">
       <div className="shimmer-top" />
       <div className="relative z-10 flex items-start justify-between gap-4 flex-wrap mb-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[15px] font-semibold text-slate-100">Source Coverage</h2>
+            {!loading && assessment && (
+              <span className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${scoreClass(score)}`}>
+                {score}% · {assessment.grade || 'unknown'}
+              </span>
+            )}
             {!loading && normalized.length > 0 && (
               <span className="rounded-full border border-emerald-400/20 bg-emerald-500/8 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-200">
                 {healthy}/{normalized.length} checked cleanly
@@ -44,8 +65,18 @@ export default function SourceCoveragePanel({ rows, registry, loading }: {
             )}
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-            Independent sources are checked separately, deduplicated, and ranked by authority. A verified zero means the source was reached successfully and currently reports no openings.
+            Independent sources are checked separately, deduplicated by posting identity, and ranked by authority and upstream lineage. A verified zero means an authoritative inventory was reached successfully and currently reports no openings.
           </p>
+          {!loading && assessment && (
+            <p className="mt-2 text-[10px] text-slate-600">
+              {Number(assessment.checked_sources || 0)}/{Number(assessment.expected_sources || 0)} known hiring surfaces checked · {Number(assessment.healthy_authoritative_sources || 0)}/{Number(assessment.authoritative_sources || 0)} authoritative healthy · {Number(assessment.independent_lineages || 0)} independent lineage{Number(assessment.independent_lineages || 0) === 1 ? '' : 's'}
+            </p>
+          )}
+          {!loading && gaps.length > 0 && (
+            <p className="mt-1.5 max-w-4xl truncate text-[9px] text-amber-200/55" title={gaps.join(' · ')}>
+              Coverage gaps: {gaps.slice(0, 3).join(' · ')}{gaps.length > 3 ? ` · +${gaps.length - 3} more` : ''}
+            </p>
+          )}
         </div>
         {registry && (
           <div className="rounded-xl border border-cyan-300/15 bg-cyan-400/[0.055] px-3 py-2 text-right">
@@ -130,10 +161,15 @@ function sourceLabel(source: string) {
     'usajobs': 'USAJOBS',
     'career_page': 'Official Career Page',
     'web:langsearch': 'Verified Web Discovery',
+    'identity:sam': 'SAM.gov Entity Identity',
+    'identity:usaspending': 'USAspending Recipient Identity',
     'adzuna': 'Adzuna',
   };
   const normalized = String(source || '').toLowerCase();
   if (labels[normalized]) return labels[normalized];
+  if (normalized.startsWith('directory:')) return titleCase(normalized.split(':').slice(-1)[0].replace(/[-_]/g,' '));
+  if (normalized.startsWith('primary:')) return 'Official Hiring Surface';
+  if (normalized.startsWith('sitemap:')) return 'Official Job Sitemap';
   if (normalized.startsWith('ats:')) return `${titleCase(normalized.slice(4).replace(/_/g,' '))} ATS`;
   if (normalized.startsWith('portal:')) return titleCase(normalized.slice(7).replace(/_/g,' '));
   if (normalized.startsWith('gov:')) return titleCase(normalized.slice(4).replace(/_/g,' '));
@@ -145,13 +181,22 @@ function sourceDetail(row: SourceRow) {
   const details = row.details || {};
   if (row.source === 'registry:census_governments') return [details.government_type, details.government_state, details.government_fips ? `FIPS ${details.government_fips}` : null].filter(Boolean).join(' · ') || 'Authoritative government identity';
   if (details.agency) return `Agency ${details.agency}`;
+  if (details.organization_name) return String(details.organization_name);
   if (details.board) return details.board;
   if (details.state) return `State filter: ${details.state}`;
+  if (details.ats_provider) return `${titleCase(String(details.ats_provider).replace(/_/g,' '))} · ${details.source_type || 'source'}`;
+  if (details.lineage_root) return `Lineage: ${details.lineage_root}`;
   if (details.reason) return String(details.reason);
   if (details.error) return String(details.error);
   return row.source_class === 'authoritative' ? 'Primary source' : row.source_class === 'verified' ? 'Verified source' : 'Corroborating source';
 }
 
+function scoreClass(score: number) {
+  if (score >= 90) return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200';
+  if (score >= 75) return 'border-blue-400/25 bg-blue-500/10 text-blue-200';
+  if (score >= 55) return 'border-cyan-400/20 bg-cyan-500/8 text-cyan-200';
+  return 'border-amber-400/25 bg-amber-500/8 text-amber-200';
+}
 function formatRegistry(registry: { id?: string | null; type?: string | null; state?: string | null; fips?: string | null }) {
   return [registry.type ? titleCase(registry.type.replace(/_/g,' ')) : null, registry.state, registry.fips ? `FIPS ${registry.fips}` : null].filter(Boolean).join(' · ') || registry.id || 'Resolved';
 }

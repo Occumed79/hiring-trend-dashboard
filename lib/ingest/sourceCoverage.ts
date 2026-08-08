@@ -1,5 +1,6 @@
 import { query } from '@/db/client';
 import type { CoverageCheck } from './neogovFeed';
+import { assessAndPersistEntityCoverage } from './coverageAssessment';
 
 export async function persistSourceCoverage(entityId: string, checks: CoverageCheck[]) {
   if (!entityId || !checks.length) return;
@@ -11,27 +12,39 @@ export async function persistSourceCoverage(entityId: string, checks: CoverageCh
 
   for (const check of Array.from(unique.values())) {
     const success = check.status === 'success' || check.status === 'zero';
+    const sourceKey = clean(check.details?.source_key) || clean(check.source);
+    const lineageRoot = clean(check.details?.lineage_root) || lineageForSource(check.source);
     await query(
       `INSERT INTO entity_source_coverage (
-         entity_id, source, source_class, status, jobs_found, authoritative_zero, details, last_checked_at, last_success_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,NOW(),CASE WHEN $8 THEN NOW() ELSE NULL END)
+         entity_id, source, source_class, status, jobs_found, authoritative_zero, details,
+         lineage_root, source_key, last_checked_at, last_success_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,NOW(),CASE WHEN $10 THEN NOW() ELSE NULL END)
        ON CONFLICT (entity_id, source) DO UPDATE SET
          source_class = EXCLUDED.source_class,
          status = EXCLUDED.status,
          jobs_found = EXCLUDED.jobs_found,
          authoritative_zero = EXCLUDED.authoritative_zero,
          details = EXCLUDED.details,
+         lineage_root = COALESCE(EXCLUDED.lineage_root, entity_source_coverage.lineage_root),
+         source_key = COALESCE(EXCLUDED.source_key, entity_source_coverage.source_key),
          last_checked_at = NOW(),
-         last_success_at = CASE WHEN $8 THEN NOW() ELSE entity_source_coverage.last_success_at END`,
-      [entityId, check.source, check.source_class, check.status, Math.max(0, Number(check.jobs_found || 0)), Boolean(check.authoritative_zero), JSON.stringify(check.details || {}), success],
+         last_success_at = CASE WHEN $10 THEN NOW() ELSE entity_source_coverage.last_success_at END`,
+      [entityId, check.source, check.source_class, check.status, Math.max(0, Number(check.jobs_found || 0)), Boolean(check.authoritative_zero), JSON.stringify(check.details || {}), lineageRoot, sourceKey, success],
     ).catch(error => console.warn(`Could not persist source coverage ${check.source}:`, error instanceof Error ? error.message : error));
   }
+
+  // Coverage scoring is observability, not a prerequisite for ingest. A scoring
+  // failure must never discard otherwise valid jobs or source-health records.
+  await assessAndPersistEntityCoverage(entityId).catch(error =>
+    console.warn('Could not assess source completeness:', error instanceof Error ? error.message : error)
+  );
 }
 
 export async function readSourceCoverage(entityId: string) {
   try {
     return await query(
-      `SELECT source, source_class, status, jobs_found, authoritative_zero, details, last_checked_at, last_success_at
+      `SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
+              lineage_root, details, last_checked_at, last_success_at
        FROM entity_source_coverage WHERE entity_id = $1
        ORDER BY CASE source_class WHEN 'authoritative' THEN 1 WHEN 'verified' THEN 2 ELSE 3 END,
                 jobs_found DESC, source ASC`,
@@ -42,6 +55,19 @@ export async function readSourceCoverage(entityId: string) {
   }
 }
 
+function lineageForSource(source: unknown) {
+  const normalized = String(source || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'nlx') return 'nlx';
+  if (normalized === 'usajobs') return 'usajobs';
+  if (normalized === 'gov:neogov_rss') return 'neogov';
+  if (normalized.startsWith('board:')) return normalized;
+  if (normalized.startsWith('identity:')) return normalized;
+  if (normalized.startsWith('ats:')) return normalized;
+  if (['greenhouse','lever','workday','smartrecruiters','bamboohr','ashby','recruitee','workable','personio'].includes(normalized)) return `ats:${normalized}`;
+  return normalized;
+}
+function clean(value: unknown) { const text = String(value || '').trim(); return text || null; }
 function rank(status: CoverageCheck['status']) {
   if (status === 'success') return 4;
   if (status === 'zero') return 3;

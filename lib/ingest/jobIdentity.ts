@@ -1,9 +1,9 @@
 const SOURCE_PRIORITY: Record<string, number> = {
   greenhouse: 100, lever: 100, smartrecruiters: 100, bamboohr: 100,
-  ashby: 100, recruitee: 100, workday: 100, usajobs: 100,
+  ashby: 100, recruitee: 100, workday: 100, workable: 100, personio: 100, usajobs: 100,
   'gov:neogov_rss': 99,
   nlx: 90,
-  career_page: 80,
+  career_page: 80, official_sitemap: 82,
   'board:icma': 72, 'board:naco': 72, 'board:careersingovernment': 70,
   adzuna: 65, 'web:langsearch': 45,
 };
@@ -44,6 +44,9 @@ export function filterJobApiJobsForEntity(items: any[], entity: any) {
 export function filterAdzunaJobsForEntity(items: any[], entity: any) {
   return filterByEmployerEvidence(items, entity, source => source === 'adzuna');
 }
+export function filterAllJobsForEntityEvidence(items: any[], entity: any) {
+  return filterByEmployerEvidence(items, entity, () => true);
+}
 
 function filterByEmployerEvidence(items: any[], entity: any, shouldFilter: (source: string) => boolean) {
   const jobs: any[] = [];
@@ -59,6 +62,8 @@ function filterByEmployerEvidence(items: any[], entity: any, shouldFilter: (sour
 }
 
 function getEmployerEvidence(item: any, entity: any): string | null {
+  const raw = item?.raw_data || {};
+  if (raw.source_graph_verified_for_entity === true && raw.source_graph_shared_inventory !== true) return 'verified-source-graph-node';
   const candidateUrl = parseUrl(normalizeApplyUrl(item));
   const careerUrl = parseUrl(entity?.career_page_url);
   if (candidateUrl && careerUrl && sameSite(candidateUrl.hostname, careerUrl.hostname)) return 'career-domain';
@@ -69,7 +74,6 @@ function getEmployerEvidence(item: any, entity: any): string | null {
     if (containsPhrase(urlText, boardId)) return 'ats-board-id';
   }
 
-  const raw = item?.raw_data || {};
   const searchable = normalizeComparable([
     item?.title,
     item?.department,
@@ -107,6 +111,12 @@ function mergeDuplicateJobs(left: any, right: any) {
   const fallback = preferred === left ? right : left;
   const normalizedApplyUrl = normalizeApplyUrl(preferred) || normalizeApplyUrl(fallback);
   const duplicateSources = Array.from(new Set([...readDuplicateSources(left), ...readDuplicateSources(right), String(left?.source || '').trim(), String(right?.source || '').trim()].filter(Boolean)));
+  const duplicateLineages = Array.from(new Set([
+    ...(Array.isArray(left?.raw_data?.duplicate_lineages) ? left.raw_data.duplicate_lineages : []),
+    ...(Array.isArray(right?.raw_data?.duplicate_lineages) ? right.raw_data.duplicate_lineages : []),
+    left?.raw_data?.source_graph_lineage,
+    right?.raw_data?.source_graph_lineage,
+  ].filter(Boolean).map(String)));
   return {
     ...fallback, ...preferred,
     department: preferred.department || fallback.department || null,
@@ -117,7 +127,7 @@ function mergeDuplicateJobs(left: any, right: any) {
     lat: preferred.lat ?? fallback.lat ?? null,
     lng: preferred.lng ?? fallback.lng ?? null,
     posted_at: preferred.posted_at || fallback.posted_at || null,
-    raw_data: { ...(fallback.raw_data || {}), ...(preferred.raw_data || {}), normalized_apply_url: normalizedApplyUrl, duplicate_sources: duplicateSources },
+    raw_data: { ...(fallback.raw_data || {}), ...(preferred.raw_data || {}), normalized_apply_url: normalizedApplyUrl, duplicate_sources: duplicateSources, duplicate_lineages: duplicateLineages },
   };
 }
 

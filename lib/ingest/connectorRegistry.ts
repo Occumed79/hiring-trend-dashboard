@@ -10,6 +10,8 @@ import {
   fetchHostedAtsJobs,
   STRUCTURED_ATS_PROVIDERS,
 } from './expandedAts';
+import { fetchWorkableJobs } from './workable';
+import { fetchPersonioJobs } from './personio';
 import { fetchSpecializedEmployerJobs } from './employerConnectors';
 import { detectATS, resolveCompany, type CompanyResolution, type AtsProvider } from './companyResolver';
 import { isGovernmentPortal, resolveGovernmentEntity } from './governmentResolver';
@@ -17,9 +19,19 @@ import { isGovernmentPortal, resolveGovernmentEntity } from './governmentResolve
 type DetectedResolution = CompanyResolution & { replace_existing?: boolean };
 interface ConnectorResult { jobs: any[]; used: string[]; skipped: string[]; detected: DetectedResolution | null; }
 type CareerProfile = { career_page_url: string; ats_provider: AtsProvider; ats_board_id: string | null; };
+export type ConfiguredJobSource = {
+  source_key: string;
+  source_type: string;
+  source_url?: string | null;
+  ats_provider?: string | null;
+  board_id?: string | null;
+  source_class?: string | null;
+  lineage_root?: string | null;
+  metadata?: Record<string, any> | null;
+};
 
 const DIRECT_CONNECTORS = new Set([
-  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', ...Array.from(STRUCTURED_ATS_PROVIDERS),
+  'greenhouse', 'lever', 'smartrecruiters', 'bamboohr', 'workable', 'personio', ...Array.from(STRUCTURED_ATS_PROVIDERS),
 ]);
 
 export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> {
@@ -134,6 +146,61 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
   return { jobs, used: Array.from(new Set(used)), skipped: Array.from(new Set(skipped)), detected };
 }
 
+export async function fetchJobsForConfiguredSource(entity: any, source: ConfiguredJobSource): Promise<{ jobs: any[]; used: string[]; skipped: string[] }> {
+  const provider = String(source.ats_provider || '').toLowerCase();
+  const boardId = source.board_id || null;
+  const url = source.source_url || null;
+  const jobs: any[] = [];
+  const used: string[] = [];
+  const skipped: string[] = [];
+
+  if (provider === 'usajobs') return { jobs: [], used: [], skipped: [`${source.source_key} handled by federal USAJOBS connector`] };
+
+  if (url) {
+    const specialized = await fetchSpecializedEmployerJobs(entity.name, provider || 'unknown', url).catch(() => ({ handled: false, jobs: [], source: null }));
+    if (specialized.handled) {
+      jobs.push(...specialized.jobs);
+      if (specialized.jobs.length && specialized.source) used.push(`${source.source_key}:${specialized.source}`);
+    }
+  }
+
+  if (!jobs.length && provider && DIRECT_CONNECTORS.has(provider) && boardId) {
+    const direct = await fetchDirectAtsJobs(provider, boardId);
+    jobs.push(...direct);
+    if (direct.length) used.push(source.source_key);
+    else skipped.push(`${source.source_key} (${provider} returned 0 jobs)`);
+  }
+
+  const hosted = provider && provider !== 'unknown' && provider !== 'other' && !DIRECT_CONNECTORS.has(provider);
+  if (!jobs.length && hosted && url) {
+    const rows = await fetchHostedAtsJobs(provider, url, entity.name);
+    jobs.push(...rows);
+    if (rows.length) used.push(source.source_key);
+    else skipped.push(`${source.source_key} (${provider} hosted page returned 0 verified jobs)`);
+  }
+
+  if (!jobs.length && url) {
+    const rows = await fetchCareerPageJobs(url, entity.name);
+    jobs.push(...rows);
+    if (rows.length) used.push(source.source_key);
+    else skipped.push(`${source.source_key} (official page returned 0 verified jobs)`);
+  }
+
+  return {
+    jobs: jobs.map(job => ({
+      ...job,
+      raw_data: {
+        ...(job.raw_data || {}),
+        source_graph_key: source.source_key,
+        source_graph_lineage: source.lineage_root || source.source_key,
+        source_graph_class: source.source_class || 'authoritative',
+      },
+    })),
+    used: Array.from(new Set(used)),
+    skipped: Array.from(new Set(skipped)),
+  };
+}
+
 async function fetchDirectAtsJobs(atsProvider: string, boardId: string) {
   switch (atsProvider) {
     case 'greenhouse': return fetchGreenhouseJobs(boardId);
@@ -143,6 +210,8 @@ async function fetchDirectAtsJobs(atsProvider: string, boardId: string) {
     case 'ashby': return fetchAshbyJobs(boardId);
     case 'recruitee': return fetchRecruiteeJobs(boardId);
     case 'workday': return fetchWorkdayJobs(boardId);
+    case 'workable': return fetchWorkableJobs(boardId);
+    case 'personio': return fetchPersonioJobs(boardId);
     default: return [];
   }
 }
