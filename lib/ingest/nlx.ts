@@ -3,18 +3,19 @@ import type { CoverageCheck } from './neogovFeed';
 
 const SOURCE = 'nlx';
 const DEFAULT_BASE = 'https://api.nlxresearchhub.com/v2/jobs';
+const ALL_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 
 export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: CoverageCheck }> {
   const apiKey = firstEnv(['NLX_API_KEY','NLX_RESEARCH_HUB_API_KEY']);
   if (!apiKey) return { jobs: [], check: skipped('NLx API key not configured') };
 
-  const state = normalizeState(entity?.government_state || entity?.state || process.env.NLX_DEFAULT_STATE);
-  if (!state) return { jobs: [], check: skipped('NLx requires a state/ZIP location filter; no state resolved for this entity') };
+  const states = nlxStatesForEntity(entity);
+  if (!states.length) return { jobs: [], check: skipped('NLx requires at least one state or ZIP location filter') };
 
   const end = startOfTomorrow();
   const start = new Date(end.getTime() - clamp(Number(process.env.NLX_LOOKBACK_DAYS || 30), 1, 34) * 86400000);
   const employer = String(entity?.name || '').trim();
-  const url = buildUrl(start, end, state, employer);
+  const url = buildUrl(start, end, states, employer);
   const headerName = process.env.NLX_API_KEY_HEADER || 'X-API-Key';
 
   try {
@@ -33,7 +34,7 @@ export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: C
         source_class: 'verified',
         status: jobs.length ? 'success' : 'zero',
         jobs_found: jobs.length,
-        details: { state, start: isoDate(start), end: isoDate(end), rows_returned: rows.length, endpoint: safeEndpoint(url) },
+        details: { states: states.length === ALL_STATES.length ? 'all US states + DC' : states, start: isoDate(start), end: isoDate(end), rows_returned: rows.length, endpoint: safeEndpoint(url) },
       },
     };
   } catch (error) {
@@ -44,25 +45,41 @@ export async function fetchNLxJobs(entity: any): Promise<{ jobs: any[]; check: C
         source_class: 'verified',
         status: 'error',
         jobs_found: 0,
-        details: { state, endpoint: safeEndpoint(url), error: error instanceof Error ? error.message : String(error) },
+        details: { states: states.length === ALL_STATES.length ? 'all US states + DC' : states, endpoint: safeEndpoint(url), error: error instanceof Error ? error.message : String(error) },
       },
     };
   }
 }
 
-function buildUrl(start: Date, end: Date, state: string, employer: string) {
+function nlxStatesForEntity(entity: any) {
+  const direct = normalizeState(entity?.government_state || entity?.state);
+  if (direct) return [direct];
+  const configured = String(process.env.NLX_STATES || '').split(',').map(normalizeState).filter((value): value is string => Boolean(value));
+  if (configured.length) return Array.from(new Set(configured));
+  const fallback = normalizeState(process.env.NLX_DEFAULT_STATE);
+  if (fallback) return [fallback];
+  // Business entities can hire nationally. NLx documents one-or-more state
+  // filters, so the default employer query spans all states rather than silently
+  // reducing a national company to an arbitrary single state.
+  if (['current_clients','prospects','private_companies'].includes(String(entity?.portal || ''))) return ALL_STATES;
+  return [];
+}
+
+function buildUrl(start: Date, end: Date, states: string[], employer: string) {
   const template = process.env.NLX_API_URL_TEMPLATE;
   if (template) {
     return template
       .replaceAll('{start}', encodeURIComponent(isoDate(start)))
       .replaceAll('{end}', encodeURIComponent(isoDate(end)))
-      .replaceAll('{state}', encodeURIComponent(state))
+      .replaceAll('{state}', encodeURIComponent(states.join(',')))
+      .replaceAll('{states}', encodeURIComponent(states.join(',')))
       .replaceAll('{employer}', encodeURIComponent(employer));
   }
 
   const base = (process.env.NLX_API_BASE_URL || DEFAULT_BASE).replace(/\/+$/,'');
   const url = new URL(`${base}/${isoDate(start)}/${isoDate(end)}`);
-  url.searchParams.set(process.env.NLX_STATE_PARAM || 'state', state);
+  const stateParam = process.env.NLX_STATE_PARAM || 'state';
+  for (const state of states) url.searchParams.append(stateParam, state);
   if (employer) url.searchParams.set(process.env.NLX_EMPLOYER_PARAM || 'employer', employer);
   url.searchParams.set(process.env.NLX_EXPIRED_PARAM || 'expired', 'false');
   const extra = process.env.NLX_EXTRA_QUERY_JSON;
@@ -89,7 +106,8 @@ function normalizeNLxRow(row: any, entity: any, index: number) {
   if (!title) return null;
   const employer = pickString(row, ['employer','employer_name','company','company_name','hiring_organization','organization']);
   if (employer && !employerMatches(employer, entity)) return null;
-  const applyUrl = pickString(row, ['url','job_url','apply_url','applyUrl','original_url','source_url','posting_url']);
+  const applyUrl = normalizeUrl(pickString(row, ['url','job_url','apply_url','applyUrl','original_url','source_url','posting_url']));
+  if (!applyUrl) return null;
   const state = normalizeState(pickString(row, ['state','state_code','location_state','location.state'])) || normalizeState(entity?.government_state);
   const city = pickString(row, ['city','location_city','location.city']);
   const country = (pickString(row, ['country','country_code','location.country']) || 'US').toUpperCase();
@@ -111,7 +129,7 @@ function normalizeNLxRow(row: any, entity: any, index: number) {
     posted_at: normalizeDate(pick(row, ['created_date','posted_at','date_posted','publication_date','created_at'])),
     raw_data: {
       ...row,
-      normalized_apply_url: normalizeUrl(applyUrl),
+      normalized_apply_url: applyUrl,
       normalized_employer: entity?.name || employer || null,
       normalized_employer_source: 'national-labor-exchange',
       parser: 'structured_nlx_api',
