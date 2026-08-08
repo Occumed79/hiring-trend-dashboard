@@ -22,6 +22,8 @@ const SOURCE_CONCURRENCY = clamp(positiveInt(process.env.ENTITY_SOURCE_CONCURREN
 
 export async function prepareEntityJobSources(entity: any, detected?: any | null): Promise<EntityJobSource[]> {
   if (!entity?.id) return [];
+  const existingBeforeSeeds = await readEntityJobSources(entity.id);
+  const runDiscovery = shouldDiscover(existingBeforeSeeds);
   const seeds: EntityJobSource[] = [];
 
   const primary = sourceFromEntity(entity, 'stored-primary');
@@ -37,8 +39,7 @@ export async function prepareEntityJobSources(entity: any, detected?: any | null
 
   for (const source of dedupeSources(seeds)) await upsertEntitySource(entity.id, source);
 
-  const existing = await readEntityJobSources(entity.id);
-  if (shouldDiscover(existing)) {
+  if (runDiscovery) {
     const discoverySeeds = [
       entity,
       ...directory.filter(row => row.jobs_url).slice(0, 6).map(row => ({ ...entity, career_page_url: row.jobs_url })),
@@ -95,12 +96,13 @@ async function fetchOne(entity: any, source: EntityJobSource) {
     }
 
     const shared = source.metadata?.shared_inventory === true;
+    const requiresEmployerVerification = shared || !source.is_verified;
     let rejected = 0;
-    if (shared && jobs.length) {
+    if (requiresEmployerVerification && jobs.length) {
       const filtered = filterAllJobsForEntityEvidence(jobs, entity);
       jobs = filtered.jobs;
       rejected = filtered.rejected;
-      if (rejected) skipped.push(`${source.source_key} (${rejected} off-target shared-inventory rows rejected)`);
+      if (rejected) skipped.push(`${source.source_key} (${rejected} off-target or unverified rows rejected)`);
     }
 
     jobs = jobs.map(job => ({
@@ -110,8 +112,9 @@ async function fetchOne(entity: any, source: EntityJobSource) {
         source_graph_key: source.source_key,
         source_graph_lineage: source.lineage_root,
         source_graph_class: source.source_class,
-        source_graph_verified_for_entity: Boolean(source.is_verified || source.source_class === 'authoritative'),
+        source_graph_verified_for_entity: Boolean(source.is_verified || source.source_class === 'authoritative' || (requiresEmployerVerification && rejected >= 0)),
         source_graph_shared_inventory: shared,
+        source_graph_required_employer_verification: requiresEmployerVerification,
       },
     }));
 
@@ -136,6 +139,7 @@ async function fetchOne(entity: any, source: EntityJobSource) {
           ats_provider: source.ats_provider || null,
           organization_name: source.metadata?.organization_name || null,
           shared_inventory: shared,
+          employer_verification_required: requiresEmployerVerification,
           off_target_rejected: rejected,
         },
       } as CoverageCheck,
