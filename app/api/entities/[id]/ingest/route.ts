@@ -4,11 +4,15 @@ import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
 import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
-import { readOpenSourceIncidents } from '@/lib/ingest/sourceReliability';
+import { readOpenSourceIncidents, refreshStaleSourceReliabilityOnRead } from '@/lib/ingest/sourceReliability';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // This read-path guard catches a full ingest/cron outage once authoritative
+    // checks exceed the stale threshold. Failure here must not break the detail page.
+    await refreshStaleSourceReliabilityOnRead(params.id).catch(() => {});
+
     const [entities, logs, jobs, sourceCoverage, assessment, sourceGraph, sourceIncidents] = await Promise.all([
       query(`SELECT id, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
                     government_registry_id, government_type, government_state, government_fips
