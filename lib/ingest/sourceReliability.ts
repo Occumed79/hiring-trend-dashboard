@@ -6,14 +6,17 @@ const HISTORY_RETENTION_DAYS = positiveInt(process.env.SOURCE_HISTORY_RETENTION_
 
 export async function evaluateAndPersistSourceReliability(entityId: string): Promise<ReliabilityIssue[]> {
   if (!entityId) return [];
+
+  // These reads are intentionally fail-closed. A failed diagnostic read is not
+  // evidence of recovery and must never resolve an existing incident.
   const [checks, previousRows, assessments] = await Promise.all([
-    safeQuery(
+    query(
       `SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
               lineage_root, details, last_checked_at, last_success_at
        FROM entity_source_coverage WHERE entity_id=$1`,
       [entityId],
     ),
-    safeQuery(
+    query(
       `WITH ranked AS (
          SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
                 lineage_root, details, checked_at,
@@ -24,7 +27,7 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
        SELECT * FROM ranked WHERE rn=2`,
       [entityId],
     ),
-    safeQuery(
+    query(
       `SELECT score, grade, expected_sources, checked_sources, authoritative_sources,
               healthy_authoritative_sources, independent_lineages, gaps, details, assessed_at
        FROM entity_coverage_assessment WHERE entity_id=$1 LIMIT 1`,
@@ -53,10 +56,10 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
          status='open', message=EXCLUDED.message, details=EXCLUDED.details,
          last_seen_at=NOW(), resolved_at=NULL`,
       [entityId, issue.key, issue.kind, issue.severity, issue.source, issue.message, JSON.stringify(issue.details || {})],
-    ).catch(error => console.warn(`Could not persist source incident ${issue.key}:`, message(error)));
+    );
   }
 
-  const currentOpen = await safeQuery(
+  const currentOpen = await query(
     `SELECT incident_key FROM entity_source_incidents WHERE entity_id=$1 AND status='open'`,
     [entityId],
   );
@@ -67,7 +70,7 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
        SET status='resolved', resolved_at=NOW(), last_seen_at=NOW()
        WHERE entity_id=$1 AND status='open' AND incident_key = ANY($2::text[])`,
       [entityId, resolvedKeys],
-    ).catch(() => {});
+    );
   }
 
   await query(
@@ -77,6 +80,28 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
   ).catch(() => {});
 
   return issues;
+}
+
+// A total ingest/cron outage cannot call persistSourceCoverage, so stale-source
+// detection also needs an independent path. Entity-detail reads invoke this
+// lightweight guard; it only runs the full evaluator once an inventory source is stale.
+export async function refreshStaleSourceReliabilityOnRead(entityId: string) {
+  if (!entityId) return;
+  const rows = await query(
+    `SELECT source, source_class, last_checked_at
+     FROM entity_source_coverage
+     WHERE entity_id=$1 AND source_class='authoritative'
+       AND source NOT LIKE 'identity:%'
+       AND source NOT LIKE 'registry:%'
+       AND source NOT LIKE 'coverage:%'
+       AND source <> 'web:langsearch'
+       AND source <> 'adzuna'
+       AND source NOT LIKE 'jobapi:%'
+       AND last_checked_at < NOW() - ($2::int * INTERVAL '1 hour')
+     LIMIT 1`,
+    [entityId, STALE_HOURS],
+  );
+  if (rows.length) await evaluateAndPersistSourceReliability(entityId);
 }
 
 export async function readOpenSourceIncidents(entityId: string) {
@@ -95,9 +120,4 @@ export async function readOpenSourceIncidents(entityId: string) {
   }
 }
 
-async function safeQuery(sql: string, params: any[]) {
-  try { return await query(sql, params); }
-  catch { return []; }
-}
 function positiveInt(value: unknown, fallback: number) { const n=Number(value); return Number.isFinite(n)&&n>0?Math.floor(n):fallback; }
-function message(error: unknown) { return error instanceof Error ? error.message : String(error); }
