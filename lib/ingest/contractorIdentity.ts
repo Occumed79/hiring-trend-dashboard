@@ -36,26 +36,29 @@ async function refreshIdentifiers(entity: any): Promise<CoverageCheck[]> {
 }
 
 async function fetchUsaSpendingIdentity(entity: any): Promise<{ identifiers: Identifier[]; check: CoverageCheck }> {
-  const endpoint = process.env.USASPENDING_RECIPIENT_API || 'https://api.usaspending.gov/api/v2/recipient/';
+  const endpoint = process.env.USASPENDING_RECIPIENT_API || 'https://api.usaspending.gov/api/v2/autocomplete/recipient/';
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'OccuMedHiringTrendDashboard/1.0' },
-      body: JSON.stringify({ keyword: entity.name, award_type: 'contracts', page: 1, limit: 25, sort: 'amount', order: 'desc' }),
+      body: JSON.stringify({ search_text: entity.name, limit: 25 }),
       signal: AbortSignal.timeout(getIngestTimeout(12000)),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json().catch(() => null);
-    const rows = Array.isArray(payload?.results) ? payload.results : [];
-    const best = rows.map((row:any)=>({row,score:identityScore(entity,row?.name)})).sort((a:any,b:any)=>b.score-a.score)[0];
+    const rows = flattenUsaSpendingCandidates(payload?.results);
+    const best = rows.map((row:any)=>({row,score:identityScore(entity,recipientName(row))})).sort((a:any,b:any)=>b.score-a.score)[0];
     if (!best || best.score < 0.82) {
       return { identifiers: [], check: { source:'identity:usaspending', source_class:'verified', status:'zero', jobs_found:0, details:{ purpose:'contractor identity', candidates:rows.length, matched:false } } };
     }
+    const name = recipientName(best.row) || entity.name;
     const identifiers: Identifier[] = [];
-    if (best.row?.name) identifiers.push({ type:'legal_name', value: comparable(best.row.name), canonical_name:String(best.row.name).trim(), source:'usaspending', metadata:{ recipient_id:best.row.id||null, recipient_level:best.row.recipient_level||null, amount:best.row.amount||null, score:best.score } });
-    if (best.row?.uei) identifiers.push({ type:'uei', value:String(best.row.uei), canonical_name:String(best.row.name||entity.name), source:'usaspending', metadata:{ recipient_id:best.row.id||null, recipient_level:best.row.recipient_level||null } });
-    if (best.row?.id) identifiers.push({ type:'usaspending_recipient_id', value:String(best.row.id), canonical_name:String(best.row.name||entity.name), source:'usaspending', metadata:{ recipient_level:best.row.recipient_level||null } });
-    return { identifiers, check:{ source:'identity:usaspending', source_class:'verified', status:'success', jobs_found:0, details:{ purpose:'contractor identity', matched_name:best.row?.name||null, uei:best.row?.uei||null, recipient_level:best.row?.recipient_level||null, match_score:best.score } } };
+    identifiers.push({ type:'legal_name', value: comparable(name), canonical_name:name, source:'usaspending', metadata:{ recipient_id:recipientId(best.row), recipient_level:best.row.__recipient_level||null, score:best.score } });
+    const uei = firstDefined(best.row,'uei','ueiSAM','recipient_uei','recipientUei','recipient_uei_sam');
+    if (uei) identifiers.push({ type:'uei', value:String(uei), canonical_name:name, source:'usaspending', metadata:{ recipient_id:recipientId(best.row), recipient_level:best.row.__recipient_level||null } });
+    const id = recipientId(best.row);
+    if (id) identifiers.push({ type:'usaspending_recipient_id', value:String(id), canonical_name:name, source:'usaspending', metadata:{ recipient_level:best.row.__recipient_level||null } });
+    return { identifiers, check:{ source:'identity:usaspending', source_class:'verified', status:'success', jobs_found:0, details:{ purpose:'contractor identity', matched_name:name, uei:uei||null, recipient_level:best.row.__recipient_level||null, match_score:best.score } } };
   } catch (error) {
     return { identifiers:[], check:{ source:'identity:usaspending', source_class:'verified', status:'error', jobs_found:0, details:{ purpose:'contractor identity', error:message(error) } } };
   }
@@ -68,26 +71,33 @@ async function fetchSamIdentity(entity: any): Promise<{ identifiers: Identifier[
     const base = process.env.SAM_ENTITY_API_BASE_URL || 'https://api.sam.gov/entity-information/v4/entities';
     const url = new URL(base);
     url.searchParams.set('api_key', apiKey);
-    url.searchParams.set('q', entity.name);
+    url.searchParams.set('legalBusinessName', entity.name);
     url.searchParams.set('registrationStatus', 'A');
     url.searchParams.set('includeSections', 'entityRegistration,coreData');
     const response = await fetch(url.toString(), { headers:{Accept:'application/json','User-Agent':'OccuMedHiringTrendDashboard/1.0'}, signal:AbortSignal.timeout(getIngestTimeout(15000)) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json().catch(() => null);
     const rows = Array.isArray(payload?.entityData) ? payload.entityData : [];
-    const ranked = rows.map((row:any)=>({row,name:row?.entityRegistration?.legalBusinessName||row?.coreData?.entityInformation?.entityURLName||'',score:identityScore(entity,row?.entityRegistration?.legalBusinessName)})).sort((a:any,b:any)=>b.score-a.score);
+    const ranked = rows.map((row:any)=>({row,name:row?.entityRegistration?.legalBusinessName||'',score:identityScore(entity,row?.entityRegistration?.legalBusinessName)})).sort((a:any,b:any)=>b.score-a.score);
     const best = ranked[0];
     if (!best || best.score < 0.82) return { identifiers:[], check:{source:'identity:sam',source_class:'authoritative',status:'zero',jobs_found:0,details:{purpose:'contractor identity',candidates:rows.length,matched:false}} };
     const registration = best.row?.entityRegistration || {};
+    const corporate = best.row?.coreData?.corporateRelationships || best.row?.corporateRelationships || {};
+    const highestOwner = corporate?.highestOwner || {};
+    const immediateOwner = corporate?.immediateOwner || {};
     const identifiers: Identifier[] = [];
     if (registration.legalBusinessName) identifiers.push({type:'legal_name',value:comparable(registration.legalBusinessName),canonical_name:String(registration.legalBusinessName).trim(),source:'sam',metadata:{score:best.score,registration_status:registration.registrationStatus||null}});
+    if (registration.dbaName) identifiers.push({type:'dba_name',value:comparable(registration.dbaName),canonical_name:String(registration.dbaName).trim(),source:'sam',metadata:{score:best.score}});
     if (registration.ueiSAM) identifiers.push({type:'uei',value:String(registration.ueiSAM),canonical_name:String(registration.legalBusinessName||entity.name),source:'sam',metadata:{registration_status:registration.registrationStatus||null}});
     if (registration.cageCode) identifiers.push({type:'cage',value:String(registration.cageCode),canonical_name:String(registration.legalBusinessName||entity.name),source:'sam',metadata:{}});
-    const parentUei = firstDefined(best.row,'coreData.generalInformation.parentUeiSAM','coreData.entityInformation.ultimateParentUEISAM','entityRegistration.ultimateParentUEISAM');
-    const parentName = firstDefined(best.row,'coreData.generalInformation.parentLegalBusinessName','coreData.entityInformation.ultimateParentLegalBusinessName');
-    if (parentUei) identifiers.push({type:'parent_uei',value:String(parentUei),canonical_name:parentName?String(parentName):null,source:'sam',metadata:{relationship:'ultimate-parent'}});
-    if (parentName) identifiers.push({type:'parent_name',value:comparable(parentName),canonical_name:String(parentName),source:'sam',metadata:{relationship:'ultimate-parent'}});
-    return { identifiers, check:{source:'identity:sam',source_class:'authoritative',status:'success',jobs_found:0,details:{purpose:'contractor identity',matched_name:registration.legalBusinessName||null,uei:registration.ueiSAM||null,cage:registration.cageCode||null,parent_uei:parentUei||null,match_score:best.score}} };
+    for (const owner of [
+      { type:'highest_owner', value:highestOwner },
+      { type:'immediate_owner', value:immediateOwner },
+    ]) {
+      if (owner.value?.legalBusinessName) identifiers.push({ type:`${owner.type}_name`, value:comparable(owner.value.legalBusinessName), canonical_name:String(owner.value.legalBusinessName), source:'sam', metadata:{ relationship:owner.type, cage:owner.value.cageCode||null } });
+      if (owner.value?.cageCode) identifiers.push({ type:`${owner.type}_cage`, value:String(owner.value.cageCode), canonical_name:owner.value?.legalBusinessName?String(owner.value.legalBusinessName):null, source:'sam', metadata:{ relationship:owner.type } });
+    }
+    return { identifiers, check:{source:'identity:sam',source_class:'authoritative',status:'success',jobs_found:0,details:{purpose:'contractor identity',matched_name:registration.legalBusinessName||null,dba_name:registration.dbaName||null,uei:registration.ueiSAM||null,cage:registration.cageCode||null,highest_owner:highestOwner?.legalBusinessName||null,immediate_owner:immediateOwner?.legalBusinessName||null,match_score:best.score}} };
   } catch (error) {
     return { identifiers:[], check:{source:'identity:sam',source_class:'authoritative',status:'error',jobs_found:0,details:{purpose:'contractor identity',error:message(error)}} };
   }
@@ -102,6 +112,9 @@ async function persistIdentifier(entityId:string,row:Identifier) {
 async function readIdentifiers(entityId:string) { try{return await query(`SELECT identifier_type,identifier_value,canonical_name,source,metadata,last_verified_at FROM entity_identifiers WHERE entity_id=$1 AND is_active=true ORDER BY identifier_type,source`,[entityId]);}catch{return [];} }
 
 type Identifier={type:string;value:string;canonical_name:string|null;source:string;metadata:Record<string,any>};
+function flattenUsaSpendingCandidates(results:any){if(Array.isArray(results))return results;const out:any[]=[];if(results&&typeof results==='object'){for(const [key,value] of Object.entries(results)){if(Array.isArray(value))for(const row of value)out.push({...row,__recipient_level:key});}}return out;}
+function recipientName(row:any){const value=firstDefined(row,'recipient_name','name','legal_business_name','legalBusinessName');return value?String(value).trim():null;}
+function recipientId(row:any){return firstDefined(row,'recipient_id','legal_entity_id','id','hash','recipient_hash');}
 function identityScore(entity:any,candidate:unknown){const c=comparable(candidate);if(!c)return 0;const names=[entity?.name,...(Array.isArray(entity?.aliases)?entity.aliases:[])].map(comparable).filter(Boolean);let best=0;for(const n of names){if(c===n)best=Math.max(best,1);else if(stripSuffix(c)===stripSuffix(n))best=Math.max(best,.96);else{const overlap=tokenOverlap(c,n);if((c.includes(n)||n.includes(c))&&Math.min(c.length,n.length)>=6)best=Math.max(best,.88);best=Math.max(best,overlap*.9);}}return best;}
 function safeEquivalentName(base:unknown,candidate:unknown){const a=comparable(base),b=comparable(candidate);if(!a||!b)return false;return a===b||stripSuffix(a)===stripSuffix(b)||((a.includes(b)||b.includes(a))&&Math.min(a.length,b.length)>=8&&tokenOverlap(a,b)>=.75);}
 function stripSuffix(value:string){return value.replace(/\b(?:inc|incorporated|llc|ltd|limited|corp|corporation|company|co|holdings|group|lp|plc)\b/g,' ').replace(/\s+/g,' ').trim();}
