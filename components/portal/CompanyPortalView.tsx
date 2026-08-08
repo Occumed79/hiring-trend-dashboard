@@ -18,12 +18,12 @@ export default function CompanyPortalView({ portal }: { portal: Portal }) {
     try {
       const res = await fetch(`/api/entities?portal=${encodeURIComponent(portal.id)}`, { signal });
       const data = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(data?.error || 'Could not load tracked companies.');
+      if (!res.ok) throw new Error(data?.error || `Could not load tracked ${portal.label.toLowerCase()}.`);
       setEntities(Array.isArray(data) ? data : []);
     } catch (err) {
       if ((err as any)?.name === 'AbortError') return;
       setEntities([]);
-      setError(err instanceof Error ? err.message : 'Could not load tracked companies.');
+      setError(err instanceof Error ? err.message : `Could not load tracked ${portal.label.toLowerCase()}.`);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
