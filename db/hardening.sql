@@ -180,3 +180,45 @@ CREATE TABLE IF NOT EXISTS entity_coverage_assessment (
   assessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_coverage_assessment_score ON entity_coverage_assessment(score, grade);
+
+-- Immutable source-check history. The latest-state table above is optimized for UI reads;
+-- this history preserves evidence needed to detect silent drops, spikes and regressions.
+CREATE TABLE IF NOT EXISTS entity_source_coverage_history (
+  id BIGSERIAL PRIMARY KEY,
+  entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  source_key TEXT,
+  source_class TEXT NOT NULL,
+  status TEXT NOT NULL,
+  jobs_found INTEGER NOT NULL DEFAULT 0,
+  authoritative_zero BOOLEAN NOT NULL DEFAULT false,
+  lineage_root TEXT,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_source_coverage_history_entity_source
+  ON entity_source_coverage_history(entity_id, source, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_coverage_history_checked
+  ON entity_source_coverage_history(checked_at DESC);
+
+-- Durable open/resolved incidents generated from source behavior. These are diagnostic
+-- findings, not job records; they make silent connector degradation visible and auditable.
+CREATE TABLE IF NOT EXISTS entity_source_incidents (
+  id BIGSERIAL PRIMARY KEY,
+  entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  incident_key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'medium',
+  source TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  message TEXT NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ,
+  UNIQUE(entity_id, incident_key)
+);
+CREATE INDEX IF NOT EXISTS idx_source_incidents_entity_status
+  ON entity_source_incidents(entity_id, status, severity, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_incidents_kind
+  ON entity_source_incidents(kind, status, last_seen_at DESC);
