@@ -22,6 +22,7 @@ async function migrate() {
   const files = [
     path.join(__dirname, '../db/schema.sql'),
     path.join(__dirname, '../db/hardening.sql'),
+    path.join(__dirname, '../db/source_seeds.sql'),
   ];
   const client = new Client({
     connectionString,
