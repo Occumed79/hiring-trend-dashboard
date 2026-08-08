@@ -4,11 +4,12 @@ import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
 import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
+import { readOpenSourceIncidents } from '@/lib/ingest/sourceReliability';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const [entities, logs, jobs, sourceCoverage, assessment, sourceGraph] = await Promise.all([
+    const [entities, logs, jobs, sourceCoverage, assessment, sourceGraph, sourceIncidents] = await Promise.all([
       query(`SELECT id, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
                     government_registry_id, government_type, government_state, government_fips
              FROM entities WHERE id = $1 LIMIT 1`, [params.id]),
@@ -18,6 +19,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       readSourceCoverage(params.id),
       readCoverageAssessment(params.id),
       readEntityJobSources(params.id),
+      readOpenSourceIncidents(params.id),
     ]);
 
     if (!entities.length) return NextResponse.json({ error: 'Entity not found' }, { status: 404 });
@@ -49,6 +51,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       source_coverage: sourceCoverage,
       source_graph: sourceGraph,
       coverage_assessment: assessment,
+      source_incidents: sourceIncidents,
       coverage: {
         active_jobs: jobs.length,
         mapped_jobs: mapped.length,
