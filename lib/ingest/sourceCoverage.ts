@@ -9,7 +9,7 @@ export async function persistSourceCoverage(entityId: string, checks: CoverageCh
     if (!existing || rank(check.status) > rank(existing.status) || check.jobs_found > existing.jobs_found) unique.set(check.source, check);
   }
 
-  for (const check of unique.values()) {
+  for (const check of Array.from(unique.values())) {
     const success = check.status === 'success' || check.status === 'zero';
     await query(
       `INSERT INTO entity_source_coverage (
