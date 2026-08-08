@@ -68,10 +68,12 @@ export async function POST(req: NextRequest) {
                   county_fips, county_name, place_fips, website, 100 AS score
            FROM government_registry WHERE census_government_id = $1 AND is_active = true LIMIT 1`,
           [requestedRegistryId],
-        ).catch(() => []);
+        );
         registry = exact[0] || null;
+        if (!registry) return NextResponse.json({ error: 'Selected Census government record is unknown or no longer active. Please choose it again.' }, { status: 400 });
+      } else {
+        registry = await resolveGovernmentRegistryMatch(name, portal);
       }
-      if (!registry) registry = await resolveGovernmentRegistryMatch(name, portal);
     }
     const registryMeta = governmentRegistryMetadata(registry);
     const registryName = registry?.name || name;
