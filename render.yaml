@@ -48,6 +48,8 @@ services:
         generateValue: true
       - key: NEXT_PUBLIC_APP_URL
         sync: false
+      - key: NEXT_PUBLIC_ARCGIS_API_KEY
+        sync: false
 
   - type: cron
     name: daily-ingest
