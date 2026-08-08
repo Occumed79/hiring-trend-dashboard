@@ -18,6 +18,26 @@ CREATE TABLE IF NOT EXISTS benchmark_truth_snapshots (
 CREATE INDEX IF NOT EXISTS idx_benchmark_truth_entity_captured
   ON benchmark_truth_snapshots(entity_id, captured_at DESC);
 
+CREATE TABLE IF NOT EXISTS benchmark_source_audits (
+  id BIGSERIAL PRIMARY KEY,
+  entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  source_key TEXT NOT NULL,
+  source_label TEXT,
+  source_url TEXT,
+  ats_provider TEXT,
+  status TEXT NOT NULL,
+  complete BOOLEAN NOT NULL DEFAULT false,
+  official_job_count INTEGER CHECK (official_job_count IS NULL OR official_job_count >= 0),
+  job_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+  truth_eligible BOOLEAN NOT NULL DEFAULT false,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  audited_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_benchmark_source_audits_entity
+  ON benchmark_source_audits(entity_id, audited_at DESC);
+CREATE INDEX IF NOT EXISTS idx_benchmark_source_audits_status
+  ON benchmark_source_audits(status, truth_eligible, audited_at DESC);
+
 CREATE TABLE IF NOT EXISTS benchmark_cohort_members (
   entity_id UUID PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
   portal TEXT NOT NULL,
