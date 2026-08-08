@@ -52,19 +52,25 @@ async function main() {
     if (lines.length < 2) throw new Error('Census registry file contained no data rows.');
     const delimiter = detectDelimiter(lines[0]);
     const headers = parseDelimitedLine(lines[0], delimiter).map(normalizeHeader);
-    const rows = [];
+    const rowsById = new Map();
     let skipped = 0;
+    let duplicateIds = 0;
 
     for (let index = 1; index < lines.length; index++) {
       const values = parseDelimitedLine(lines[index], delimiter);
       const raw = Object.fromEntries(headers.map((header, i) => [header, values[i] ?? '']));
-      const normalized = normalizeGovernment(raw, index);
+      const normalized = normalizeGovernment(raw);
       if (!normalized) { skipped++; continue; }
-      rows.push(normalized);
+      if (rowsById.has(normalized.id)) {
+        duplicateIds++;
+        continue;
+      }
+      rowsById.set(normalized.id, normalized);
     }
 
+    const rows = Array.from(rowsById.values());
     if (rows.length < 1000) throw new Error(`Refusing suspicious Census registry import: only ${rows.length} normalized rows.`);
-    console.log(`Parsed ${rows.length.toLocaleString()} government units (${skipped.toLocaleString()} rows skipped).`);
+    console.log(`Parsed ${rows.length.toLocaleString()} unique government units (${skipped.toLocaleString()} rows skipped, ${duplicateIds.toLocaleString()} duplicate IDs collapsed).`);
 
     await client.query('BEGIN');
     // The table is an annual Census mirror. Retire all prior active rows before
@@ -149,7 +155,7 @@ function extractLargestRegistryFile(buffer) {
     const nameStart = cursor + 46;
     const nameEnd = nameStart + nameLength;
     if (nameEnd > buffer.length) throw new Error('Malformed Census ZIP filename entry.');
-    const name = buffer.subarray(nameStart, nameEnd).toString((flags & 0x800) ? 'utf8' : 'utf8');
+    const name = buffer.subarray(nameStart, nameEnd).toString('utf8');
     if (!name.endsWith('/') && /\.(?:csv|txt)$/i.test(name)) {
       if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) throw new Error('ZIP64 Census registry archives are not supported.');
       if (uncompressedSize > MAX_REGISTRY_FILE_BYTES) throw new Error(`Census registry file ${name} exceeds the configured extraction limit.`);
@@ -185,7 +191,7 @@ function findEndOfCentralDirectory(buffer) {
   throw new Error('Census registry ZIP is missing its end-of-central-directory record.');
 }
 
-function normalizeGovernment(raw, index) {
+function normalizeGovernment(raw) {
   const name = pick(raw, ['GOVNAME','GOVERNMENTNAME','UNITNAME','NAME','GOVTNAME']);
   if (!name) return null;
   const stateFips = leftPad(pick(raw, ['STATE','STATEFIPS','STATEFP','STATECODE','FIPSTATE','FSTATE']), 2);
@@ -193,8 +199,11 @@ function normalizeGovernment(raw, index) {
   const stateCode = pick(raw, ['STAB','STUSAB','STATEABBR','STATEABBREVIATION']) || stateMeta[0] || null;
   const stateName = pick(raw, ['STNAME','STATENAME']) || stateMeta[1] || null;
   const countyFips = leftPad(pick(raw, ['COUNTY','COUNTYFIPS','COUNTYFP','FIPCOUNTY','FCOUNTY']), 3);
-  const id = pick(raw, ['GOVID','GOVERNMENTID','GOV_ID','UNITID','GOVTID','GOVIDNU','ID']) || `${SOURCE_YEAR}-${stateFips || '00'}-${countyFips || '000'}-${index}`;
+  const placeFips = leftPad(pick(raw, ['PLACE','PLACEFIPS','PLACEFP','FPLACE']), 5);
   const typeRaw = pick(raw, ['GOVTYPE','GOVERNMENTTYPE','UNITTYPE','TYPE','GOVTYPECODE']);
+  const website = normalizeUrl(pick(raw, ['WEBSITE','WEBURL','URL','WEB','HOMEPAGE']));
+  const sourceId = pick(raw, ['GOVID','GOVERNMENTID','GOV_ID','UNITID','GOVTID','GOVIDNU','ID']);
+  const id = sourceId || `fallback-${SOURCE_YEAR}-${hashString([name,stateFips,countyFips,placeFips,typeRaw,website].map(value => value || '').join('|'))}`;
   return {
     id: String(id).trim(),
     name: String(name).trim(),
@@ -205,8 +214,8 @@ function normalizeGovernment(raw, index) {
     stateName: stateName ? String(stateName).trim() : null,
     countyFips: countyFips || null,
     countyName: nullable(pick(raw, ['COUNTYNAME','CNTYNAME'])),
-    placeFips: leftPad(pick(raw, ['PLACE','PLACEFIPS','PLACEFP','FPLACE']), 5) || null,
-    website: normalizeUrl(pick(raw, ['WEBSITE','WEBURL','URL','WEB','HOMEPAGE'])),
+    placeFips: placeFips || null,
+    website,
     raw,
   };
 }
@@ -258,6 +267,7 @@ function nullable(value) { return value && String(value).trim() ? String(value).
 function canonicalName(value) { return String(value || '').toLowerCase().replace(/&/g,' and ').replace(/\b(the|government of|state of|city of|county of)\b/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
 function leftPad(value, length) { if (value === null || value === undefined || value === '') return ''; const text = String(value).trim(); return /^\d+$/.test(text) ? text.padStart(length,'0') : text; }
 function normalizeUrl(value) { if (!value) return null; try { const url = new URL(String(value).trim().match(/^https?:/i) ? String(value).trim() : `https://${String(value).trim()}`); return url.toString(); } catch { return null; } }
+function hashString(value) { let hash = 2166136261; for (let i=0;i<value.length;i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash,16777619); } return (hash >>> 0).toString(36); }
 function clamp(value, min, max) { return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), min), max) : min; }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
