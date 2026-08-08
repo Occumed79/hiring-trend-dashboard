@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:source": "node --test tests/source-contracts.test.js tests/benchmark-validation.test.js",
+    "test:source": "node --test tests/*.test.js",
     "ci": "npm run test:source && npm run typecheck && npm run build",
     "db:migrate": "node scripts/migrate.js",
     "ingest": "node scripts/ingest.js",
