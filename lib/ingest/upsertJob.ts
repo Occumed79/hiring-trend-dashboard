@@ -24,8 +24,11 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   const inferred = inferPoint({ ...item, country, entity_name: entity.name, is_remote: isRemote, location_candidates: locationCandidates });
   const inferredQuality = inferred?.note || null;
   const inferredIsFallback = !!inferredQuality && inferredQuality.includes('fallback');
-  const sourceLat = toNumber(item.lat);
-  const sourceLng = toNumber(item.lng);
+  const parsedSourceLat = toNumber(item.lat);
+  const parsedSourceLng = toNumber(item.lng);
+  const zeroZeroPlaceholder = parsedSourceLat === 0 && parsedSourceLng === 0;
+  const sourceLat = zeroZeroPlaceholder ? null : parsedSourceLat;
+  const sourceLng = zeroZeroPlaceholder ? null : parsedSourceLng;
 
   const shouldGeocode = !isRemote && (sourceLat === null || sourceLng === null) && (!inferred || inferredIsFallback);
   const geocoded = shouldGeocode ? await geocodeLocationCandidates(locationCandidates) : null;
@@ -50,6 +53,7 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
     normalized_location_quality: locationQuality,
     normalized_fallback_point: inferredIsFallback ? inferred : null,
     normalized_geocoded: !!geocoded,
+    normalized_zero_zero_coordinate_rejected: zeroZeroPlaceholder,
     normalized_job_quality: 'accepted',
   };
 
