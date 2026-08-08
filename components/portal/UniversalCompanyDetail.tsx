@@ -76,6 +76,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
   const activeJobs = Number(coverage?.active_jobs ?? data?.metrics?.totalActive ?? 0);
   const mappedJobs = Number(coverage?.mapped_jobs ?? data?.metrics?.mappedJobs ?? 0);
   const mappedPct = activeJobs > 0 ? Math.round((mappedJobs / activeJobs) * 100) : 0;
+  const hiringUrl = ingest?.career_page_url || entity.career_page_url;
 
   return (
     <div className="min-h-full p-5 lg:p-6 space-y-5 max-w-[1600px] mx-auto">
@@ -87,8 +88,8 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
             <div className="flex items-center gap-3 flex-wrap"><h1 className="text-[26px] lg:text-[30px] font-semibold text-white tracking-tight leading-tight">{entity.name}</h1><StatusBadge status={ingest?.status} /></div>
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               {entity.industry && <Tag>{entity.industry}</Tag>}
-              {provider && provider !== 'unknown' && <Tag>ATS: {provider}</Tag>}
-              {(ingest?.career_page_url || entity.career_page_url) && <a href={ingest?.career_page_url || entity.career_page_url} target="_blank" rel="noreferrer" className="text-[11px] px-2.5 py-1 rounded-full border border-blue-400/25 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20">Career Page ↗</a>}
+              {provider && provider !== 'unknown' && <Tag>Hiring source: {formatProvider(provider)}</Tag>}
+              {hiringUrl && <a href={hiringUrl} target="_blank" rel="noreferrer" className="text-[11px] px-2.5 py-1 rounded-full border border-blue-400/25 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20">Hiring Page ↗</a>}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -105,7 +106,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
           <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3.5 py-3"><p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">Last ingest</p><p className="text-[12px] font-medium text-slate-200 mt-1.5 truncate">{formatDateTime(ingest?.last_run_at)}</p><p className="text-[9px] text-slate-600 mt-0.5 truncate">{ingest?.source || 'Waiting for first run'}</p></div>
         </div>
       </section>
-      {ingest?.status === 'queued' && <div className="rounded-2xl border border-blue-400/20 bg-blue-500/8 px-4 py-3 text-xs text-blue-100 flex items-center gap-3"><span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />Resolving the career source and building the first hiring snapshot. This view will refresh automatically.</div>}
+      {ingest?.status === 'queued' && <div className="rounded-2xl border border-blue-400/20 bg-blue-500/8 px-4 py-3 text-xs text-blue-100 flex items-center gap-3"><span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />Resolving the authoritative hiring source and building the first hiring snapshot. This view will refresh automatically.</div>}
       {error && <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>}
       <TrendCard metrics={data?.metrics} loading={loading} entityName={entity.name} />
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.15fr)_minmax(320px,0.85fr)] gap-5 items-stretch"><div className="min-w-0">{useWorldMap ? <WorldMap entityId={entity.id} /> : <USAMap entityId={entity.id} title={`${entity.name} Hiring Map`} />}</div><RoleBreakdown roles={data?.roles} loading={loading} /></div>
@@ -117,6 +118,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
 function HeaderMetric({ label, value, suffix = '' }: { label: string; value: number; suffix?: string }) { return <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3.5 py-3"><p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">{label}</p><p className="text-lg font-semibold text-slate-100 mt-1">{value.toLocaleString()}<span className="text-[10px] text-slate-500 font-normal">{suffix}</span></p></div>; }
 function StatusBadge({ status }: { status?: string }) { const text = status === 'queued' ? 'Building intelligence' : status === 'error' ? 'Ingest error' : status === 'partial' ? 'Partial coverage' : status === 'success' ? 'Current' : 'Loading'; const cls = status === 'error' ? 'border-red-400/25 bg-red-500/10 text-red-200' : status === 'queued' ? 'border-blue-400/25 bg-blue-500/10 text-blue-200' : 'border-emerald-400/20 bg-emerald-500/8 text-emerald-200'; return <span className={`text-[10px] px-2.5 py-1 rounded-full border font-medium ${cls}`}>{text}</span>; }
 function Tag({ children }: { children: any }) { return <span className="text-[10px] px-2.5 py-1 rounded-full bg-white/[0.045] border border-white/10 text-slate-400">{children}</span>; }
-function entityNoun(portalId: string) { if (portalId === 'current_clients') return 'Client'; if (portalId === 'prospects') return 'Prospect'; if (portalId.includes('agencies')) return 'Agency'; if (portalId === 'counties_and_cities') return 'Municipality'; return 'Company'; }
+function entityNoun(portalId: string) { if (portalId === 'current_clients') return 'Client'; if (portalId === 'prospects') return 'Prospect'; if (portalId === 'federal_agencies') return 'Federal Agency'; if (portalId === 'state_agencies') return 'State Agency'; if (portalId === 'counties_and_cities') return 'County / City'; return 'Company'; }
+function formatProvider(value: unknown) { const provider = String(value || '').trim(); if (!provider) return 'Unknown'; if (provider.toLowerCase() === 'usajobs') return 'USAJOBS'; if (provider.toLowerCase() === 'governmentjobs') return 'GovernmentJobs / NEOGOV'; if (provider.toLowerCase() === 'neogov') return 'NEOGOV'; return provider.replace(/^ats:/i, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function formatDateTime(value?: string | null) { if (!value) return 'Not completed yet'; const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
 async function readJson(response: Response) { const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error || 'Request failed.'); return body; }
