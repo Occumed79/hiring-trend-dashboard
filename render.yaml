@@ -44,6 +44,14 @@ services:
         value: employer
       - key: NLX_EXPIRED_PARAM
         value: expired
+      - key: NLX_PAGE_PARAM
+        value: page
+      - key: NLX_CURSOR_PARAM
+        value: cursor
+      - key: NLX_PAGE_SIZE
+        value: "50"
+      - key: NLX_MAX_PAGES
+        value: "40"
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
@@ -84,7 +92,7 @@ services:
     env: node
     buildCommand: npm install
     schedule: "0 6 * * *"
-    startCommand: node scripts/sync-government-registry.js --if-stale && node scripts/ingest.js
+    startCommand: node scripts/sync-government-registry.js --if-stale || true; node scripts/ingest.js
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -132,6 +140,14 @@ services:
         value: employer
       - key: NLX_EXPIRED_PARAM
         value: expired
+      - key: NLX_PAGE_PARAM
+        value: page
+      - key: NLX_CURSOR_PARAM
+        value: cursor
+      - key: NLX_PAGE_SIZE
+        value: "50"
+      - key: NLX_MAX_PAGES
+        value: "40"
       - key: JOB_API_TOKEN
         sync: false
       - key: JOB_API_MODE
