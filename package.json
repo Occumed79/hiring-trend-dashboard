@@ -12,6 +12,8 @@
     "db:migrate": "node scripts/migrate.js",
     "ingest": "node scripts/ingest.js",
     "sync:government-registry": "node scripts/sync-government-registry.js",
+    "sync:source-directories": "node scripts/sync-source-directories.js",
+    "enrich:association-sources": "node scripts/enrich-association-job-urls.js",
     "import:crawler": "node scripts/import-crawler-jsonl.js",
     "crawler:batch": "python3 scrapers/run_batch.py"
   },
