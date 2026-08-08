@@ -74,9 +74,14 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
 
   let deduped = dedupeJobsAcrossSources(items);
   const authoritativeBeforeFallback = deduped.jobs.filter(isAuthoritativeJob).length;
+  const authoritativeFederalSource = resolvedEntity.portal === 'federal_agencies'
+    && resolvedEntity.ats_provider === 'usajobs'
+    && Boolean(resolvedEntity.ats_board_id);
 
-  if (authoritativeBeforeFallback > 0) {
-    skipped.push(`discovery fallback skipped (${authoritativeBeforeFallback} verified authoritative job${authoritativeBeforeFallback === 1 ? '' : 's'} found)`);
+  if (authoritativeBeforeFallback > 0 || authoritativeFederalSource) {
+    skipped.push(authoritativeFederalSource && authoritativeBeforeFallback === 0
+      ? `discovery fallback skipped (resolved USAJOBS organization ${resolvedEntity.ats_board_id}; current authoritative inventory is 0)`
+      : `discovery fallback skipped (${authoritativeBeforeFallback} verified authoritative job${authoritativeBeforeFallback === 1 ? '' : 's'} found)`);
   } else {
     // Adzuna is a private-sector discovery source. It is intentionally excluded
     // from federal/state/local government portals, where employer-owned systems
@@ -146,23 +151,23 @@ async function ingestOneEntity(entity: any, options: IngestOptions) {
   const newCount = upsertResults.filter(Boolean).length;
 
   const duplicateClosures = await retireExactUrlDuplicates(entity.id);
-  const hasAuthoritative = uniqueItems.some(isAuthoritativeJob);
+  const hasAuthoritative = uniqueItems.some(isAuthoritativeJob) || authoritativeFederalSource;
   const invalidClosures = await retireInvalidLegacyJobs(entity.id, hasAuthoritative);
   const reconcileDiscovery = options.reconcile === true || booleanEnv('INGEST_RECONCILE_DISCOVERY', true);
   const supersededClosures = hasAuthoritative && reconcileDiscovery
     ? await retireSupersededDiscoveryJobs(entity.id, runStartedAt)
     : 0;
-  const staleClosures = await retireStaleJobs(entity.id, uniqueItems.length > 0);
+  const staleClosures = await retireStaleJobs(entity.id, uniqueItems.length > 0 || authoritativeFederalSource);
   const closedCount = duplicateClosures + invalidClosures + supersededClosures + staleClosures;
 
   const sourcesUsed = Array.from(new Set(used));
   const sourcesSkipped = Array.from(new Set(skipped));
-  const status = uniqueItems.length ? 'success' : 'partial';
+  const status = uniqueItems.length || authoritativeFederalSource ? 'success' : 'partial';
 
   await query(
     `INSERT INTO ingest_log (entity_id, source, status, jobs_found, jobs_new, jobs_closed)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [entity.id, sourcesUsed.join(',') || 'none', status, uniqueItems.length, newCount, closedCount]
+    [entity.id, sourcesUsed.join(',') || (authoritativeFederalSource ? `usajobs:${resolvedEntity.ats_board_id}` : 'none'), status, uniqueItems.length, newCount, closedCount]
   );
 
   return {
