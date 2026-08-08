@@ -33,6 +33,12 @@ test('Greenhouse auditor refuses partial URL evidence',async()=>{
   try{const result=await auditor.auditOfficialSource({name:'Acme'},{source_class:'authoritative',is_verified:true,ats_provider:'greenhouse',board_id:'acme',metadata:{shared_inventory:false}});assert.equal(result.status,'incomplete',diagnostic(result));assert.equal(result.complete,false);assert.equal(result.officialCount,2);assert.equal(result.jobUrls.length,1);}finally{restore();}
 });
 
+test('Personio fallback posting URLs preserve the host that successfully served XML',async()=>{
+  const xml='<?xml version="1.0"?><positions><position><id>personio-123</id><name>Program Manager</name></position></positions>';
+  const restore=mockFetch(async(url)=>String(url).includes('.jobs.personio.de/')?response({status:404,text:'not found',contentType:'text/plain'}):response({text:xml,contentType:'application/xml'}));
+  try{const result=await auditor.auditOfficialSource({name:'Acme'},{source_class:'authoritative',is_verified:true,ats_provider:'personio',board_id:'acme',metadata:{shared_inventory:false}});assert.equal(result.status,'complete',diagnostic(result));assert.equal(result.officialCount,1);assert.deepEqual(result.jobUrls,['https://acme.jobs.personio.com/job/personio-123']);assert.equal(result.metadata.host,'acme.jobs.personio.com');}finally{restore();}
+});
+
 test('shared inventories are never promoted to entity ground truth by the auditor',async()=>{
   let called=false;const restore=mockFetch(async()=>{called=true;return response({json:{}});});
   try{const result=await auditor.auditOfficialSource({name:'Example County'},{source_class:'authoritative',is_verified:true,ats_provider:'workday',board_id:'https://state.wd5.myworkdayjobs.com/en-US/jobs',metadata:{shared_inventory:true}});assert.equal(result.status,'unsupported',diagnostic(result));assert.equal(called,false);}finally{restore();}
