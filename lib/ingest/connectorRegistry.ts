@@ -43,13 +43,31 @@ export async function fetchJobsForEntity(entity: any): Promise<ConnectorResult> 
       notes: ['Pinned authoritative employer career surface.'],
       replace_existing: true,
     };
-  } else if ((!careerPageUrl || atsProvider === 'unknown' || (DIRECT_CONNECTORS.has(atsProvider) && !boardId)) && entity.name) {
-    detected = isGovernmentPortal(entity.portal)
+  } else if ((!careerPageUrl || atsProvider === 'unknown' || atsProvider === 'other' || (DIRECT_CONNECTORS.has(atsProvider) && !boardId)) && entity.name) {
+    const governmentPortal = isGovernmentPortal(entity.portal);
+    detected = governmentPortal
       ? await resolveGovernmentEntity(entity.name, entity.portal, careerPageUrl)
       : await resolveCompany(entity.name, careerPageUrl);
-    careerPageUrl = detected.career_page_url || careerPageUrl;
-    atsProvider = atsProvider !== 'unknown' && atsProvider !== 'other' ? atsProvider : detected.ats_provider;
-    boardId = boardId || detected.ats_board_id;
+
+    const governmentCanHeal = governmentPortal && (
+      detected.ats_provider === 'usajobs'
+      || detected.ats_provider === 'governmentjobs'
+      || detected.ats_provider === 'neogov'
+      || Boolean(detected.career_page_url)
+      || Boolean(detected.ats_board_id)
+      || detected.confidence !== 'low'
+    );
+    if (governmentCanHeal) detected.replace_existing = true;
+
+    careerPageUrl = detected.replace_existing
+      ? (detected.career_page_url || null)
+      : (detected.career_page_url || careerPageUrl);
+    atsProvider = detected.replace_existing
+      ? (detected.ats_provider || 'unknown')
+      : (atsProvider !== 'unknown' && atsProvider !== 'other' ? atsProvider : detected.ats_provider);
+    boardId = detected.replace_existing
+      ? (detected.ats_board_id || null)
+      : (boardId || detected.ats_board_id);
   } else if (careerPageUrl && atsProvider === 'unknown') {
     detected = asResolution(entity, await detectATS(careerPageUrl, entity.name), careerPageUrl, false);
     atsProvider = detected.ats_provider;
