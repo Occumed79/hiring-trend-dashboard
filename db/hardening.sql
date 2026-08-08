@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS government_registry (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_government_registry_name ON government_registry(lower(canonical_name));
+CREATE INDEX IF NOT EXISTS idx_government_registry_name_trgm ON government_registry USING gin (canonical_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_government_registry_state ON government_registry(state_code, government_type);
 CREATE INDEX IF NOT EXISTS idx_government_registry_active ON government_registry(is_active);
 
