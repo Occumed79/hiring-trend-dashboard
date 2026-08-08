@@ -9,7 +9,7 @@ export async function GET() {
     const latestRun = latestRunRows[0] || null;
     const runId = latestRun?.id || null;
 
-    const [summaryRows, sourceFleet, incidents, releases, benchmarkPortals, pairBaselines, truthCoverage, truthCandidates] = await Promise.all([
+    const [summaryRows, sourceFleet, incidents, releases, benchmarkPortals, pairBaselines, truthCoverage, truthCandidates, auditCoverage] = await Promise.all([
       query(
         `SELECT
            (SELECT COUNT(*)::int FROM entities WHERE is_active=true) AS active_entities,
@@ -17,7 +17,9 @@ export async function GET() {
            (SELECT COUNT(*)::int FROM entity_source_incidents WHERE status='open') AS open_incidents,
            (SELECT COUNT(*)::int FROM entity_source_incidents WHERE status='open' AND severity IN ('critical','high')) AS high_incidents,
            (SELECT COUNT(*)::int FROM benchmark_truth_snapshots) AS truth_snapshots,
-           (SELECT COUNT(DISTINCT entity_id)::int FROM benchmark_truth_snapshots) AS truth_entities`,
+           (SELECT COUNT(DISTINCT entity_id)::int FROM benchmark_truth_snapshots) AS truth_entities,
+           (SELECT COUNT(*)::int FROM benchmark_source_audits) AS official_audits,
+           (SELECT COUNT(DISTINCT entity_id)::int FROM benchmark_source_audits WHERE complete=true) AS independently_audited_entities`,
       ),
       query(
         `SELECT source,
@@ -87,6 +89,20 @@ export async function GET() {
          ORDER BY (t.captured_at IS NULL) DESC,e.portal,COALESCE(a.score,0) DESC,e.name
          LIMIT 180`,
       ),
+      query(
+        `WITH latest AS (
+           SELECT DISTINCT ON (a.entity_id,a.source_key)
+                  a.entity_id,a.source_key,a.source_label,a.source_url,a.ats_provider,a.status,a.complete,
+                  a.official_job_count,a.truth_eligible,a.details,a.audited_at
+           FROM benchmark_source_audits a
+           ORDER BY a.entity_id,a.source_key,a.audited_at DESC,a.id DESC
+         )
+         SELECT l.*,e.name AS entity_name,e.portal::text AS portal
+         FROM latest l JOIN entities e ON e.id=l.entity_id
+         ORDER BY CASE l.status WHEN 'error' THEN 1 WHEN 'incomplete' THEN 2 WHEN 'unsupported' THEN 3 ELSE 4 END,
+                  l.audited_at DESC
+         LIMIT 150`,
+      ),
     ]);
 
     return Response.json({
@@ -99,6 +115,7 @@ export async function GET() {
       source_pair_baselines: pairBaselines,
       truth_coverage: truthCoverage,
       truth_candidates: truthCandidates,
+      official_audits: auditCoverage,
       generated_at: new Date().toISOString(),
     });
   } catch (error) {

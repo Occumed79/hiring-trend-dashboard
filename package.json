@@ -15,6 +15,7 @@
     "benchmark": "node scripts/run-benchmarks.js",
     "benchmark:scheduled": "node scripts/run-benchmarks.js --scheduled",
     "benchmark:source-pairs": "node scripts/rebuild-source-pair-baselines.js",
+    "benchmark:capture-truth": "node scripts/capture-benchmark-truth.js",
     "sync:government-registry": "node scripts/sync-government-registry.js",
     "sync:source-directories": "node scripts/sync-source-directories.js",
     "enrich:association-sources": "node scripts/enrich-association-job-urls.js",

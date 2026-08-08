@@ -1,5 +1,6 @@
 import { query } from '@/db/client';
 import { getVerifiedActiveJobs, isNewThisWeek } from '@/lib/verifiedJobs';
+import { captureEntityBenchmarkTruth } from '@/lib/benchmark/captureEntityTruth';
 
 export async function buildHiringSnapshot(entityId: string) {
   const today = new Date().toISOString().split('T')[0];
@@ -33,5 +34,12 @@ export async function buildHiringSnapshot(entityId: string) {
      roleMap.security || 0, roleMap.logistics || 0, roleMap.medical || 0, roleMap.admin || 0,
      roleMap.aviation || 0, roleMap.engineering || 0, roleMap.remote || 0,
      roleMap.overseas || 0, roleMap.other || 0]
+  );
+
+  // Benchmark truth is a validation sidecar, never a prerequisite for ingest.
+  // Only active benchmark-cohort entities are audited, and fresh truth snapshots
+  // suppress repeat reads for the configured refresh window.
+  await captureEntityBenchmarkTruth(entityId).catch(error =>
+    console.warn('Could not refresh benchmark truth:', error instanceof Error ? error.message : error)
   );
 }
