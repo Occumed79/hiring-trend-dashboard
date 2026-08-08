@@ -24,19 +24,12 @@ async function main(){
       }
       const eligible=results.filter(({result})=>result.complete&&result.officialCount!==null);
       if(!eligible.length)return;
-
-      // Exact URL truth is safe only when every dedicated authoritative inventory
-      // was independently audited and every non-zero inventory yielded a complete URL set.
       const allSourcesAudited=eligible.length===collapsed.length;
       const allUrlComplete=allSourcesAudited&&eligible.every(({result})=>result.officialCount===0||result.jobUrls.length===result.officialCount);
       if(allUrlComplete){
         const urls=Array.from(new Set(eligible.flatMap(({result})=>result.jobUrls)));
-        const count=urls.length;
-        await saveTruth(client,entity,eligible,count,urls,'auto-official-auditor','Independent complete URL inventories from all dedicated authoritative source nodes.');truthCreated++;return;
+        await saveTruth(client,entity,eligible,urls.length,urls,'auto-official-auditor','Independent complete URL inventories from all dedicated authoritative source nodes.');truthCreated++;return;
       }
-
-      // A single complete count-only official inventory is valid count evidence.
-      // We do not sum count-only inventories across multiple boards because overlap is unknown.
       if(collapsed.length===1&&eligible.length===1){
         const result=eligible[0].result;
         await saveTruth(client,entity,eligible,result.officialCount,[],'auto-official-auditor-count','Independent complete official inventory count; posting-level precision/recall not claimed.');truthCreated++;
@@ -48,7 +41,7 @@ async function main(){
 }
 
 async function readSources(client,entity){
-  const rows=await client.query(`SELECT source_key,source_type,source_class,lineage_root,source_url,ats_provider,board_id,is_verified,metadata,last_verified_at FROM entity_job_sources WHERE entity_id=$1 AND is_active=true AND source_class='authoritative' AND source_type<>'identity' ORDER BY (metadata->>'primary'='true') DESC,last_verified_at DESC NULLS LAST,source_key`,[entity.id]);
+  const rows=await client.query(`SELECT source_key,source_type,source_class,lineage_root,source_url,ats_provider,board_id,is_verified,metadata,last_verified_at FROM entity_job_sources WHERE entity_id=$1 AND is_active=true AND source_class='authoritative' AND source_type IN ('ats','career_page') AND (is_verified=true OR metadata->>'primary'='true') ORDER BY (metadata->>'primary'='true') DESC,last_verified_at DESC NULLS LAST,source_key`,[entity.id]);
   if(rows.rows.length)return rows.rows;
   if(entity.career_page_url||entity.ats_provider||entity.ats_board_id)return[{source_key:'synthetic-primary',source_type:'ats',source_class:'authoritative',lineage_root:`ats:${entity.ats_provider||'career'}:${entity.ats_board_id||entity.id}`,source_url:entity.career_page_url,ats_provider:entity.ats_provider,board_id:entity.ats_board_id,is_verified:true,metadata:{primary:true,shared_inventory:false}}];
   return[];
