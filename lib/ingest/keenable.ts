@@ -63,9 +63,11 @@ function normalizeResult(row: any, entity: EntityLike, query: string) {
   const snippet = clean(row?.snippet || row?.description);
   if (!url || !titleText || !looksLikeJobDetail(url, titleText)) return null;
 
+  const searchable = `${titleText} ${snippet || ''}`;
+  if (!hasEmployerEvidence(searchable, url, entity)) return null;
+
   const title = cleanJobTitle(titleText, entity.name);
   if (!title) return null;
-  const searchable = `${titleText} ${snippet || ''}`;
   const location = extractLocation(searchable);
 
   return {
@@ -87,6 +89,7 @@ function normalizeResult(row: any, entity: EntityLike, query: string) {
       normalized_apply_url: url,
       employer_name: entity.name,
       company_name: entity.name,
+      normalized_employer_source: 'keenable-result-evidence',
       keenable_title: titleText,
       keenable_snippet: snippet,
       keenable_published_at: row?.published_at || null,
@@ -96,6 +99,24 @@ function normalizeResult(row: any, entity: EntityLike, query: string) {
       source_graph_lineage: 'keenable',
     },
   };
+}
+
+function hasEmployerEvidence(searchable: string, resultUrl: string, entity: EntityLike) {
+  const result = parseUrl(resultUrl);
+  const career = parseUrl(entity.career_page_url);
+  if (result && career && sameSite(result.hostname, career.hostname)) return true;
+
+  const haystack = normalizeComparable(searchable);
+  const names = [entity.name, ...(Array.isArray(entity.aliases) ? entity.aliases : [])]
+    .map(value => normalizeComparable(value))
+    .filter(Boolean);
+
+  for (const name of names) {
+    if (name.length >= 3 && containsPhrase(haystack, name)) return true;
+    const stripped = stripLegalSuffix(name);
+    if (stripped.length >= 4 && stripped !== name && containsPhrase(haystack, stripped)) return true;
+  }
+  return false;
 }
 
 function looksLikeJobDetail(url: string, title: string) {
@@ -161,11 +182,24 @@ function dedupe(rows: any[]) {
   });
 }
 
+function parseUrl(value: unknown) {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value).trim());
+    return ['http:', 'https:'].includes(url.protocol) ? url : null;
+  } catch {
+    return null;
+  }
+}
+function sameSite(leftHost: string, rightHost: string) { const left = leftHost.toLowerCase().replace(/^www\./,''); const right = rightHost.toLowerCase().replace(/^www\./,''); return left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`); }
+function normalizeComparable(value: unknown) { return String(value || '').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+function containsPhrase(haystack: string, needle: string) { return !!haystack && !!needle && ` ${haystack} `.includes(` ${needle} `); }
+function stripLegalSuffix(value: string) { return value.replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g,' ').replace(/\s+/g,' ').trim(); }
 function splitCity(location?: string | null) { return location && !/^remote$/i.test(location) ? location.split(',')[0]?.trim() || null : null; }
 function splitState(location?: string | null) { return location && !/^remote$/i.test(location) ? location.split(',')[1]?.trim() || null : null; }
 function clean(value: unknown) { const text = String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(); return text || null; }
 function normalizeDate(value: unknown) { if (!value) return null; const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? null : date.toISOString(); }
-function normalizeUrl(value: unknown) { if (!value) return null; try { const url = new URL(String(value).trim()); if (!['http:','https:'].includes(url.protocol)) return null; url.hash = ''; return url.toString(); } catch { return null; } }
+function normalizeUrl(value: unknown) { const url = parseUrl(value); if (!url) return null; url.hash = ''; return url.toString(); }
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function hashString(value: string) { let hash = 2166136261; for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); }
 function positiveIntegerEnv(name: string, fallback: number) { const parsed = Number(process.env[name]); return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback; }
