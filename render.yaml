@@ -40,6 +40,18 @@ services:
         value: oneMonth
       - key: LANGSEARCH_TIMEOUT_MS
         value: "12000"
+      - key: THEIRSTACK_API_KEY
+        sync: false
+      - key: THEIRSTACK_API_KEY_2
+        sync: false
+      - key: THEIRSTACK_API_KEY_3
+        sync: false
+      - key: THEIRSTACK_API_KEY_4
+        sync: false
+      - key: THEIRSTACK_API_KEY_5
+        sync: false
+      - key: KEENABLE_API_KEY
+        sync: false
       - key: NLX_API_KEY
         sync: false
       - key: NLX_API_KEY_HEADER
@@ -205,6 +217,18 @@ services:
         value: oneMonth
       - key: LANGSEARCH_TIMEOUT_MS
         value: "12000"
+      - key: THEIRSTACK_API_KEY
+        sync: false
+      - key: THEIRSTACK_API_KEY_2
+        sync: false
+      - key: THEIRSTACK_API_KEY_3
+        sync: false
+      - key: THEIRSTACK_API_KEY_4
+        sync: false
+      - key: THEIRSTACK_API_KEY_5
+        sync: false
+      - key: KEENABLE_API_KEY
+        sync: false
       - key: NLX_API_KEY
         sync: false
       - key: NLX_API_KEY_HEADER
