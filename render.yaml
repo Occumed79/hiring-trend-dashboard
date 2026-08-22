@@ -52,6 +52,14 @@ services:
         sync: false
       - key: KEENABLE_API_KEY
         sync: false
+      - key: CLARIFAI_PAT
+        sync: false
+      - key: CLARIFAI_MODEL_URL
+        value: https://clarifai.com/qwen/qwenLM/models/Qwen3-30B-A3B-Instruct-2507
+      - key: CLARIFAI_MAX_JOBS_PER_RUN
+        value: "12"
+      - key: CLARIFAI_TIMEOUT_MS
+        value: "20000"
       - key: NLX_API_KEY
         sync: false
       - key: NLX_API_KEY_HEADER
@@ -229,6 +237,14 @@ services:
         sync: false
       - key: KEENABLE_API_KEY
         sync: false
+      - key: CLARIFAI_PAT
+        sync: false
+      - key: CLARIFAI_MODEL_URL
+        value: https://clarifai.com/qwen/qwenLM/models/Qwen3-30B-A3B-Instruct-2507
+      - key: CLARIFAI_MAX_JOBS_PER_RUN
+        value: "12"
+      - key: CLARIFAI_TIMEOUT_MS
+        value: "20000"
       - key: NLX_API_KEY
         sync: false
       - key: NLX_API_KEY_HEADER
