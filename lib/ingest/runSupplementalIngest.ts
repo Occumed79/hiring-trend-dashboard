@@ -5,6 +5,8 @@ import { dedupeJobsAcrossSources, filterAllJobsForEntityEvidence } from './jobId
 import { assessJobQuality } from './jobQuality';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
+import { persistSourceCoverage } from './sourceCoverage';
+import type { CoverageCheck } from './neogovFeed';
 
 const THEIRSTACK_SOURCE = 'jobapi:theirstack';
 const KEENABLE_SOURCE = 'web:keenable';
@@ -20,11 +22,7 @@ export async function runSupplementalIngest(entityId?: string | null) {
       results.push(await ingestSupplementalEntity(entity));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await query(
-        `INSERT INTO ingest_log (entity_id, source, status, jobs_found, jobs_new, jobs_closed, error_message)
-         VALUES ($1, 'supplemental:theirstack+keenable', 'error', 0, 0, 0, $2)`,
-        [entity.id, message],
-      ).catch(() => {});
+      console.warn(`Supplemental ingest failed for ${entity.name}: ${message}`);
       results.push({
         entity: entity.name,
         entity_id: entity.id,
@@ -74,16 +72,11 @@ async function ingestSupplementalEntity(entity: any) {
   const closedCount = inventoryClosures + duplicateClosures;
 
   await buildHiringSnapshot(entity.id);
+  await persistSupplementalCoverage(entity.id, theirStack, keenable);
 
   const sourcesUsed = Array.from(new Set([...theirStack.used, ...keenable.used]));
   const sourcesSkipped = Array.from(new Set([...theirStack.skipped, ...keenable.skipped]));
-  const status = sourcesUsed.length ? 'success' : 'partial';
-
-  await query(
-    `INSERT INTO ingest_log (entity_id, source, status, jobs_found, jobs_new, jobs_closed)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [entity.id, sourcesUsed.join(',') || 'supplemental:none', status, deduped.jobs.length, newCount, closedCount],
-  );
+  const status = sourcesUsed.length || sourcesSkipped.length ? 'success' : 'partial';
 
   return {
     entity: entity.name,
@@ -100,6 +93,44 @@ async function ingestSupplementalEntity(entity: any) {
     sources_skipped: sourcesSkipped,
     status,
   };
+}
+
+async function persistSupplementalCoverage(entityId: string, theirStack: any, keenable: any) {
+  const checks: CoverageCheck[] = [];
+  const theirStackConfiguredForEntity = theirStack.used.length > 0 || theirStack.skipped.length > 0;
+  if (theirStackConfiguredForEntity) {
+    checks.push({
+      source: THEIRSTACK_SOURCE,
+      source_class: 'supplemental',
+      status: supplementalStatus(theirStack, '0 open jobs'),
+      jobs_found: theirStack.jobs.length,
+      authoritative_zero: false,
+      details: { lineage_root: 'theirstack', skipped: theirStack.skipped },
+    });
+  }
+
+  checks.push({
+    source: KEENABLE_SOURCE,
+    source_class: 'supplemental',
+    status: supplementalStatus(keenable, '0 job-detail results'),
+    jobs_found: keenable.jobs.length,
+    authoritative_zero: false,
+    details: { lineage_root: 'keenable', skipped: keenable.skipped },
+  });
+
+  await persistSourceCoverage(entityId, checks);
+}
+
+function supplementalStatus(result: { jobs: any[]; used: string[]; skipped: string[] }, zeroSignal: string): CoverageCheck['status'] {
+  const messages = result.skipped.map(message => String(message).toLowerCase());
+  if (messages.some(message => message.includes('key missing')) && !result.jobs.length) return 'skipped';
+  if (result.jobs.length) {
+    const hasError = messages.some(message => !message.includes(zeroSignal.toLowerCase()));
+    return hasError ? 'error' : 'success';
+  }
+  if (messages.length && messages.every(message => message.includes(zeroSignal.toLowerCase()))) return 'zero';
+  if (messages.length) return 'error';
+  return result.used.length ? 'zero' : 'skipped';
 }
 
 function isCompleteTheirStackRun(result: { used: string[]; skipped: string[] }) {
