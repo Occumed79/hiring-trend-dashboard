@@ -11,7 +11,6 @@ type KeenableResult = { jobs: any[]; used: string[]; skipped: string[] };
 const SOURCE = 'web:keenable';
 const ENDPOINT = 'https://api.keenable.ai/v1/search';
 const TIMEOUT_MS = positiveIntegerEnv('KEENABLE_TIMEOUT_MS', 12000);
-const RESULT_LIMIT = clamp(positiveIntegerEnv('KEENABLE_RESULT_LIMIT', 10), 1, 20);
 
 export async function fetchKeenableJobs(entity: EntityLike): Promise<KeenableResult> {
   const apiKey = String(process.env.KEENABLE_API_KEY || '').trim();
@@ -28,8 +27,9 @@ export async function fetchKeenableJobs(entity: EntityLike): Promise<KeenableRes
         'X-API-Key': apiKey,
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'X-Keenable-Title': 'Occu-Med Hiring Insights',
       },
-      body: JSON.stringify({ query, limit: RESULT_LIMIT }),
+      body: JSON.stringify({ query, mode: 'pro' }),
       signal: controller.signal,
     });
 
@@ -151,6 +151,16 @@ function detectCountry(value: string) {
   return null;
 }
 
+function dedupe(rows: any[]) {
+  const seen = new Set<string>();
+  return rows.filter(row => {
+    const key = String(row?.raw_data?.normalized_apply_url || row?.external_id || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function splitCity(location?: string | null) { return location && !/^remote$/i.test(location) ? location.split(',')[0]?.trim() || null : null; }
 function splitState(location?: string | null) { return location && !/^remote$/i.test(location) ? location.split(',')[1]?.trim() || null : null; }
 function clean(value: unknown) { const text = String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(); return text || null; }
@@ -159,4 +169,3 @@ function normalizeUrl(value: unknown) { if (!value) return null; try { const url
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function hashString(value: string) { let hash = 2166136261; for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); }
 function positiveIntegerEnv(name: string, fallback: number) { const parsed = Number(process.env[name]); return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback; }
-function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
