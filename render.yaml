@@ -60,6 +60,16 @@ services:
         value: "12"
       - key: CLARIFAI_TIMEOUT_MS
         value: "20000"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_TIMEOUT_MS
+        value: "15000"
+      - key: GROQ_MAX_FALLBACKS_PER_RUN
+        value: "6"
       - key: ALGOLIA_APP_ID
         sync: false
       - key: ALGOLIA_SEARCH_API_KEY
@@ -253,6 +263,16 @@ services:
         value: "12"
       - key: CLARIFAI_TIMEOUT_MS
         value: "20000"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_TIMEOUT_MS
+        value: "15000"
+      - key: GROQ_MAX_FALLBACKS_PER_RUN
+        value: "6"
       - key: ALGOLIA_APP_ID
         sync: false
       - key: ALGOLIA_WRITE_API_KEY
