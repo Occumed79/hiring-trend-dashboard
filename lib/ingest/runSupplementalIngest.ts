@@ -1,4 +1,5 @@
 import { query } from '@/db/client';
+import { enrichEntityOccupationalHealth } from '@/lib/ai/clarifaiOccupationalHealth';
 import { fetchTheirStackJobs } from './theirStack';
 import { fetchKeenableJobs } from './keenable';
 import { dedupeJobsAcrossSources, filterAllJobsForEntityEvidence } from './jobIdentity';
@@ -71,6 +72,17 @@ async function ingestSupplementalEntity(entity: any) {
   const duplicateClosures = await retireSupplementalUrlDuplicates(entity.id);
   const closedCount = inventoryClosures + duplicateClosures;
 
+  // Clarifai is an enrichment layer, not a hiring source. It runs only after the
+  // verified active inventory is reconciled and caches a content hash in raw_data,
+  // so unchanged jobs are not sent to the model again.
+  const occupationalHealth = await enrichEntityOccupationalHealth(entity.id, entity.name).catch(error => ({
+    status: 'error',
+    enriched: 0,
+    cached: 0,
+    failed: 0,
+    reason: error instanceof Error ? error.message : String(error),
+  }));
+
   await buildHiringSnapshot(entity.id);
   await persistSupplementalCoverage(entity.id, theirStack, keenable);
 
@@ -89,6 +101,7 @@ async function ingestSupplementalEntity(entity: any) {
     off_target_rejected: employerFiltered.rejected,
     quality_rejected: qualityRejected,
     theirstack_complete: theirStackComplete,
+    occupational_health: occupationalHealth,
     sources_used: sourcesUsed,
     sources_skipped: sourcesSkipped,
     status,
