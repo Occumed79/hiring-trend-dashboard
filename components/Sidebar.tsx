@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Activity, ChevronDown, Map } from 'lucide-react';
+import { Activity, ChevronDown, Map, Search } from 'lucide-react';
 import type { Portal } from '@/lib/portals';
 import {
   HIRING_MAP_STYLES,
@@ -10,11 +10,13 @@ import {
 } from '@/components/map/arcgisBasemap';
 
 export default function Sidebar({
-  portals, activePortal, onSelect, sourceHealthActive = false, onOpenSourceHealth,
+  portals, activePortal, onSelect, searchActive = false, onOpenSearch, sourceHealthActive = false, onOpenSourceHealth,
 }: {
   portals: Portal[];
   activePortal: Portal;
   onSelect: (p: Portal) => void;
+  searchActive?: boolean;
+  onOpenSearch?: () => void;
   sourceHealthActive?: boolean;
   onOpenSourceHealth?: () => void;
 }) {
@@ -55,12 +57,32 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto scrollbar-glass">
+        {onOpenSearch && (
+          <div className="pb-2 mb-2 border-b border-white/[0.08]">
+            <button
+              onClick={onOpenSearch}
+              title={collapsed ? 'Global Search' : undefined}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${searchActive ? 'active' : ''}`}
+            >
+              {collapsed ? (
+                <Search size={16} className="mx-auto" strokeWidth={1.8} />
+              ) : (
+                <>
+                  <Search size={14} strokeWidth={1.8} className="shrink-0" />
+                  <span className="text-[13px] font-medium text-inherit truncate leading-none">Global Search</span>
+                  <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded-full border border-blue-400/20 bg-blue-500/10 text-blue-300">Algolia</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
         {portals.map(portal => (
           <button
             key={portal.id}
             onClick={() => onSelect(portal)}
             title={collapsed ? portal.label : undefined}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${!sourceHealthActive && activePortal.id === portal.id ? 'active' : ''}`}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${!searchActive && !sourceHealthActive && activePortal.id === portal.id ? 'active' : ''}`}
           >
             {!collapsed ? (
               <span className="text-[13px] font-medium text-inherit truncate leading-none">{portal.label}</span>
