@@ -7,16 +7,24 @@ const monitorSource = fs.readFileSync('lib/ingest/theirStackMonitors.ts', 'utf8'
 const connectorSource = fs.readFileSync('lib/ingest/theirStack.ts', 'utf8');
 const syncSource = fs.readFileSync('scripts/sync-theirstack-monitors.js', 'utf8');
 
-test('all five TheirStack key slots are mapped', () => {
-  const keys = new Set(monitors.map(row => row.envKey));
-  for (const key of ['THEIRSTACK_API_KEY','THEIRSTACK_API_KEY_2','THEIRSTACK_API_KEY_3','THEIRSTACK_API_KEY_4','THEIRSTACK_API_KEY_5']) {
-    assert.ok(keys.has(key), `missing ${key}`);
+test('all five TheirStack key slots contain the supplied assignment counts', () => {
+  const expected = {
+    THEIRSTACK_API_KEY: 12,
+    THEIRSTACK_API_KEY_2: 16,
+    THEIRSTACK_API_KEY_3: 18,
+    THEIRSTACK_API_KEY_4: 34,
+    THEIRSTACK_API_KEY_5: 22,
+  };
+  assert.equal(monitors.length, 102);
+  for (const [key, count] of Object.entries(expected)) {
+    assert.equal(monitors.filter(row => row.envKey === key).length, count, `${key} assignment count changed`);
   }
+  assert.equal(new Set(monitors.map(row => row.name.toLowerCase())).size, 101, 'expected one cross-key duplicate employer');
 });
 
 test('supplied monitor examples are preserved in the central registry', () => {
   const names = new Set(monitors.map(row => row.name));
-  for (const employer of ['Northrop Grumman','Peraton','Amentum','State of Maine','Federal Aviation Administration']) {
+  for (const employer of ['Northrop Grumman','Peraton','Amentum','State of Maine','Federal Aviation Administration','U.S. Customs and Border Pro']) {
     assert.ok(names.has(employer), `missing ${employer}`);
   }
 });
