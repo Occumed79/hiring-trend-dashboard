@@ -8,6 +8,7 @@ import { upsertIngestedJob } from '@/lib/ingest/upsertJob';
 import { buildHiringSnapshot } from '@/lib/ingest/buildSnapshot';
 
 const THEIRSTACK_SOURCE = 'jobapi:theirstack';
+const KEENABLE_SOURCE = 'web:keenable';
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-cron-secret');
@@ -41,9 +42,15 @@ export async function POST(req: NextRequest) {
     }
 
     const theirStackComplete = isCompleteTheirStackRun(theirStack);
-    const closedCount = theirStackComplete
+    const inventoryClosures = theirStackComplete
       ? await reconcileTheirStackInventory(entity.id, deduped.jobs.filter((job: any) => job.source === THEIRSTACK_SOURCE))
       : 0;
+
+    // The canonical ATS/official row should win whenever the same apply URL is
+    // also returned by a supplemental API. Between the two supplemental sources,
+    // TheirStack wins over Keenable. This keeps snapshots from double-counting jobs.
+    const duplicateClosures = await retireSupplementalUrlDuplicates(entity.id);
+    const closedCount = inventoryClosures + duplicateClosures;
 
     await buildHiringSnapshot(entity.id);
 
@@ -62,6 +69,7 @@ export async function POST(req: NextRequest) {
       total: deduped.jobs.length,
       new: newCount,
       closed: closedCount,
+      duplicate_rows_closed: duplicateClosures,
       duplicates_removed: qualityAccepted.length - deduped.jobs.length,
       off_target_rejected: employerFiltered.rejected,
       quality_rejected: qualityRejected,
@@ -108,4 +116,32 @@ async function reconcileTheirStackInventory(entityId: string, jobs: any[]) {
     [entityId, THEIRSTACK_SOURCE, ids],
   );
   return Number(closed[0]?.cnt || 0);
+}
+
+async function retireSupplementalUrlDuplicates(entityId: string) {
+  const rows = await query(
+    `WITH closed AS (
+       UPDATE jobs AS supplemental
+       SET is_active = false, closed_at = COALESCE(supplemental.closed_at, NOW()), updated_at = NOW()
+       WHERE supplemental.entity_id = $1
+         AND supplemental.is_active = true
+         AND supplemental.source IN ($2, $3)
+         AND NULLIF(supplemental.raw_data->>'normalized_apply_url', '') IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+           FROM jobs AS preferred
+           WHERE preferred.entity_id = supplemental.entity_id
+             AND preferred.id <> supplemental.id
+             AND preferred.is_active = true
+             AND NULLIF(preferred.raw_data->>'normalized_apply_url', '') = NULLIF(supplemental.raw_data->>'normalized_apply_url', '')
+             AND (
+               preferred.source NOT IN ($2, $3)
+               OR (supplemental.source = $3 AND preferred.source = $2)
+             )
+         )
+       RETURNING supplemental.id
+     ) SELECT COUNT(*) AS cnt FROM closed`,
+    [entityId, THEIRSTACK_SOURCE, KEENABLE_SOURCE],
+  );
+  return Number(rows[0]?.cnt || 0);
 }
