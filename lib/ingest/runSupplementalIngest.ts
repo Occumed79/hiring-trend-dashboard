@@ -1,5 +1,6 @@
 import { query } from '@/db/client';
 import { enrichEntityOccupationalHealth } from '@/lib/ai/clarifaiOccupationalHealth';
+import { syncEntityToAlgolia } from '@/lib/search/algolia';
 import { fetchTheirStackJobs } from './theirStack';
 import { fetchKeenableJobs } from './keenable';
 import { dedupeJobsAcrossSources, filterAllJobsForEntityEvidence } from './jobIdentity';
@@ -84,6 +85,13 @@ async function ingestSupplementalEntity(entity: any) {
   }));
 
   await buildHiringSnapshot(entity.id);
+
+  // Algolia is a derived search index, not an evidence source. Sync only after
+  // reconciliation + enrichment so search reflects the same verified inventory
+  // and can include Clarifai occupational-health signals when available.
+  const algolia = await syncEntityToAlgolia(entity.id);
+  if (algolia.status === 'error') console.warn(`Algolia sync failed for ${entity.name}: ${algolia.reason}`);
+
   await persistSupplementalCoverage(entity.id, theirStack, keenable);
 
   const sourcesUsed = Array.from(new Set([...theirStack.used, ...keenable.used]));
@@ -102,6 +110,7 @@ async function ingestSupplementalEntity(entity: any) {
     quality_rejected: qualityRejected,
     theirstack_complete: theirStackComplete,
     occupational_health: occupationalHealth,
+    algolia,
     sources_used: sourcesUsed,
     sources_skipped: sourcesSkipped,
     status,
