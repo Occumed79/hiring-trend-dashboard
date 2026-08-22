@@ -10,6 +10,7 @@ test('Clarifai is an enrichment layer with cached job hashes and bounded runs', 
   const source = read('lib/ai/clarifaiOccupationalHealth.ts');
   assert.match(source, /CLARIFAI_PAT/);
   assert.match(source, /https:\/\/api\.clarifai\.com\/v2\/ext\/openai\/v1/);
+  assert.match(source, /Authorization: `Key \$\{pat\}`/);
   assert.match(source, /clarifai_oh_hash/);
   assert.match(source, /CLARIFAI_MAX_JOBS_PER_RUN/);
   assert.match(source, /likely_hearing_conservation/);
