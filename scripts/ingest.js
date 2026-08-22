@@ -1,22 +1,26 @@
 /**
  * Daily ingestion cron runner.
- * Enumerates active entities and refreshes them one at a time so a single slow or broken
- * provider cannot consume/abort the entire daily ingest.
+ * Synchronizes the fixed TheirStack monitor registry first, then refreshes active
+ * entities one at a time so a single slow or broken provider cannot abort the run.
  */
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config();
 
+const { spawnSync } = require('child_process');
+
 const CRON_SECRET = process.env.CRON_SECRET;
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
-const ENTITY_TIMEOUT_MS = Number(process.env.INGEST_ENTITY_TIMEOUT_MS || 90000);
+const ENTITY_TIMEOUT_MS = Number(process.env.INGEST_ENTITY_TIMEOUT_MS || 120000);
 const PORTALS = ['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities'];
 
 async function run() {
   console.log(`[${new Date().toISOString()}] Starting resilient entity-by-entity ingest...`);
   if (!CRON_SECRET) {
-    console.error('CRON_SECRET is not set. Refusing to call /api/ingest without authentication.');
+    console.error('CRON_SECRET is not set. Refusing to call protected ingest endpoints without authentication.');
     process.exit(1);
   }
+
+  syncTheirStackMonitors();
 
   const entities = await loadEntities();
   console.log(`Found ${entities.length} active entities.`);
@@ -27,10 +31,16 @@ async function run() {
     const started = Date.now();
     process.stdout.write(`[${index + 1}/${entities.length}] ${entity.name} ... `);
     try {
+      // /api/ingest now runs the core authoritative stack followed by the
+      // TheirStack + Keenable supplemental stack for the same entity.
       const result = await ingestEntity(entity.id);
       const row = result?.results?.[0] || result;
-      results.push({ id: entity.id, name: entity.name, ok: true, result: row });
-      console.log(`OK (${Math.round((Date.now() - started) / 1000)}s, ${row?.total || 0} active, ${row?.new || 0} new, ${row?.closed || 0} closed)`);
+      const supplemental = result?.supplemental?.results?.[0] || null;
+      results.push({ id: entity.id, name: entity.name, ok: true, result: row, supplemental });
+      console.log(
+        `OK (${Math.round((Date.now() - started) / 1000)}s, ${row?.total || 0} core active, ` +
+        `${row?.new || 0} core new, ${supplemental?.total || 0} supplemental, ${supplemental?.new || 0} supplemental new)`
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       results.push({ id: entity.id, name: entity.name, ok: false, error: message });
@@ -43,6 +53,25 @@ async function run() {
   if (failed.length) {
     console.error('Failed entities:', failed.map(row => `${row.name}: ${row.error}`).join(' | '));
     process.exitCode = 1;
+  }
+}
+
+function syncTheirStackMonitors() {
+  const hasAnyKey = ['THEIRSTACK_API_KEY','THEIRSTACK_API_KEY_2','THEIRSTACK_API_KEY_3','THEIRSTACK_API_KEY_4','THEIRSTACK_API_KEY_5']
+    .some(name => String(process.env[name] || '').trim());
+  if (!hasAnyKey) {
+    console.log('TheirStack keys are not configured; monitor registry sync skipped.');
+    return;
+  }
+
+  console.log('Synchronizing TheirStack monitored employers into the entity registry...');
+  const result = spawnSync(process.execPath, ['scripts/sync-theirstack-monitors.js'], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (result.error) throw result.error;
+  if (typeof result.status === 'number' && result.status !== 0) {
+    throw new Error(`TheirStack monitor sync exited with status ${result.status}`);
   }
 }
 
