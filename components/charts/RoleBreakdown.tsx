@@ -91,7 +91,7 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-200">Occupational Health Signals</h3>
-              <p className="text-[10px] text-slate-500 mt-0.5">Clarifai enrichment · separate from role classification</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">AI enrichment · Clarifai primary / Groq fallback · separate from role classification</p>
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-semibold text-slate-100">{Number(occupationalHealth.averageOpportunityScore || 0)}</p>
@@ -115,7 +115,7 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
             </div>
           ) : (
             <p className="text-[10px] text-slate-600 py-2">
-              {Number(occupationalHealth.totalJobs || 0) > 0 ? 'Add CLARIFAI_PAT to begin occupational-health enrichment.' : 'No active jobs to analyze yet.'}
+              {Number(occupationalHealth.totalJobs || 0) > 0 ? 'Add CLARIFAI_PAT or GROQ_API_KEY to begin occupational-health enrichment.' : 'No active jobs to analyze yet.'}
             </p>
           )}
         </div>
