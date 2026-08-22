@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
+import { runSupplementalIngest } from '@/lib/ingest/runSupplementalIngest';
 import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
@@ -72,7 +73,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const body = await req.json().catch(() => ({}));
     const result = await runUniversalIngest(params.id, { reconcile: body?.reconcile !== false });
-    return NextResponse.json(result);
+    const supplemental = await runSupplementalIngest(params.id);
+    return NextResponse.json({ ...result, supplemental });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not refresh entity.' }, { status: 500 });
   }
