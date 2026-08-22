@@ -12,15 +12,38 @@ const ROLE_COLORS: Record<string, string> = {
   other: '#64748b',
 };
 
+const OH_LABELS: Record<string, string> = {
+  high_opportunity: 'High OH opportunity',
+  safety_sensitive: 'Safety-sensitive',
+  preplacement_exam: 'Pre-placement exam',
+  drug_testing: 'Drug testing',
+  hearing_conservation: 'Hearing conservation',
+  respirator_use: 'Respirator / fit testing',
+  medical_surveillance: 'Medical surveillance',
+  deployment_oconus: 'Deployment / OCONUS',
+  dot_cdl: 'DOT / CDL',
+  hazardous_exposure: 'Hazardous exposure',
+  high_physical_demand: 'High physical demand',
+  clearance_security: 'Clearance / security',
+};
+
 export default function RoleBreakdown({ roles, loading }: { roles: any; loading: boolean }) {
+  const occupationalHealth = roles?.__occupationalHealth || null;
   const data = roles
     ? Object.entries(roles)
+        .filter(([name]) => !name.startsWith('__'))
         .map(([name, value]) => ({ name, value: Number(value) }))
         .sort((a, b) => b.value - a.value)
         .filter(d => d.value > 0)
     : [];
 
   const total = data.reduce((s, d) => s + d.value, 0);
+  const ohSignals = occupationalHealth?.signals
+    ? Object.entries(occupationalHealth.signals)
+        .map(([name, value]) => ({ name, value: Number(value) }))
+        .filter(item => item.value > 0)
+        .sort((a, b) => b.value - a.value)
+    : [];
 
   return (
     <div className="glass-card luminous-panel p-5 h-full">
@@ -34,7 +57,7 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
           ))}
         </div>
       ) : data.length === 0 ? (
-        <div className="flex items-center justify-center h-40 text-slate-600 text-sm">
+        <div className="flex items-center justify-center h-28 text-slate-600 text-sm">
           No role data yet
         </div>
       ) : (
@@ -60,6 +83,41 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
               </div>
             );
           })}
+        </div>
+      )}
+
+      {!loading && occupationalHealth && (
+        <div className="mt-5 pt-5 border-t border-white/10">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-200">Occupational Health Signals</h3>
+              <p className="text-[10px] text-slate-500 mt-0.5">Clarifai enrichment · separate from role classification</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-lg font-semibold text-slate-100">{Number(occupationalHealth.averageOpportunityScore || 0)}</p>
+              <p className="text-[9px] text-slate-500">avg OH score</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[10px] text-slate-500 mb-3">
+            <span>{Number(occupationalHealth.enrichedJobs || 0).toLocaleString()} / {Number(occupationalHealth.totalJobs || 0).toLocaleString()} jobs analyzed</span>
+            <span>{Number(occupationalHealth.coveragePct || 0)}% coverage</span>
+          </div>
+
+          {ohSignals.length ? (
+            <div className="grid grid-cols-1 gap-2">
+              {ohSignals.slice(0, 10).map(item => (
+                <div key={item.name} className="flex items-center justify-between rounded-lg border border-white/8 bg-white/[0.025] px-2.5 py-2">
+                  <span className="text-[10px] text-slate-300">{OH_LABELS[item.name] || item.name.replace(/_/g, ' ')}</span>
+                  <span className="text-[10px] font-semibold text-blue-200">{item.value.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-slate-600 py-2">
+              {Number(occupationalHealth.totalJobs || 0) > 0 ? 'Add CLARIFAI_PAT to begin occupational-health enrichment.' : 'No active jobs to analyze yet.'}
+            </p>
+          )}
         </div>
       )}
     </div>

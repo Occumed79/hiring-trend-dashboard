@@ -58,6 +58,52 @@ export async function getEntityRoleBreakdown(entityId: string) {
   return result;
 }
 
+export async function getEntityOccupationalHealthSignals(entityId: string) {
+  const jobs = await getVerifiedActiveJobs(entityId);
+  const enriched = jobs.filter(job => job.raw_data?.clarifai_oh);
+  const signals: Record<string, number> = {
+    preplacement_exam: 0,
+    drug_testing: 0,
+    hearing_conservation: 0,
+    respirator_use: 0,
+    medical_surveillance: 0,
+    deployment_oconus: 0,
+    dot_cdl: 0,
+    hazardous_exposure: 0,
+    safety_sensitive: 0,
+    clearance_security: 0,
+    high_physical_demand: 0,
+    high_opportunity: 0,
+  };
+
+  let scoreTotal = 0;
+  for (const job of enriched) {
+    const oh = job.raw_data.clarifai_oh || {};
+    if (oh.likely_preplacement_exam) signals.preplacement_exam++;
+    if (oh.likely_drug_testing) signals.drug_testing++;
+    if (oh.likely_hearing_conservation) signals.hearing_conservation++;
+    if (oh.likely_respirator_use) signals.respirator_use++;
+    if (oh.likely_medical_surveillance) signals.medical_surveillance++;
+    if (oh.deployment_oconus) signals.deployment_oconus++;
+    if (oh.dot_cdl) signals.dot_cdl++;
+    if (oh.hazardous_exposure) signals.hazardous_exposure++;
+    if (oh.safety_sensitive) signals.safety_sensitive++;
+    if (oh.clearance_security) signals.clearance_security++;
+    if (String(oh.physical_demand).toLowerCase() === 'high') signals.high_physical_demand++;
+    const score = Number(oh.opportunity_score || 0);
+    if (score >= 70) signals.high_opportunity++;
+    scoreTotal += Number.isFinite(score) ? score : 0;
+  }
+
+  return {
+    enrichedJobs: enriched.length,
+    totalJobs: jobs.length,
+    coveragePct: jobs.length ? Math.round((enriched.length / jobs.length) * 100) : 0,
+    averageOpportunityScore: enriched.length ? Math.round(scoreTotal / enriched.length) : 0,
+    signals,
+  };
+}
+
 export async function getEntityMapData(entityId: string) {
   const jobs = (await getVerifiedActiveJobs(entityId)).filter(hasRealMappedLocation);
   const grouped = new Map<string, any>();
