@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
+import { purgeEntityFromAlgolia } from '@/lib/search/algolia';
 
 const ALLOWED_UPDATE_FIELDS = new Set([
   'name',
@@ -43,6 +44,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
 
     if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (entries.some(([field, value]) => field === 'is_active' && value === false)) {
+      await purgeEntityFromAlgolia(params.id).catch(() => null);
+    }
     return NextResponse.json(rows[0]);
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
@@ -53,7 +57,8 @@ export async function DELETE(_: NextRequest, { params }: { params: { id: string 
   try {
     const rows = await query(`UPDATE entities SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id`, [params.id]);
     if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json({ success: true });
+    const algolia = await purgeEntityFromAlgolia(params.id);
+    return NextResponse.json({ success: true, algolia });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
