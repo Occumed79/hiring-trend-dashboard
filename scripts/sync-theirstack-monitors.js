@@ -2,19 +2,7 @@ require('dotenv').config({ path: '.env.local' });
 require('dotenv').config();
 
 const { Client } = require('pg');
-
-const MONITORS = [
-  ['THEIRSTACK_API_KEY','private_companies',['Northrop Grumman','Boeing','Safran','Parsons Corporation','Leonardo','General Atomics','United Launch Alliance (ULA)','Peckham, Inc.']],
-  ['THEIRSTACK_API_KEY','state_agencies',['Texas Department of Transportation','Georgia Department of Transportation','Oregon Department of Transportation','Florida Department of Transportation']],
-  ['THEIRSTACK_API_KEY_2','private_companies',['Peraton','American Bureau of Shipping']],
-  ['THEIRSTACK_API_KEY_2','counties_and_cities',['Placer County','City of Sacramento','Sacramento County','COUNTY OF MENDOCINO','City of Riverside','Solano County','Fresno County','City of Redondo Beach','City of Torrance','East Bay Regional Park District','City of Davis','AC Transit','City of Culver City']],
-  ['THEIRSTACK_API_KEY_2','state_agencies',['Colorado Department of Public Safety']],
-  ['THEIRSTACK_API_KEY_3','private_companies',['Amentum','AECOM','Leidos','Serco','CACI International','Peraton','V2X Inc','BAE Systems','Weatherford','ASRC Federal','QinetiQ','Sierra Nevada Corporation','Constellis','Valiant Integrated Services','Versar Global Solutions','Dynamic Aviation','IDS International','BL Harbert International LLC']],
-  ['THEIRSTACK_API_KEY_4','state_agencies',['State of Nevada','State of Rhode Island','State of Connecticut','State of Montana','State of Maryland','State of Oklahoma','State of New Jersey','State of Georgia','State of Texas','State of Arkansas','State of Louisiana','State of New Hampshire','State of Vermont','State of Oregon','State of Massachusetts','State of Maryland','State of Minnesota','State of Wyoming','State of Wisconsin','State of Delaware','State of Utah','State of Idaho','State of Michigan','State of Kansas','State of Alaska','State of Illinois','State of Ohio','State of Washington','State of Nebraska','State of Missouri','State of Florida','State of New Mexico','State of South Carolina','State of Colorado','State of Maine']],
-  ['THEIRSTACK_API_KEY_5','private_companies',['UPS','Raytheon','Collins Aerospace','Kiewit','International Paper','Chevron','Georgia-Pacific','Quanta Services','United Airlines','Granite Construction','CEMEX','BNSF Railway','FedEx Logistics','Union Pacific Railroad','Union Pacific','J.G. Boswell Company','Dole Food Company']],
-  ['THEIRSTACK_API_KEY_5','federal_agencies',['Federal Bureau of Prisons','U.S. Customs and Border Pro','Federal Aviation Administration','US Department of Homeland Security']],
-  ['THEIRSTACK_API_KEY_5','counties_and_cities',['Central Florida Regional Transportation Authority (LYNX)']],
-];
+const MONITORS = require('../config/theirstack-monitors.json');
 
 async function run() {
   if (!process.env.DATABASE_URL) {
@@ -26,7 +14,7 @@ async function run() {
   await client.connect();
 
   try {
-    const rows = flattenMonitors();
+    const rows = uniqueEntities(MONITORS);
     let inserted = 0;
     let existing = 0;
 
@@ -55,18 +43,18 @@ async function run() {
   }
 }
 
-function flattenMonitors() {
+function uniqueEntities(monitors) {
   const seen = new Set();
   const rows = [];
-  for (const [envKey, portal, names] of MONITORS) {
-    for (const name of names) {
-      const canonical = normalizeName(name);
-      // The same employer may deliberately appear under multiple API keys (Peraton).
-      // It should still exist only once in the dashboard entity registry.
-      if (seen.has(canonical)) continue;
-      seen.add(canonical);
-      rows.push({ name, portal, envKey });
-    }
+  for (const monitor of Array.isArray(monitors) ? monitors : []) {
+    if (!monitor?.name || !monitor?.envKey || !monitor?.portal) continue;
+    const canonical = normalizeName(monitor.name);
+    // Peraton deliberately has two API-key assignments but the dashboard still
+    // needs only one entity record. The TypeScript connector retains both key
+    // assignments when it queries that entity.
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    rows.push(monitor);
   }
   return rows;
 }
