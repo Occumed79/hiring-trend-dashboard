@@ -54,6 +54,9 @@ async function fetchEmployerJobs(apiKey: string, employerName: string, envKey: s
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const payload = await request(apiKey, {
+      // company_name_or satisfies TheirStack's required company filter while the
+      // case-insensitive form protects against harmless casing differences.
+      company_name_or: [employerName],
       company_name_case_insensitive_or: [employerName],
       is_closed: false,
       limit: PAGE_SIZE,
