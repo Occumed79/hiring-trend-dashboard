@@ -10,8 +10,7 @@ const { spawnSync } = require('child_process');
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
-const ENTITY_TIMEOUT_MS = Number(process.env.INGEST_ENTITY_TIMEOUT_MS || 90000);
-const SUPPLEMENTAL_TIMEOUT_MS = Number(process.env.INGEST_SUPPLEMENTAL_TIMEOUT_MS || 120000);
+const ENTITY_TIMEOUT_MS = Number(process.env.INGEST_ENTITY_TIMEOUT_MS || 120000);
 const PORTALS = ['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities'];
 
 async function run() {
@@ -32,9 +31,11 @@ async function run() {
     const started = Date.now();
     process.stdout.write(`[${index + 1}/${entities.length}] ${entity.name} ... `);
     try {
+      // /api/ingest now runs the core authoritative stack followed by the
+      // TheirStack + Keenable supplemental stack for the same entity.
       const result = await ingestEntity(entity.id);
       const row = result?.results?.[0] || result;
-      const supplemental = await ingestSupplementalEntity(entity.id);
+      const supplemental = result?.supplemental?.results?.[0] || null;
       results.push({ id: entity.id, name: entity.name, ok: true, result: row, supplemental });
       console.log(
         `OK (${Math.round((Date.now() - started) / 1000)}s, ${row?.total || 0} core active, ` +
@@ -86,28 +87,20 @@ async function loadEntities() {
 }
 
 async function ingestEntity(entityId) {
-  return callIngestEndpoint('/api/ingest', entityId, ENTITY_TIMEOUT_MS, { reconcile: true });
-}
-
-async function ingestSupplementalEntity(entityId) {
-  return callIngestEndpoint('/api/ingest/theirstack', entityId, SUPPLEMENTAL_TIMEOUT_MS, {});
-}
-
-async function callIngestEndpoint(path, entityId, timeoutMs, extraBody) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), ENTITY_TIMEOUT_MS);
   try {
-    const response = await fetch(`${APP_URL}${path}`, {
+    const response = await fetch(`${APP_URL}/api/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-cron-secret': CRON_SECRET },
-      body: JSON.stringify({ entity_id: entityId, ...extraBody }),
+      body: JSON.stringify({ entity_id: entityId, reconcile: true }),
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(`${path} HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
     return payload;
   } catch (error) {
-    if (error?.name === 'AbortError') throw new Error(`${path} timed out after ${timeoutMs}ms`);
+    if (error?.name === 'AbortError') throw new Error(`timed out after ${ENTITY_TIMEOUT_MS}ms`);
     throw error;
   } finally {
     clearTimeout(timeout);
