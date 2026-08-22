@@ -90,7 +90,7 @@ async function analyzeJob(pat: string, input: string): Promise<OccupationalHealt
     const response = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${pat}`,
+        Authorization: `Key ${pat}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
