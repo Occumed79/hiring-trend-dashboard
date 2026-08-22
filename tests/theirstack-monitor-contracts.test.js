@@ -49,7 +49,9 @@ test('TheirStack connector requests only open jobs with precise company-name fil
   assert.match(connectorSource, /jobapi:theirstack/);
 });
 
-test('entity sync deduplicates cross-key employers before inserting entities', () => {
+test('entity sync deduplicates assignments and reuses existing names or aliases', () => {
   assert.match(syncSource, /if \(seen\.has\(canonical\)\) continue/);
   assert.match(syncSource, /LOWER\(TRIM\(name\)\) = LOWER\(TRIM\(\$1\)\)/);
+  assert.match(syncSource, /unnest\(COALESCE\(aliases, ARRAY\[\]::text\[\]\)\)/);
+  assert.match(syncSource, /UPDATE entities SET is_active = true/);
 });
