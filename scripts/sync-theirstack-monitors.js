@@ -17,14 +17,29 @@ async function run() {
     const rows = uniqueEntities(MONITORS);
     let inserted = 0;
     let existing = 0;
+    let reactivated = 0;
 
     for (const monitor of rows) {
       const found = await client.query(
-        `SELECT id FROM entities WHERE is_active = true AND LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
+        `SELECT id, is_active
+         FROM entities
+         WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))
+            OR EXISTS (
+              SELECT 1 FROM unnest(COALESCE(aliases, ARRAY[]::text[])) AS alias
+              WHERE LOWER(TRIM(alias)) = LOWER(TRIM($1))
+            )
+         ORDER BY is_active DESC, created_at ASC
+         LIMIT 1`,
         [monitor.name],
       );
+
       if (found.rowCount) {
         existing++;
+        if (found.rows[0].is_active === false) {
+          await client.query(`UPDATE entities SET is_active = true, updated_at = NOW() WHERE id = $1`, [found.rows[0].id]);
+          reactivated++;
+          console.log(`Reactivated TheirStack monitor: ${monitor.name}`);
+        }
         continue;
       }
 
@@ -37,7 +52,10 @@ async function run() {
       console.log(`Added TheirStack monitor: ${monitor.name} -> ${monitor.portal} (${monitor.envKey})`);
     }
 
-    console.log(`TheirStack monitor sync complete: ${inserted} inserted, ${existing} already present, ${rows.length} unique monitored employers.`);
+    console.log(
+      `TheirStack monitor sync complete: ${inserted} inserted, ${existing} matched existing entities, ` +
+      `${reactivated} reactivated, ${rows.length} unique monitored employers.`
+    );
   } finally {
     await client.end();
   }
