@@ -60,6 +60,14 @@ services:
         value: "12"
       - key: CLARIFAI_TIMEOUT_MS
         value: "20000"
+      - key: ALGOLIA_APP_ID
+        sync: false
+      - key: ALGOLIA_SEARCH_API_KEY
+        sync: false
+      - key: ALGOLIA_WRITE_API_KEY
+        sync: false
+      - key: ALGOLIA_INDEX_NAME
+        value: hiring_jobs
       - key: NLX_API_KEY
         sync: false
       - key: NLX_API_KEY_HEADER
@@ -245,6 +253,12 @@ services:
         value: "12"
       - key: CLARIFAI_TIMEOUT_MS
         value: "20000"
+      - key: ALGOLIA_APP_ID
+        sync: false
+      - key: ALGOLIA_WRITE_API_KEY
+        sync: false
+      - key: ALGOLIA_INDEX_NAME
+        value: hiring_jobs
       - key: NLX_API_KEY
         sync: false
       - key: NLX_API_KEY_HEADER
