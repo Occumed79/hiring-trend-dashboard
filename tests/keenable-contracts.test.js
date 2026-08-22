@@ -10,3 +10,9 @@ test('Keenable uses authenticated search endpoint and normalized discovery sourc
   assert.match(source, /web:keenable/);
   assert.match(source, /normalized_apply_url/);
 });
+
+test('Keenable results require real employer evidence before normalization', () => {
+  assert.match(source, /hasEmployerEvidence\(searchable, url, entity\)/);
+  assert.match(source, /normalized_employer_source: 'keenable-result-evidence'/);
+  assert.match(source, /sameSite\(result\.hostname, career\.hostname\)/);
+});
