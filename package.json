@@ -12,6 +12,7 @@
     "ci": "npm run test:source && npm run typecheck && npm run build",
     "db:migrate": "node scripts/migrate.js",
     "ingest": "node scripts/ingest.js",
+    "probe:theirstack-exports": "node scripts/probe-theirstack-exports.js",
     "benchmark": "node scripts/run-benchmarks.js",
     "benchmark:scheduled": "node scripts/run-benchmarks.js --scheduled",
     "benchmark:source-pairs": "node scripts/rebuild-source-pair-baselines.js",
