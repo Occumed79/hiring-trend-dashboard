@@ -3,7 +3,10 @@ import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
 
-const SOURCE = 'jobapi:theirstack';
+// Keep app-export rows outside the generic jobapi:/web: lifecycle. They are a
+// bounded company-credit snapshot, not a complete API inventory, so a later
+// authoritative ingest must not automatically retire gap-filling export rows.
+const SOURCE = 'theirstack_export';
 const MAX_ROWS = 10000;
 
 export type TheirStackExportImportResult = {
@@ -11,6 +14,7 @@ export type TheirStackExportImportResult = {
   imported: number;
   unmatched: number;
   rejected: number;
+  duplicate_skipped: number;
   affected_entities: string[];
   top_level_keys: string[];
   sample: any[];
@@ -24,6 +28,7 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
   let imported = 0;
   let unmatched = 0;
   let rejected = 0;
+  let duplicateSkipped = 0;
   const affected = new Map<string, any>();
 
   for (const row of rows) {
@@ -37,6 +42,14 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
     const job = normalizeExportJob(row, employerName || entity.name);
     if (!job) {
       rejected++;
+      continue;
+    }
+
+    // Direct/ATS/official rows already in Hiring Insights should remain the
+    // canonical copy for an apply URL. The export fills gaps instead of racing
+    // a newer supplemental row against a stronger source during deduplication.
+    if (job.raw_data?.normalized_apply_url && await hasExistingActiveUrl(entity.id, job.raw_data.normalized_apply_url)) {
+      duplicateSkipped++;
       continue;
     }
 
@@ -56,6 +69,7 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
     imported,
     unmatched,
     rejected,
+    duplicate_skipped: duplicateSkipped,
     affected_entities: Array.from(affected.values()).map(entity => entity.name).sort(),
     top_level_keys: payload && typeof payload === 'object' && !Array.isArray(payload) ? Object.keys(payload).slice(0, 50) : [],
     sample: rows.slice(0, 3).map(sanitizeSampleRow),
@@ -70,8 +84,8 @@ export async function saveTheirStackExportReceipt(input: {
   await ensureReceiptTable();
   const rows = await query(
     `INSERT INTO theirstack_export_receipts
-       (content_type, detected_jobs, imported_jobs, unmatched_jobs, rejected_jobs, affected_entities, top_level_keys, payload_sample)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb)
+       (content_type, detected_jobs, imported_jobs, unmatched_jobs, rejected_jobs, duplicate_skipped, affected_entities, top_level_keys, payload_sample)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)
      RETURNING id, received_at`,
     [
       input.contentType,
@@ -79,6 +93,7 @@ export async function saveTheirStackExportReceipt(input: {
       input.result.imported,
       input.result.unmatched,
       input.result.rejected,
+      input.result.duplicate_skipped,
       JSON.stringify(input.result.affected_entities),
       JSON.stringify(input.result.top_level_keys),
       JSON.stringify(input.result.sample),
@@ -90,7 +105,7 @@ export async function saveTheirStackExportReceipt(input: {
 export async function listTheirStackExportReceipts(limit = 20) {
   await ensureReceiptTable();
   return query(
-    `SELECT id, received_at, content_type, detected_jobs, imported_jobs, unmatched_jobs, rejected_jobs,
+    `SELECT id, received_at, content_type, detected_jobs, imported_jobs, unmatched_jobs, rejected_jobs, duplicate_skipped,
             affected_entities, top_level_keys, payload_sample
      FROM theirstack_export_receipts
      ORDER BY received_at DESC
@@ -108,10 +123,23 @@ async function ensureReceiptTable() {
     imported_jobs INTEGER NOT NULL DEFAULT 0,
     unmatched_jobs INTEGER NOT NULL DEFAULT 0,
     rejected_jobs INTEGER NOT NULL DEFAULT 0,
+    duplicate_skipped INTEGER NOT NULL DEFAULT 0,
     affected_entities JSONB NOT NULL DEFAULT '[]'::jsonb,
     top_level_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
     payload_sample JSONB NOT NULL DEFAULT '[]'::jsonb
   )`);
+  await query(`ALTER TABLE theirstack_export_receipts ADD COLUMN IF NOT EXISTS duplicate_skipped INTEGER NOT NULL DEFAULT 0`);
+}
+
+async function hasExistingActiveUrl(entityId: string, normalizedUrl: string) {
+  const rows = await query(
+    `SELECT 1 FROM jobs
+     WHERE entity_id = $1 AND is_active = true AND source <> $2
+       AND NULLIF(raw_data->>'normalized_apply_url', '') = $3
+     LIMIT 1`,
+    [entityId, SOURCE, normalizedUrl],
+  );
+  return rows.length > 0;
 }
 
 function extractJobRows(payload: any): any[] {
@@ -168,8 +196,9 @@ function looksLikeJob(row: any) {
 }
 
 function extractEmployerName(row: any) {
+  const directCompany = typeof row?.company === 'string' ? row.company : null;
   return clean(
-    row?.company ||
+    directCompany ||
     row?.company_name ||
     row?.employer_name ||
     row?.company_object?.name ||
@@ -193,7 +222,7 @@ function normalizeExportJob(row: any, monitoredEmployer: string) {
   const stableId = id !== undefined && id !== null ? String(id) : applyUrl;
 
   return {
-    external_id: `theirstack-${stableId}`,
+    external_id: `theirstack-export-${stableId}`,
     source: SOURCE,
     title,
     department: employer,
@@ -215,6 +244,7 @@ function normalizeExportJob(row: any, monitoredEmployer: string) {
       theirstack_job_id: id ?? null,
       theirstack_delivery: 'app_job_export_webhook',
       source_graph_lineage: 'theirstack',
+      source_graph_class: 'supplemental',
     },
   };
 }
