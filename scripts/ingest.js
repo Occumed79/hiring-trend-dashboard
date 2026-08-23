@@ -1,7 +1,8 @@
 /**
  * Daily ingestion cron runner.
- * Synchronizes the fixed TheirStack monitor registry first, then refreshes active
- * entities one at a time so a single slow or broken provider cannot abort the run.
+ * Synchronizes the fixed TheirStack monitor registry first, then runs one
+ * credit-aware TheirStack Company Search sweep per configured workspace before
+ * refreshing active entities one at a time.
  */
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config();
@@ -22,6 +23,7 @@ async function run() {
 
   syncTheirStackMonitors();
   probeTheirStackExports();
+  await sweepTheirStackCompanies();
 
   const entities = await loadEntities();
   console.log(`Found ${entities.length} active entities.`);
@@ -32,8 +34,6 @@ async function run() {
     const started = Date.now();
     process.stdout.write(`[${index + 1}/${entities.length}] ${entity.name} ... `);
     try {
-      // /api/ingest now runs the core authoritative stack followed by the
-      // TheirStack + Keenable supplemental stack for the same entity.
       const result = await ingestEntity(entity.id);
       const row = result?.results?.[0] || result;
       const supplemental = result?.supplemental?.results?.[0] || null;
@@ -58,9 +58,7 @@ async function run() {
 }
 
 function syncTheirStackMonitors() {
-  const hasAnyKey = ['THEIRSTACK_API_KEY','THEIRSTACK_API_KEY_2','THEIRSTACK_API_KEY_3','THEIRSTACK_API_KEY_4','THEIRSTACK_API_KEY_5']
-    .some(name => String(process.env[name] || '').trim());
-  if (!hasAnyKey) {
+  if (!hasTheirStackKey()) {
     console.log('TheirStack keys are not configured; monitor registry sync skipped.');
     return;
   }
@@ -77,9 +75,7 @@ function syncTheirStackMonitors() {
 }
 
 function probeTheirStackExports() {
-  const hasAnyKey = ['THEIRSTACK_API_KEY','THEIRSTACK_API_KEY_2','THEIRSTACK_API_KEY_3','THEIRSTACK_API_KEY_4','THEIRSTACK_API_KEY_5']
-    .some(name => String(process.env[name] || '').trim());
-  if (!hasAnyKey) return;
+  if (!hasTheirStackKey()) return;
 
   console.log('Inspecting TheirStack app request history for company-credit export paths...');
   const result = spawnSync(process.execPath, ['scripts/probe-theirstack-exports.js'], {
@@ -91,9 +87,38 @@ function probeTheirStackExports() {
     return;
   }
   if (typeof result.status === 'number' && result.status !== 0) {
-    // Discovery is diagnostic only; never block actual hiring ingestion.
     console.warn(`TheirStack export discovery exited with status ${result.status}; continuing ingest.`);
   }
+}
+
+async function sweepTheirStackCompanies() {
+  if (!hasTheirStackKey()) return;
+  console.log('Running credit-aware TheirStack Company Search sweep...');
+  try {
+    const response = await fetch(`${APP_URL}/api/ingest/theirstack/company-sweep`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-cron-secret': CRON_SECRET },
+      body: JSON.stringify({ force: false }),
+      signal: AbortSignal.timeout(120000),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    const totals = payload?.totals || {};
+    console.log(
+      `TheirStack sweep: ${totals.returned_companies || 0} companies returned, ` +
+      `${totals.imported_jobs || 0} sample jobs imported, ${totals.signal_jobs || 0} recent jobs signaled, ` +
+      `${totals.credits_used || 0} API credits used.`
+    );
+  } catch (error) {
+    // TheirStack is supplemental. Credit, quota, or endpoint failures must never
+    // prevent authoritative ATS/official ingestion from running.
+    console.warn(`TheirStack company sweep failed; continuing ingest: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function hasTheirStackKey() {
+  return ['THEIRSTACK_API_KEY','THEIRSTACK_API_KEY_2','THEIRSTACK_API_KEY_3','THEIRSTACK_API_KEY_4','THEIRSTACK_API_KEY_5']
+    .some(name => String(process.env[name] || '').trim());
 }
 
 async function loadEntities() {
