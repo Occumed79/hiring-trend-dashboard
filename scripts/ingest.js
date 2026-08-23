@@ -21,6 +21,7 @@ async function run() {
   }
 
   syncTheirStackMonitors();
+  probeTheirStackExports();
 
   const entities = await loadEntities();
   console.log(`Found ${entities.length} active entities.`);
@@ -72,6 +73,26 @@ function syncTheirStackMonitors() {
   if (result.error) throw result.error;
   if (typeof result.status === 'number' && result.status !== 0) {
     throw new Error(`TheirStack monitor sync exited with status ${result.status}`);
+  }
+}
+
+function probeTheirStackExports() {
+  const hasAnyKey = ['THEIRSTACK_API_KEY','THEIRSTACK_API_KEY_2','THEIRSTACK_API_KEY_3','THEIRSTACK_API_KEY_4','THEIRSTACK_API_KEY_5']
+    .some(name => String(process.env[name] || '').trim());
+  if (!hasAnyKey) return;
+
+  console.log('Inspecting TheirStack app request history for company-credit export paths...');
+  const result = spawnSync(process.execPath, ['scripts/probe-theirstack-exports.js'], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (result.error) {
+    console.warn(`TheirStack export discovery could not run: ${result.error.message}`);
+    return;
+  }
+  if (typeof result.status === 'number' && result.status !== 0) {
+    // Discovery is diagnostic only; never block actual hiring ingestion.
+    console.warn(`TheirStack export discovery exited with status ${result.status}; continuing ingest.`);
   }
 }
 
