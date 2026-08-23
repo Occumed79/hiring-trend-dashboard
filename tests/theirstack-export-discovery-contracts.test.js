@@ -85,8 +85,9 @@ test('daily ingest runs export discovery automatically but discovery failure can
   const ingest = read('scripts/ingest.js');
   const syncIndex = ingest.indexOf('syncTheirStackMonitors();');
   const probeIndex = ingest.indexOf('probeTheirStackExports();');
+  const sweepIndex = ingest.indexOf('await sweepTheirStackCompanies();');
   const loadIndex = ingest.indexOf('const entities = await loadEntities();');
-  assert.ok(syncIndex >= 0 && probeIndex > syncIndex && loadIndex > probeIndex);
+  assert.ok(syncIndex >= 0 && probeIndex > syncIndex && sweepIndex > probeIndex && loadIndex > sweepIndex);
   assert.match(ingest, /scripts\/probe-theirstack-exports\.js/);
-  assert.match(ingest, /Discovery is diagnostic only; never block actual hiring ingestion/);
+  assert.match(ingest, /TheirStack export discovery exited with status .* continuing ingest/);
 });

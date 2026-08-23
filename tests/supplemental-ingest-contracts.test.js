@@ -11,7 +11,8 @@ test('scheduled/API and manual refreshes both invoke shared supplemental ingesti
   assert.match(apiIngest, /runSupplementalIngest/);
   assert.match(entityIngest, /runSupplementalIngest/);
   assert.match(cron, /\/api\/ingest/);
-  assert.doesNotMatch(cron, /\/api\/ingest\/theirstack/);
+  assert.match(cron, /\/api\/ingest\/theirstack\/company-sweep/);
+  assert.doesNotMatch(cron, /fetch\(`\$\{APP_URL\}\/api\/ingest\/theirstack`,/);
 });
 
 test('supplemental source health does not shadow the main ingest log', () => {
