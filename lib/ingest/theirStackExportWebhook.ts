@@ -58,7 +58,7 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
     affected.set(entity.id, entity);
   }
 
-  for (const entity of affected.values()) {
+  for (const entity of Array.from(affected.values())) {
     await buildHiringSnapshot(entity.id);
     const algolia = await syncEntityToAlgolia(entity.id);
     if (algolia.status === 'error') console.warn(`Algolia sync failed after TheirStack export for ${entity.name}: ${algolia.reason}`);
