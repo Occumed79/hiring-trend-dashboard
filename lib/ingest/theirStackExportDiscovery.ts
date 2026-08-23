@@ -1,5 +1,7 @@
 const REQUESTS_ENDPOINT = 'https://api.theirstack.com/v0/requests/';
 const CREDIT_ENDPOINT = 'https://api.theirstack.com/v0/billing/credit-balance';
+const DATASETS_ENDPOINT = 'https://api.theirstack.com/v1/datasets';
+const COMPANY_LISTS_ENDPOINT = 'https://api.theirstack.com/v0/company_lists';
 const KEY_SLOTS = [
   'THEIRSTACK_API_KEY',
   'THEIRSTACK_API_KEY_2',
@@ -27,6 +29,32 @@ export type TheirStackExportCandidate = {
   signals: string[];
 };
 
+type DatasetSummary = {
+  type: string | null;
+  name: string | null;
+  is_accessible: boolean;
+  options: Array<{
+    id: string | null;
+    item_type: string | null;
+    format: string | null;
+    frequency: string | null;
+    version: string | null;
+    is_deprecated: boolean;
+    dataset_url_present: boolean;
+    dataset_prefix_present: boolean;
+    last_updated: string | null;
+    size: number | null;
+  }>;
+};
+
+type CompanyListSummary = {
+  id: number | null;
+  name: string | null;
+  type: string | null;
+  companies_count: number;
+  created_at: string | null;
+};
+
 export type TheirStackWorkspaceDiscovery = {
   key_slot: string;
   configured: boolean;
@@ -40,6 +68,12 @@ export type TheirStackWorkspaceDiscovery = {
   app_requests_scanned?: number;
   export_candidates?: TheirStackExportCandidate[];
   materialized_job_batches?: TheirStackExportCandidate[];
+  datasets?: DatasetSummary[];
+  accessible_bulk_datasets?: string[];
+  dataset_probe_error?: string | null;
+  company_lists?: CompanyListSummary[];
+  export_snapshot_lists?: CompanyListSummary[];
+  company_list_probe_error?: string | null;
   error?: string;
 };
 
@@ -57,14 +91,23 @@ export async function discoverTheirStackAppExports(lookbackDays?: number) {
     }
 
     try {
-      const [creditBalance, requests] = await Promise.all([
+      const [creditBalance, requests, datasetsResult, companyListsResult] = await Promise.all([
         fetchJson(apiKey, CREDIT_ENDPOINT),
         fetchAppRequests(apiKey, start, end),
+        fetchOptionalJson(apiKey, DATASETS_ENDPOINT),
+        fetchOptionalJson(apiKey, COMPANY_LISTS_ENDPOINT),
       ]);
       const candidates = requests.filter(isExportLikeRequest).map(summarizeRequest);
       const materialized = requests
         .filter(request => hasJobExportKey(request?.body))
         .map(summarizeRequest);
+      const datasets = datasetsResult.ok ? summarizeDatasets(datasetsResult.payload) : [];
+      const companyLists = companyListsResult.ok ? summarizeCompanyLists(companyListsResult.payload) : [];
+      const accessibleBulkDatasets = datasets
+        .filter(dataset => dataset.is_accessible)
+        .map(dataset => dataset.type || dataset.name)
+        .filter((value): value is string => Boolean(value));
+      const exportSnapshotLists = companyLists.filter(list => list.type === 'EXPORT_SNAPSHOT');
 
       workspaces.push({
         key_slot: keySlot,
@@ -79,6 +122,12 @@ export async function discoverTheirStackAppExports(lookbackDays?: number) {
         app_requests_scanned: requests.length,
         export_candidates: candidates.slice(0, 25),
         materialized_job_batches: materialized.slice(0, 25),
+        datasets,
+        accessible_bulk_datasets: Array.from(new Set(accessibleBulkDatasets)),
+        dataset_probe_error: datasetsResult.ok ? null : datasetsResult.error,
+        company_lists: companyLists.slice(0, 100),
+        export_snapshot_lists: exportSnapshotLists.slice(0, 25),
+        company_list_probe_error: companyListsResult.ok ? null : companyListsResult.error,
       });
     } catch (error) {
       workspaces.push({
@@ -92,6 +141,10 @@ export async function discoverTheirStackAppExports(lookbackDays?: number) {
 
   const exportCandidates = workspaces.reduce((sum, row) => sum + (row.export_candidates?.length || 0), 0);
   const materializedJobBatches = workspaces.reduce((sum, row) => sum + (row.materialized_job_batches?.length || 0), 0);
+  const exportSnapshotLists = workspaces.reduce((sum, row) => sum + (row.export_snapshot_lists?.length || 0), 0);
+  const accessibleJobsDatasetWorkspaces = workspaces
+    .filter(row => row.accessible_bulk_datasets?.includes('jobs'))
+    .map(row => row.key_slot);
 
   return {
     status: 'success',
@@ -101,9 +154,19 @@ export async function discoverTheirStackAppExports(lookbackDays?: number) {
     configured_workspaces: workspaces.filter(row => row.configured).length,
     export_candidates: exportCandidates,
     materialized_job_batches: materializedJobBatches,
-    conclusion: exportCandidates || materializedJobBatches
-      ? 'Candidate app export requests found. Inspect request URL/body and credit fields before enabling any replay.'
-      : 'No app export request was found in the lookback window. One sample export in any workspace will create a request record that this probe can inspect; recurring manual exports are not required for discovery.',
+    export_snapshot_lists: exportSnapshotLists,
+    accessible_jobs_dataset_workspaces: accessibleJobsDatasetWorkspaces,
+    documented_constraints: {
+      company_search_jobs_found_per_company: 5,
+      company_list_export_scope: 'companies_only',
+      job_search_credit_rule: '1 API credit per returned job',
+      bulk_jobs_path: '/v1/datasets when jobs dataset is_accessible=true',
+    },
+    conclusion: accessibleJobsDatasetWorkspaces.length
+      ? `Supported bulk Jobs dataset access is enabled for: ${accessibleJobsDatasetWorkspaces.join(', ')}. Prefer dataset ingestion over per-job API retrieval.`
+      : exportCandidates || materializedJobBatches || exportSnapshotLists
+        ? 'No accessible Jobs dataset was detected, but app/export artifacts exist. Inspect their request URL/body and credit fields before enabling any replay.'
+        : 'No supported bulk Jobs dataset or app export artifact was found in the lookback window. Continue watching request history; a single sample export in any workspace is enough for discovery.',
     workspaces,
   };
 }
@@ -124,6 +187,14 @@ async function fetchAppRequests(apiKey: string, start: Date, end: Date) {
     if (rows.length < PAGE_SIZE) break;
   }
   return all;
+}
+
+async function fetchOptionalJson(apiKey: string, url: string) {
+  try {
+    return { ok: true as const, payload: await fetchJson(apiKey, url), error: null };
+  } catch (error) {
+    return { ok: false as const, payload: null, error: errorMessage(error) };
+  }
 }
 
 async function fetchJson(apiKey: string, url: string) {
@@ -149,6 +220,39 @@ async function fetchJson(apiKey: string, url: string) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function summarizeDatasets(payload: any): DatasetSummary[] {
+  const groups = Array.isArray(payload) ? payload : [];
+  return groups.map(group => ({
+    type: clean(group?.type),
+    name: clean(group?.name),
+    is_accessible: group?.is_accessible === true,
+    options: (Array.isArray(group?.options) ? group.options : []).map((option: any) => ({
+      id: clean(option?.id),
+      item_type: clean(option?.item_type),
+      format: clean(option?.format),
+      frequency: clean(option?.frequency),
+      version: clean(option?.version),
+      is_deprecated: option?.is_deprecated === true,
+      // Deliberately do not return signed URLs or storage prefixes from the probe.
+      dataset_url_present: Boolean(option?.dataset_url),
+      dataset_prefix_present: Boolean(option?.dataset_prefix),
+      last_updated: clean(option?.last_updated),
+      size: numberOrNull(option?.size),
+    })),
+  }));
+}
+
+function summarizeCompanyLists(payload: any): CompanyListSummary[] {
+  const lists = Array.isArray(payload) ? payload : [];
+  return lists.map(list => ({
+    id: numberOrNull(list?.id),
+    name: clean(list?.name),
+    type: clean(list?.type),
+    companies_count: Number(list?.companies_count || 0),
+    created_at: clean(list?.created_at),
+  }));
 }
 
 function isExportLikeRequest(request: any) {
@@ -229,6 +333,7 @@ function integerEnv(name: string, fallback: number) {
 }
 
 function numberOrNull(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }

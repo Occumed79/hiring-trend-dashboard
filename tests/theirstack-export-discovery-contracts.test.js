@@ -16,6 +16,26 @@ test('TheirStack export discovery reads supported request history and credit bal
   assert.match(source, /num_returned_jobs/);
 });
 
+test('discovery checks supported bulk dataset access and company-list export artifacts', () => {
+  const source = read('lib/ingest/theirStackExportDiscovery.ts');
+  assert.match(source, /https:\/\/api\.theirstack\.com\/v1\/datasets/);
+  assert.match(source, /https:\/\/api\.theirstack\.com\/v0\/company_lists/);
+  assert.match(source, /is_accessible/);
+  assert.match(source, /accessible_jobs_dataset_workspaces/);
+  assert.match(source, /EXPORT_SNAPSHOT/);
+  assert.match(source, /dataset_url_present/);
+  assert.match(source, /dataset_prefix_present/);
+  assert.doesNotMatch(source, /dataset_url:\s*option\?\.dataset_url/);
+});
+
+test('company-search shortcut is documented conservatively and not treated as bulk jobs', () => {
+  const source = read('lib/ingest/theirStackExportDiscovery.ts');
+  assert.match(source, /company_search_jobs_found_per_company:\s*5/);
+  assert.match(source, /company_list_export_scope:\s*'companies_only'/);
+  assert.match(source, /job_search_credit_rule:\s*'1 API credit per returned job'/);
+  assert.match(source, /bulk_jobs_path:\s*'\/v1\/datasets when jobs dataset is_accessible=true'/);
+});
+
 test('discovery scans all five configured TheirStack key slots without exposing credentials', () => {
   const source = read('lib/ingest/theirStackExportDiscovery.ts');
   for (const key of [
@@ -36,6 +56,13 @@ test('discovery recognizes app exports and materialized job export batches but n
   assert.match(source, /job_export_key_or/);
   assert.match(source, /mode: 'read_only_discovery'/);
   assert.doesNotMatch(source, /method:\s*'POST'.*export/i);
+});
+
+test('optional bulk probes cannot make the whole workspace discovery fail', () => {
+  const source = read('lib/ingest/theirStackExportDiscovery.ts');
+  assert.match(source, /fetchOptionalJson/);
+  assert.match(source, /dataset_probe_error/);
+  assert.match(source, /company_list_probe_error/);
 });
 
 test('export discovery endpoint is protected by the existing cron secret', () => {
