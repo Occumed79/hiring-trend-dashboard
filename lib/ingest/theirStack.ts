@@ -2,9 +2,15 @@ import { monitorsForEntity } from './theirStackMonitors';
 
 const SOURCE = 'jobapi:theirstack';
 const ENDPOINT = 'https://api.theirstack.com/v1/jobs/search';
-const PAGE_SIZE = clamp(integerEnv('THEIRSTACK_PAGE_SIZE', 100), 1, 100);
-const MAX_PAGES = clamp(integerEnv('THEIRSTACK_MAX_PAGES', 20), 1, 100);
+const PAGE_SIZE = clamp(integerEnv('THEIRSTACK_PAGE_SIZE', 25), 1, 25);
+const MAX_PAGES = clamp(integerEnv('THEIRSTACK_MAX_PAGES', 5), 1, 5);
 const TIMEOUT_MS = clamp(integerEnv('THEIRSTACK_TIMEOUT_MS', 15000), 1000, 60000);
+
+// The old per-entity full-open-inventory query is intentionally off by default.
+// TheirStack charges Job Search per job returned, so scheduled discovery now uses
+// the credit-aware Company Search sweep. This legacy path is retained only as an
+// explicit emergency/debug opt-in.
+const LEGACY_JOB_SEARCH_ENABLED = booleanEnv('THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED', false);
 
 type EntityLike = {
   name: string;
@@ -20,6 +26,7 @@ type TheirStackResult = {
 export async function fetchTheirStackJobs(entity: EntityLike): Promise<TheirStackResult> {
   const monitors = monitorsForEntity(entity);
   if (!monitors.length) return { jobs: [], used: [], skipped: [] };
+  if (!LEGACY_JOB_SEARCH_ENABLED) return { jobs: [], used: [], skipped: [] };
 
   const jobs: any[] = [];
   const used: string[] = [];
@@ -54,8 +61,6 @@ async function fetchEmployerJobs(apiKey: string, employerName: string, envKey: s
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const payload = await request(apiKey, {
-      // company_name_or satisfies TheirStack's required company filter while the
-      // case-insensitive form protects against harmless casing differences.
       company_name_or: [employerName],
       company_name_case_insensitive_or: [employerName],
       is_closed: false,
@@ -201,6 +206,13 @@ function numberOrNull(value: unknown) {
 function integerEnv(name: string, fallback: number) {
   const parsed = Number(process.env[name]);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function booleanEnv(name: string, fallback: boolean) {
+  const value = String(process.env[name] || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  return fallback;
 }
 
 function clamp(value: number, min: number, max: number) {
