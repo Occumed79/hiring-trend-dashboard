@@ -8,6 +8,7 @@ function read(path) {
 
 const refresh = read('lib/ingest/theirStackEntityRefresh.ts');
 const entityRoute = read('app/api/entities/[id]/ingest/route.ts');
+const exportImporter = read('lib/ingest/theirStackExportWebhook.ts');
 const sourcePanel = read('components/portal/SourceCoveragePanel.tsx');
 const integrationPanel = read('components/portal/IntegrationStatusPanel.tsx');
 const render = read('render.yaml');
@@ -45,6 +46,15 @@ test('TheirStack bulk export runtime state is visible and the receiver secret is
   assert.match(integrationPanel, /theirstack_export/);
   const secretDeclarations = render.match(/key: THEIRSTACK_EXPORT_WEBHOOK_SECRET/g) || [];
   assert.equal(secretDeclarations.length, 1);
+});
+
+test('TheirStack bulk export records source coverage, stays supplemental, and matches legal-name variants', () => {
+  assert.match(exportImporter, /persistSourceCoverage/);
+  assert.match(exportImporter, /source:\s*SOURCE/);
+  assert.match(exportImporter, /source_class:\s*'supplemental'/);
+  assert.match(exportImporter, /capped_snapshot:\s*true/);
+  assert.match(exportImporter, /normalizeCompanyIdentity/);
+  assert.doesNotMatch(exportImporter, /UPDATE jobs SET is_active = false/);
 });
 
 test('credit-aware TheirStack tuning is declared for both web and cron runtimes', () => {
