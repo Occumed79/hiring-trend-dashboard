@@ -47,6 +47,13 @@ test('live monitor assignments are persisted in Neon with per-workspace sync sta
   assert.match(syncSource, /source:\s*'live_list'/);
 });
 
+test('once a saved list is safely identified, its persisted list id remains authoritative even if membership is completely changed later', () => {
+  assert.match(syncSource, /readSyncState/);
+  assert.match(syncSource, /priorState\?\.list_id/);
+  assert.match(syncSource, /const persisted = candidates\.find\(row => Number\(row\.list\?\.id\) === prior\)/);
+  assert.match(syncSource, /list_id=CASE WHEN EXCLUDED\.list_id IS NOT NULL THEN EXCLUDED\.list_id ELSE theirstack_monitor_sync_state\.list_id END/);
+});
+
 test('runtime prefers live saved-list assignments and safely falls back to bootstrap config', () => {
   assert.match(monitorSource, /loadTheirStackMonitors/);
   assert.match(monitorSource, /theirstack_monitor_assignments/);
