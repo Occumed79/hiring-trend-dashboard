@@ -5,12 +5,7 @@ const MAX_FALLBACK_ROWS = 400;
 
 export async function searchDatabaseJobs(searchText: string, limit = 40) {
   const safeLimit = Math.min(Math.max(Math.floor(limit || 40), 1), 100);
-  const terms = String(searchText || '')
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 8);
+  const terms = searchTerms(searchText);
 
   if (!terms.length) return { hits: [], nbHits: 0, query: searchText, engine: 'database' };
 
@@ -50,6 +45,54 @@ export async function searchDatabaseJobs(searchText: string, limit = 40) {
     query: searchText,
     engine: 'database',
   };
+}
+
+export async function searchDatabaseEntities(searchText: string, limit = 12) {
+  const terms = searchTerms(searchText);
+  const safeLimit = Math.min(Math.max(Math.floor(limit || 12), 1), 30);
+  if (!terms.length) return [];
+
+  const haystack = `LOWER(CONCAT_WS(' ',
+    COALESCE(e.name, ''), COALESCE(array_to_string(e.aliases, ' '), ''),
+    COALESCE(e.industry, ''), COALESCE(e.category, ''), COALESCE(e.portal::text, '')
+  ))`;
+  const params: any[] = terms.map(term => `%${term}%`);
+  const filters = terms.map((_, index) => `${haystack} LIKE $${index + 1}`).join(' AND ');
+  params.push(safeLimit);
+
+  const rows = await query(
+    `SELECT e.id, e.name, e.aliases, e.portal, e.industry, e.category, e.career_page_url,
+            COUNT(j.id) FILTER (WHERE j.is_active = true) AS open_jobs
+     FROM entities e
+     LEFT JOIN jobs j ON j.entity_id = e.id
+     WHERE e.is_active = true AND ${filters}
+     GROUP BY e.id, e.name, e.aliases, e.portal, e.industry, e.category, e.career_page_url
+     ORDER BY CASE WHEN LOWER(e.name) = LOWER($1) THEN 0 ELSE 1 END,
+              COUNT(j.id) FILTER (WHERE j.is_active = true) DESC,
+              e.name ASC
+     LIMIT $${params.length}`,
+    params,
+  );
+
+  return rows.map((row: any) => ({
+    id: String(row.id),
+    name: row.name || '',
+    aliases: Array.isArray(row.aliases) ? row.aliases : [],
+    portal: row.portal || '',
+    industry: row.industry || '',
+    category: row.category || '',
+    career_page_url: row.career_page_url || null,
+    open_jobs: Math.max(0, Number(row.open_jobs || 0)),
+  }));
+}
+
+function searchTerms(searchText: string) {
+  return String(searchText || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function toSearchHit(row: any) {
