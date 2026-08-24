@@ -58,7 +58,10 @@ export async function searchDatabaseEntities(searchText: string, limit = 12) {
   ))`;
   const params: any[] = terms.map(term => `%${term}%`);
   const filters = terms.map((_, index) => `${haystack} LIKE $${index + 1}`).join(' AND ');
+  params.push(String(searchText || '').trim());
+  const exactQueryParam = params.length;
   params.push(safeLimit);
+  const limitParam = params.length;
 
   const rows = await query(
     `SELECT e.id, e.name, e.aliases, e.portal, e.industry, e.category, e.career_page_url,
@@ -67,10 +70,10 @@ export async function searchDatabaseEntities(searchText: string, limit = 12) {
      LEFT JOIN jobs j ON j.entity_id = e.id
      WHERE e.is_active = true AND ${filters}
      GROUP BY e.id, e.name, e.aliases, e.portal, e.industry, e.category, e.career_page_url
-     ORDER BY CASE WHEN LOWER(e.name) = LOWER($1) THEN 0 ELSE 1 END,
+     ORDER BY CASE WHEN LOWER(e.name) = LOWER($${exactQueryParam}) THEN 0 ELSE 1 END,
               COUNT(j.id) FILTER (WHERE j.is_active = true) DESC,
               e.name ASC
-     LIMIT $${params.length}`,
+     LIMIT $${limitParam}`,
     params,
   );
 
