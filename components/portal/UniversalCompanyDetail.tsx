@@ -7,6 +7,7 @@ import WorldMap from '@/components/map/WorldMap';
 import USAMap from '@/components/map/USAMap';
 import OpenRolesList from './OpenRolesList';
 import SourceCoveragePanel from './SourceCoveragePanel';
+import IntegrationStatusPanel from './IntegrationStatusPanel';
 
 export default function UniversalCompanyDetail({ entity, portal, onBack, onRemoved }: {
   entity: any; portal: Portal; onBack: () => void; onRemoved: (id: string) => void;
@@ -26,10 +27,11 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
     if (!silent) setLoading(true);
     setError('');
     try {
+      const requestInit: RequestInit = { signal, cache: 'no-store' };
       const [metricData, roleRows, ingestData] = await Promise.all([
-        fetch(`/api/entities/${entity.id}/metrics`, { signal }).then(readJson),
-        fetch(`/api/entities/${entity.id}/jobs?limit=500`, { signal }).then(readJson),
-        fetch(`/api/entities/${entity.id}/ingest`, { signal }).then(readJson),
+        fetch(`/api/entities/${entity.id}/metrics`, requestInit).then(readJson),
+        fetch(`/api/entities/${entity.id}/jobs?limit=500`, requestInit).then(readJson),
+        fetch(`/api/entities/${entity.id}/ingest`, requestInit).then(readJson),
       ]);
       setData(metricData); setRoles(Array.isArray(roleRows) ? roleRows : []); setIngest(ingestData);
     } catch (err) {
@@ -43,7 +45,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
     if (ingest?.status !== 'queued') return;
     const interval = window.setInterval(async () => {
       try {
-        const next = await fetch(`/api/entities/${entity.id}/ingest`).then(readJson);
+        const next = await fetch(`/api/entities/${entity.id}/ingest`, { cache: 'no-store' }).then(readJson);
         setIngest(next);
         if (next?.status !== 'queued') await loadDetails(undefined, true);
       } catch {}
@@ -54,7 +56,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
   async function refreshEntity() {
     setRefreshing(true); setError('');
     try {
-      const response = await fetch(`/api/entities/${entity.id}/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reconcile: true }) });
+      const response = await fetch(`/api/entities/${entity.id}/ingest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reconcile: true }), cache: 'no-store' });
       await readJson(response);
       await loadDetails(undefined, true);
     } catch (err) { setError(err instanceof Error ? err.message : `Could not refresh this ${noun.toLowerCase()}.`); }
@@ -80,7 +82,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
   const hiringUrl = ingest?.career_page_url || entity.career_page_url;
 
   return (
-    <div className="min-h-full p-5 lg:p-6 space-y-5 max-w-[1600px] mx-auto">
+    <div className="min-h-full p-5 lg:p-6 space-y-5 max-w-[1740px] mx-auto">
       <section className="glass-card-hero luminous-panel relative overflow-hidden p-5 lg:p-6">
         <div className="shimmer-top" /><div className="aurora-sweep" />
         <div className="relative z-10 flex items-start justify-between gap-5 flex-wrap">
@@ -110,8 +112,19 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
       {ingest?.status === 'queued' && <div className="rounded-2xl border border-blue-400/20 bg-blue-500/8 px-4 py-3 text-xs text-blue-100 flex items-center gap-3"><span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />Resolving authoritative and corroborating hiring sources and building the first hiring snapshot. This view will refresh automatically.</div>}
       {error && <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>}
       <SourceCoveragePanel rows={ingest?.source_coverage} registry={ingest?.government_registry} assessment={ingest?.coverage_assessment} incidents={ingest?.source_incidents} loading={loading} />
+      <IntegrationStatusPanel integrations={ingest?.integrations} />
       <TrendCard metrics={data?.metrics} loading={loading} entityName={entity.name} />
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.15fr)_minmax(320px,0.85fr)] gap-5 items-stretch"><div className="min-w-0">{useWorldMap ? <WorldMap entityId={entity.id} /> : <USAMap entityId={entity.id} title={`${entity.name} Hiring Map`} />}</div><RoleBreakdown roles={data?.roles} loading={loading} /></div>
+      {useWorldMap ? (
+        <div className="space-y-5">
+          <WorldMap entityId={entity.id} />
+          <RoleBreakdown roles={data?.roles} loading={loading} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.15fr)_minmax(320px,0.85fr)] gap-5 items-stretch">
+          <div className="min-w-0"><USAMap entityId={entity.id} title={`${entity.name} Hiring Map`} /></div>
+          <RoleBreakdown roles={data?.roles} loading={loading} />
+        </div>
+      )}
       <OpenRolesList rows={roles} loading={loading} totalRows={activeJobs} />
     </div>
   );
