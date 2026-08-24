@@ -4,6 +4,9 @@ import { inferPoint } from '@/lib/geo/locationLookup';
 import { extractLocationCandidates } from '@/lib/geo/locationSignals';
 import { assessJobQuality } from '@/lib/ingest/jobQuality';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const VALID_PORTALS = new Set(['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities']);
 const VALID_ROLE_CATEGORIES = new Set(['security', 'logistics', 'medical', 'admin', 'aviation', 'engineering', 'remote', 'overseas', 'other']);
 
