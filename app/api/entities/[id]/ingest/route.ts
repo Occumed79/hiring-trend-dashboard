@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { runUniversalIngest } from '@/lib/ingest/runUniversalIngest';
 import { runSupplementalIngest } from '@/lib/ingest/runSupplementalIngest';
+import { refreshTheirStackForEntity } from '@/lib/ingest/theirStackEntityRefresh';
 import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
@@ -14,8 +15,6 @@ export const revalidate = 0;
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
-    // This read-path guard catches a full ingest/cron outage once authoritative
-    // checks exceed the stale threshold. Failure here must not break the detail page.
     await refreshStaleSourceReliabilityOnRead(params.id).catch(() => {});
 
     const [entities, logs, jobs, sourceCoverage, assessment, sourceGraph, sourceIncidents] = await Promise.all([
@@ -69,37 +68,16 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
           monitored: theirStackMonitors.length > 0,
           configured: configuredTheirStackMonitors.length > 0,
           mode: theirStackMonitors.length
-            ? `${legacyTheirStack ? 'Full Job Search' : 'Credit-aware Company Search'} · ${configuredTheirStackMonitors.length}/${theirStackMonitors.length} workspace${theirStackMonitors.length === 1 ? '' : 's'} configured`
+            ? `${legacyTheirStack ? 'Full Job Search' : 'Credit-aware Company Search'} · ${configuredTheirStackMonitors.length}/${theirStackMonitors.length} workspace${theirStackMonitors.length === 1 ? '' : 's'} configured · profile refresh enabled`
             : 'Not in the TheirStack monitor registry for this entity.',
         },
-        keenable: {
-          configured: Boolean(String(process.env.KEENABLE_API_KEY || '').trim()),
-          mode: 'Supplemental employer-specific web discovery.',
-        },
-        algolia: {
-          configured: Boolean(String(process.env.ALGOLIA_APP_ID || '').trim() && String(process.env.ALGOLIA_SEARCH_API_KEY || process.env.ALGOLIA_WRITE_API_KEY || '').trim()),
-          mode: 'Global job index · live database fallback enabled.',
-        },
-        clarifai: {
-          configured: Boolean(String(process.env.CLARIFAI_PAT || '').trim()),
-          mode: 'Primary occupational-health enrichment.',
-        },
-        groq: {
-          configured: Boolean(String(process.env.GROQ_API_KEY || '').trim()),
-          mode: 'Occupational-health fallback model.',
-        },
-        langsearch: {
-          configured: Boolean(String(process.env.LANGSEARCH_API_KEY || process.env.LANGSEARCH_API_KEY_2 || '').trim()),
-          mode: 'Verified web discovery and corroboration.',
-        },
-        nlx: {
-          configured: Boolean(String(process.env.NLX_API_KEY || '').trim()),
-          mode: 'National Labor Exchange verification.',
-        },
-        careeronestop: {
-          configured: Boolean(String(process.env.CAREERONESTOP_API_TOKEN || '').trim() && String(process.env.CAREERONESTOP_USER_ID || '').trim()),
-          mode: 'CareerOneStop verification.',
-        },
+        keenable: { configured: Boolean(String(process.env.KEENABLE_API_KEY || '').trim()), mode: 'Supplemental employer-specific web discovery.' },
+        algolia: { configured: Boolean(String(process.env.ALGOLIA_APP_ID || '').trim() && String(process.env.ALGOLIA_SEARCH_API_KEY || process.env.ALGOLIA_WRITE_API_KEY || '').trim()), mode: 'Global job index · live database fallback enabled.' },
+        clarifai: { configured: Boolean(String(process.env.CLARIFAI_PAT || '').trim()), mode: 'Primary occupational-health enrichment.' },
+        groq: { configured: Boolean(String(process.env.GROQ_API_KEY || '').trim()), mode: 'Occupational-health fallback model.' },
+        langsearch: { configured: Boolean(String(process.env.LANGSEARCH_API_KEY || process.env.LANGSEARCH_API_KEY_2 || '').trim()), mode: 'Verified web discovery and corroboration.' },
+        nlx: { configured: Boolean(String(process.env.NLX_API_KEY || '').trim()), mode: 'National Labor Exchange verification.' },
+        careeronestop: { configured: Boolean(String(process.env.CAREERONESTOP_API_TOKEN || '').trim() && String(process.env.CAREERONESTOP_USER_ID || '').trim()), mode: 'CareerOneStop verification.' },
       },
       coverage: {
         active_jobs: jobs.length,
@@ -118,7 +96,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const body = await req.json().catch(() => ({}));
     const result = await runUniversalIngest(params.id, { reconcile: body?.reconcile !== false });
     const supplemental = await runSupplementalIngest(params.id);
-    return NextResponse.json({ ...result, supplemental });
+    // Manual profile refreshes now make a targeted, credit-guarded TheirStack
+    // Company Search call for this entity only. Daily cron keeps the cheaper
+    // workspace sweep strategy and does not multiply this request across entities.
+    const theirstack = await refreshTheirStackForEntity(params.id).catch(error => ({
+      status: 'error',
+      imported_jobs: 0,
+      signal_jobs: 0,
+      reason: error instanceof Error ? error.message : String(error),
+    }));
+    return NextResponse.json({ ...result, supplemental, theirstack });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not refresh entity.' }, { status: 500 });
   }
