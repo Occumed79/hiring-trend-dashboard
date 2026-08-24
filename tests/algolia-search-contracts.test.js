@@ -48,6 +48,20 @@ test('global search has a dedicated workspace and API route', () => {
   assert.match(route, /searchAlgoliaJobs/);
 });
 
+test('global search falls back to live Neon jobs and always searches the tracked employer registry', () => {
+  const route = read('app/api/search/jobs/route.ts');
+  const database = read('lib/search/database.ts');
+  const view = read('components/GlobalJobSearch.tsx');
+  const page = read('app/page.tsx');
+  assert.match(route, /searchDatabaseJobs/);
+  assert.match(route, /searchDatabaseEntities/);
+  assert.match(database, /FROM entities e/);
+  assert.match(database, /e\.aliases/);
+  assert.match(view, /Tracked employers/);
+  assert.match(view, /onOpenEntity/);
+  assert.match(page, /openEntityFromSearch/);
+});
+
 test('Render gives web search+write access but cron only write access', () => {
   const render = read('render.yaml');
   const searchKeys = render.match(/key: ALGOLIA_SEARCH_API_KEY/g) || [];
