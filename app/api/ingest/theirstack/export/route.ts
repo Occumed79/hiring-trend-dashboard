@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { importTheirStackJobExport, listTheirStackExportReceipts, saveTheirStackExportReceipt } from '@/lib/ingest/theirStackExportWebhook';
+import { verifyTheirStackExportSecret } from '@/lib/ingest/theirStackExportSecret';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function authorized(req: NextRequest) {
-  const expected = String(process.env.THEIRSTACK_EXPORT_WEBHOOK_SECRET || '').trim();
-  if (!expected) return false;
+async function authorized(req: NextRequest) {
   const queryToken = String(req.nextUrl.searchParams.get('token') || '').trim();
   const headerToken = String(req.headers.get('x-theirstack-export-secret') || '').trim();
-  return queryToken === expected || headerToken === expected;
+  if (queryToken && await verifyTheirStackExportSecret(queryToken).catch(() => false)) return true;
+  if (headerToken && await verifyTheirStackExportSecret(headerToken).catch(() => false)) return true;
+  return false;
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
     const contentType = req.headers.get('content-type');
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const limit = Number(req.nextUrl.searchParams.get('limit') || 20);
     const receipts = await listTheirStackExportReceipts(limit);
