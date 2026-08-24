@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useHiringBasemap } from './useHiringBasemap';
+import { createHiringMarkerIcon } from './hiringMarker';
 
 const MAP_FILTERS = [
   { id: 'all', label: 'All Jobs' },
@@ -38,6 +39,7 @@ export default function USAMap({
   const mapRef = useRef<any>(null);
   const mapShellRef = useRef<HTMLDivElement | null>(null);
   const BASEMAP = useHiringBasemap();
+  const profileMode = Boolean(entityId);
 
   useEffect(() => {
     let mounted = true;
@@ -93,7 +95,7 @@ export default function USAMap({
         return;
       }
       const bounds = MapComponents.L.latLngBounds(points).pad(0.18);
-      map.fitBounds(bounds, { animate: false, maxZoom: 8, padding: [24, 24] });
+      map.fitBounds(bounds, { animate: false, maxZoom: 8, padding: [28, 28] });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [entityId, mapData, MapComponents]);
@@ -111,7 +113,7 @@ export default function USAMap({
     if (filter === 'new_only') params.set('new_only', 'true');
     if (['remote', 'security', 'medical', 'logistics'].includes(filter)) params.set('role_category', filter);
 
-    fetch(`/api/map?${params}`, { signal: controller.signal })
+    fetch(`/api/map?${params}`, { signal: controller.signal, cache: 'no-store' })
       .then(async r => {
         const data = await r.json().catch(() => []);
         if (!r.ok) throw new Error(data?.error || 'Could not load map data.');
@@ -143,7 +145,7 @@ export default function USAMap({
   const totalJobs = mapMeta?.total_jobs ?? 0;
 
   return (
-    <div className="map-glass-card h-full min-h-[520px] flex flex-col gap-3.5">
+    <div className={`map-glass-card h-full flex flex-col gap-3.5 ${profileMode ? 'min-h-[620px]' : 'min-h-[520px]'}`}>
       <div className="flex items-start justify-between flex-wrap gap-3 shrink-0">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -176,7 +178,7 @@ export default function USAMap({
 
       {error && <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100 shrink-0">{error}</div>}
 
-      <div ref={mapShellRef} className="relative map-container flex-1" style={{ minHeight: 420 }}>
+      <div ref={mapShellRef} className="relative map-container flex-1" style={{ minHeight: profileMode ? 510 : 420 }}>
         {loading && (
           <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
             <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -210,30 +212,22 @@ export default function USAMap({
               const lat = Number(point.lat);
               const lng = Number(point.lng);
               if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < 15 || lat > 72 || lng < -180 || lng > -50) return null;
-              const count = Number(point.cnt || 1);
-              const visual = markerVisual(count, Boolean(point.is_fallback));
+              const count = Math.max(1, Number(point.cnt || 1));
               return (
-                <MapComponents.CircleMarker
+                <MapComponents.Marker
                   key={`${lat}-${lng}-${i}`}
-                  center={[lat, lng]}
-                  radius={visual.radius}
-                  pathOptions={{
-                    fillColor: visual.fill,
-                    color: visual.stroke,
-                    weight: visual.weight,
-                    fillOpacity: visual.opacity,
-                    className: point.is_fallback ? 'hiring-map-dot hiring-map-dot-fallback' : 'hiring-map-dot',
-                  }}
+                  position={[lat, lng]}
+                  icon={createHiringMarkerIcon(MapComponents.L, count, Boolean(point.is_fallback))}
                 >
                   <MapComponents.Popup>
-                    <div style={{ fontFamily: 'sans-serif', fontSize: 12, minWidth: 170 }}>
+                    <div style={{ fontFamily: 'sans-serif', fontSize: 12, minWidth: 180 }}>
                       <strong>{[point.city, point.state].filter(Boolean).join(', ') || 'Unknown location'}</strong><br />
                       <span style={{ color: '#7dd3fc' }}>{count} open job{count !== 1 ? 's' : ''}</span>
                       {point.entity_name && <><br /><span style={{ color: '#94a3b8' }}>{point.entity_name}</span></>}
                       {point.location_quality && <><br /><span style={{ color: point.is_fallback ? '#cbd5e1' : '#64748b' }}>{point.location_quality}</span></>}
                     </div>
                   </MapComponents.Popup>
-                </MapComponents.CircleMarker>
+                </MapComponents.Marker>
               );
             })}
           </MapComponents.MapContainer>
@@ -249,7 +243,7 @@ export default function USAMap({
             ['#64748b', 'Low / fallback'],
           ].map(([color, label]) => (
             <div key={label} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+              <div className="w-2 h-2 rounded-sm rotate-45" style={{ background: color }} />
               <span>{label}</span>
             </div>
           ))}
@@ -258,15 +252,4 @@ export default function USAMap({
       </div>
     </div>
   );
-}
-
-function markerVisual(count: number, fallback: boolean) {
-  if (fallback) {
-    return { radius: Math.min(4 + Math.log2(count + 1) * 1.4, 12), fill: '#64748b', stroke: 'rgba(203,213,225,0.55)', weight: 1, opacity: 0.48 };
-  }
-  const radius = Math.min(4.5 + Math.log2(Math.max(count, 1) + 1) * 1.75, 18);
-  if (count >= 50) return { radius, fill: '#7dd3fc', stroke: 'rgba(224,242,254,0.88)', weight: 1.3, opacity: 0.88 };
-  if (count >= 20) return { radius, fill: '#60a5fa', stroke: 'rgba(191,219,254,0.82)', weight: 1.2, opacity: 0.84 };
-  if (count >= 5) return { radius, fill: '#3b82f6', stroke: 'rgba(147,197,253,0.75)', weight: 1.1, opacity: 0.8 };
-  return { radius, fill: '#2563eb', stroke: 'rgba(96,165,250,0.72)', weight: 1, opacity: 0.76 };
 }
