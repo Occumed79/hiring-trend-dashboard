@@ -9,6 +9,7 @@ function read(path) {
 const refresh = read('lib/ingest/theirStackEntityRefresh.ts');
 const entityRoute = read('app/api/entities/[id]/ingest/route.ts');
 const exportImporter = read('lib/ingest/theirStackExportWebhook.ts');
+const exportSecret = read('lib/ingest/theirStackExportSecret.ts');
 const sourcePanel = read('components/portal/SourceCoveragePanel.tsx');
 const integrationPanel = read('components/portal/IntegrationStatusPanel.tsx');
 const render = read('render.yaml');
@@ -41,11 +42,14 @@ test('manual refresh imports TheirStack before supplemental OH enrichment and fi
   assert.ok(theirStackIndex >= 0 && supplementalIndex > theirStackIndex);
 });
 
-test('TheirStack bulk export runtime state is visible and the receiver secret is declared only on the web service', () => {
-  assert.match(entityRoute, /THEIRSTACK_EXPORT_WEBHOOK_SECRET/);
+test('TheirStack bulk export runtime state is visible and receiver token can auto-provision in Neon', () => {
+  assert.match(entityRoute, /getTheirStackExportSecret/);
+  assert.match(entityRoute, /Auto-provisioned/);
   assert.match(integrationPanel, /theirstack_export/);
+  assert.match(exportSecret, /runtime_secrets/);
+  assert.match(exportSecret, /randomBytes\(32\)/);
   const secretDeclarations = render.match(/key: THEIRSTACK_EXPORT_WEBHOOK_SECRET/g) || [];
-  assert.equal(secretDeclarations.length, 1);
+  assert.equal(secretDeclarations.length, 1, 'environment receiver secret remains an optional web-only override');
 });
 
 test('TheirStack bulk export records source coverage, stays supplemental, and matches legal-name variants', () => {
