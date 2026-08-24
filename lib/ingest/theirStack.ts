@@ -1,4 +1,4 @@
-import { monitorsForEntity } from './theirStackMonitors';
+import { monitorsForEntityLive } from './theirStackMonitors';
 
 const SOURCE = 'jobapi:theirstack';
 const ENDPOINT = 'https://api.theirstack.com/v1/jobs/search';
@@ -24,7 +24,7 @@ type TheirStackResult = {
 };
 
 export async function fetchTheirStackJobs(entity: EntityLike): Promise<TheirStackResult> {
-  const monitors = monitorsForEntity(entity);
+  const monitors = await monitorsForEntityLive(entity);
   if (!monitors.length) return { jobs: [], used: [], skipped: [] };
   if (!LEGACY_JOB_SEARCH_ENABLED) return { jobs: [], used: [], skipped: [] };
 
