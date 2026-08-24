@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/db/client';
 import { monitorsForEntityLive } from '@/lib/ingest/theirStackMonitors';
+import { getTheirStackExportSecret } from '@/lib/ingest/theirStackExportSecret';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -21,14 +22,10 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       return NextResponse.json({ error: 'This entity has no configured TheirStack monitor workspace.' }, { status: 409 });
     }
 
-    const receiverSecret = String(process.env.THEIRSTACK_EXPORT_WEBHOOK_SECRET || '').trim();
+    const receiverSecretState = await getTheirStackExportSecret();
     const appBase = String(process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '').trim().replace(/\/$/, '');
-    if (!receiverSecret || !appBase) {
-      return NextResponse.json({
-        error: !receiverSecret
-          ? 'THEIRSTACK_EXPORT_WEBHOOK_SECRET is not configured on the web service.'
-          : 'NEXT_PUBLIC_APP_URL or APP_URL is required to build the export receiver URL.',
-      }, { status: 503 });
+    if (!appBase) {
+      return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL or APP_URL is required to build the export receiver URL.' }, { status: 503 });
     }
 
     const monitor = configured[0];
@@ -46,7 +43,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     if (!theirStackUrl) throw new Error('TheirStack did not return an app URL.');
 
     const receiver = new URL(`${appBase}/api/ingest/theirstack/export`);
-    receiver.searchParams.set('token', receiverSecret);
+    receiver.searchParams.set('token', receiverSecretState.secret);
 
     return NextResponse.json({
       status: 'ready',
@@ -60,6 +57,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       lookback_days: LOOKBACK_DAYS,
       app_url: theirStackUrl,
       receiver_url: receiver.toString(),
+      receiver_secret_source: receiverSecretState.source,
       export_cap_per_company: 200,
       handoff: 'Open the generated TheirStack Job Search, choose Export → Webhook, and paste the receiver URL that Hiring Insights copied for you.',
     }, {
