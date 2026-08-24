@@ -1,6 +1,6 @@
 import { query } from '@/db/client';
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
-import { monitorsForEntity } from './theirStackMonitors';
+import { monitorsForEntityLive } from './theirStackMonitors';
 import { upsertIngestedJob } from './upsertJob';
 import { persistSourceCoverage } from './sourceCoverage';
 import { buildHiringSnapshot } from './buildSnapshot';
@@ -20,7 +20,7 @@ export async function refreshTheirStackForEntity(entityId: string) {
   const entity = rows[0];
   if (!entity) return { status: 'skipped', imported_jobs: 0, signal_jobs: 0, reason: 'Entity not found or inactive' };
 
-  const monitors = monitorsForEntity(entity);
+  const monitors = await monitorsForEntityLive(entity);
   if (!monitors.length) return { status: 'skipped', imported_jobs: 0, signal_jobs: 0, reason: 'Entity is not assigned to a TheirStack monitor workspace' };
 
   const workspaceResults: any[] = [];
@@ -90,6 +90,9 @@ export async function refreshTheirStackForEntity(entityId: string) {
           key_slot: monitor.envKey,
           monitored_name: monitor.name,
           matched_company_name: clean(company?.name),
+          monitor_source: monitor.source || 'config_fallback',
+          monitor_list_id: monitor.listId || null,
+          monitor_list_name: monitor.listName || null,
           lookback_days: LOOKBACK_DAYS,
           num_jobs_found: volume,
           sample_jobs_returned: sample.length,
@@ -108,6 +111,9 @@ export async function refreshTheirStackForEntity(entityId: string) {
         imported_jobs: workspaceImported,
         duplicate_skipped: workspaceDuplicates,
         matched_company: clean(company?.name),
+        monitor_source: monitor.source || 'config_fallback',
+        monitor_list_id: monitor.listId || null,
+        monitor_list_name: monitor.listName || null,
       });
     } catch (error) {
       const reason = errorMessage(error);
@@ -123,6 +129,9 @@ export async function refreshTheirStackForEntity(entityId: string) {
           source_key: coverageSource,
           key_slot: monitor.envKey,
           monitored_name: monitor.name,
+          monitor_source: monitor.source || 'config_fallback',
+          monitor_list_id: monitor.listId || null,
+          monitor_list_name: monitor.listName || null,
           reason,
           refresh_mode: 'entity_profile_company_search',
         },
