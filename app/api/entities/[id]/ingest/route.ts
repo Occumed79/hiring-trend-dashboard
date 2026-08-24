@@ -7,7 +7,7 @@ import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
 import { readOpenSourceIncidents, refreshStaleSourceReliabilityOnRead } from '@/lib/ingest/sourceReliability';
-import { monitorsForEntity } from '@/lib/ingest/theirStackMonitors';
+import { monitorsForEntityLive } from '@/lib/ingest/theirStackMonitors';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 
 export const dynamic = 'force-dynamic';
@@ -38,8 +38,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const awaitingInitialIngest = !latest || lastRunAt < createdAt;
     const mapped = jobs.filter(hasRealMappedLocation);
     const geocoded = jobs.filter((job) => String(job.raw_data?.normalized_location_quality || '') === 'geocoded job location');
-    const theirStackMonitors = monitorsForEntity(entity);
+    const theirStackMonitors = await monitorsForEntityLive(entity);
     const configuredTheirStackMonitors = theirStackMonitors.filter(monitor => Boolean(String(process.env[monitor.envKey] || '').trim()));
+    const liveTheirStackMonitors = theirStackMonitors.filter(monitor => monitor.source === 'live_list');
     const legacyTheirStack = ['1', 'true', 'yes', 'on'].includes(String(process.env.THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED || '').trim().toLowerCase());
 
     return NextResponse.json({
@@ -68,12 +69,12 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
           monitored: theirStackMonitors.length > 0,
           configured: configuredTheirStackMonitors.length > 0,
           mode: theirStackMonitors.length
-            ? `${legacyTheirStack ? 'Full Job Search' : 'Credit-aware Company Search'} · ${configuredTheirStackMonitors.length}/${theirStackMonitors.length} workspace${theirStackMonitors.length === 1 ? '' : 's'} configured · profile refresh enabled`
-            : 'Not in the TheirStack monitor registry for this entity.',
+            ? `${legacyTheirStack ? 'Full Job Search' : 'Credit-aware Company Search'} · ${configuredTheirStackMonitors.length}/${theirStackMonitors.length} workspace${theirStackMonitors.length === 1 ? '' : 's'} configured · ${liveTheirStackMonitors.length ? 'live saved-list sync' : 'bootstrap monitor fallback'}`
+            : 'Not in the live TheirStack monitor assignments for this entity.',
         },
         theirstack_export: {
           configured: Boolean(String(process.env.THEIRSTACK_EXPORT_WEBHOOK_SECRET || '').trim()),
-          mode: 'Company-credit Job Export receiver for high-volume gap filling.',
+          mode: 'One-click TheirStack Job Search handoff + company-credit Job Export receiver for high-volume gap filling.',
         },
         keenable: { configured: Boolean(String(process.env.KEENABLE_API_KEY || '').trim()), mode: 'Supplemental employer-specific web discovery.' },
         algolia: { configured: Boolean(String(process.env.ALGOLIA_APP_ID || '').trim() && String(process.env.ALGOLIA_SEARCH_API_KEY || process.env.ALGOLIA_WRITE_API_KEY || '').trim()), mode: 'Global job index · live database fallback enabled.' },
@@ -100,11 +101,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const body = await req.json().catch(() => ({}));
     const result = await runUniversalIngest(params.id, { reconcile: body?.reconcile !== false });
 
-    // A manual profile refresh makes one targeted, credit-guarded TheirStack
-    // Company Search check before the normal supplemental/enrichment stage. This
-    // ordering is intentional: any new TheirStack sample rows are then eligible
-    // for Keenable reconciliation, Clarifai/Groq OH enrichment and final Algolia sync
-    // during the same click instead of waiting until the next ingest run.
     const theirstack = await refreshTheirStackForEntity(params.id).catch(error => ({
       status: 'error',
       imported_jobs: 0,
