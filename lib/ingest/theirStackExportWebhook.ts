@@ -1,6 +1,7 @@
 import { query } from '@/db/client';
 import { upsertIngestedJob } from './upsertJob';
 import { buildHiringSnapshot } from './buildSnapshot';
+import { persistSourceCoverage } from './sourceCoverage';
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
 
 // Keep app-export rows outside the generic jobapi:/web: lifecycle. They are a
@@ -30,10 +31,12 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
   let rejected = 0;
   let duplicateSkipped = 0;
   const affected = new Map<string, any>();
+  const observed = new Map<string, { entity: any; rows: number; duplicates: number }>();
 
   for (const row of rows) {
     const employerName = extractEmployerName(row);
-    const entity = employerName ? entityIndex.get(normalizeName(employerName)) : null;
+    const identity = employerName ? normalizeCompanyIdentity(employerName) : '';
+    const entity = identity ? entityIndex.get(identity) : null;
     if (!entity) {
       unmatched++;
       continue;
@@ -45,17 +48,40 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
       continue;
     }
 
+    const observedRow = observed.get(entity.id) || { entity, rows: 0, duplicates: 0 };
+    observedRow.rows += 1;
+    observed.set(entity.id, observedRow);
+
     // Direct/ATS/official rows already in Hiring Insights should remain the
     // canonical copy for an apply URL. The export fills gaps instead of racing
     // a newer supplemental row against a stronger source during deduplication.
     if (job.raw_data?.normalized_apply_url && await hasExistingActiveUrl(entity.id, job.raw_data.normalized_apply_url)) {
       duplicateSkipped++;
+      observedRow.duplicates += 1;
       continue;
     }
 
-    await upsertIngestedJob(entity, job);
-    imported++;
+    if (await upsertIngestedJob(entity, job)) imported++;
     affected.set(entity.id, entity);
+  }
+
+  for (const entry of observed.values()) {
+    await persistSourceCoverage(entry.entity.id, [{
+      source: SOURCE,
+      source_class: 'supplemental',
+      status: entry.rows > 0 ? 'success' : 'zero',
+      jobs_found: entry.rows,
+      authoritative_zero: false,
+      details: {
+        lineage_root: 'theirstack',
+        source_key: SOURCE,
+        delivery: 'company_credit_job_export_webhook',
+        exported_rows: entry.rows,
+        duplicate_rows_already_covered: entry.duplicates,
+        capped_snapshot: true,
+        note: 'Company-credit export is gap-fill evidence, not a complete authoritative inventory.',
+      },
+    }]);
   }
 
   for (const entity of Array.from(affected.values())) {
@@ -253,7 +279,7 @@ function buildEntityIndex(entities: any[]) {
   const map = new Map<string, any>();
   for (const entity of entities) {
     for (const name of [entity.name, ...(Array.isArray(entity.aliases) ? entity.aliases : [])]) {
-      const normalized = normalizeName(name);
+      const normalized = normalizeCompanyIdentity(name);
       if (normalized && !map.has(normalized)) map.set(normalized, entity);
     }
   }
@@ -290,6 +316,12 @@ function normalizeName(value: unknown) {
     .toLowerCase()
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function normalizeCompanyIdentity(value: unknown) {
+  return normalizeName(value)
+    .replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
