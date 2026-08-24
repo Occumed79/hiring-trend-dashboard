@@ -181,7 +181,7 @@ async function persistAssignments(client, envKey, assignments, state) {
 }
 
 async function ensureEntity(client, monitor, entityIndex) {
-  const canonical = normalizeName(monitor.name);
+  const canonical = normalizeCompanyIdentity(monitor.name) || normalizeName(monitor.name);
   const existing = entityIndex.get(canonical);
   if (existing) {
     let reactivated = 0;
@@ -201,7 +201,7 @@ async function ensureEntity(client, monitor, entityIndex) {
     [monitor.name, [], monitor.portal, `theirstack-monitor:${monitor.envKey}${monitor.listId ? `:list-${monitor.listId}` : ''}`],
   );
   const row = rows.rows[0];
-  entityIndex.set(canonical, row);
+  for (const key of identityKeys(row.name)) entityIndex.set(key, row);
   console.log(`Added TheirStack monitor: ${monitor.name} -> ${monitor.portal} (${monitor.envKey})`);
   return { inserted: 1, existing: 0, reactivated: 0 };
 }
@@ -222,7 +222,6 @@ function selectMonitorList(candidates, envKey, bootstrap) {
   if (!best || best.overlap <= 0) return null;
   const bootstrapRatio = bootstrap.length ? best.overlap / bootstrap.length : 0;
   const memberRatio = best.members.length ? best.overlap / best.members.length : 0;
-  // Strong overlap protects us from accidentally adopting broad system/history lists.
   if (best.overlap >= 3 || bootstrapRatio >= 0.25 || memberRatio >= 0.5) return best;
   return null;
 }
@@ -273,16 +272,16 @@ async function fetchJson(apiKey, url) {
 }
 
 function overlapCount(members, bootstrap) {
-  const expected = new Set(bootstrap.map(row => normalizeName(row.name)).filter(Boolean));
-  const observed = new Set(members.map(row => normalizeName(row?.company_name || row?.company_object?.name)).filter(Boolean));
+  const expected = new Set(bootstrap.map(row => normalizeCompanyIdentity(row.name) || normalizeName(row.name)).filter(Boolean));
+  const observed = new Set(members.map(row => normalizeCompanyIdentity(row?.company_name || row?.company_object?.name) || normalizeName(row?.company_name || row?.company_object?.name)).filter(Boolean));
   let overlap = 0;
   for (const name of expected) if (observed.has(name)) overlap++;
   return overlap;
 }
 
 function resolvePortal(name, listName, bootstrap, entityIndex) {
-  const canonical = normalizeName(name);
-  const staticMatch = bootstrap.find(row => normalizeName(row.name) === canonical);
+  const canonical = normalizeCompanyIdentity(name) || normalizeName(name);
+  const staticMatch = bootstrap.find(row => (normalizeCompanyIdentity(row.name) || normalizeName(row.name)) === canonical);
   if (staticMatch?.portal) return staticMatch.portal;
   const existing = entityIndex.get(canonical);
   if (existing?.portal) return existing.portal;
@@ -301,24 +300,33 @@ function buildEntityIndex(rows) {
   const map = new Map();
   for (const row of rows) {
     for (const value of [row.name, ...(Array.isArray(row.aliases) ? row.aliases : [])]) {
-      const key = normalizeName(value);
-      if (key && !map.has(key)) map.set(key, row);
+      for (const key of identityKeys(value)) if (key && !map.has(key)) map.set(key, row);
     }
   }
   return map;
+}
+
+function identityKeys(value) {
+  return Array.from(new Set([normalizeName(value), normalizeCompanyIdentity(value)].filter(Boolean)));
 }
 
 function uniqueAssignments(monitors) {
   const seen = new Set();
   return (Array.isArray(monitors) ? monitors : []).filter(monitor => {
     if (!monitor?.name || !monitor?.envKey || !monitor?.portal) return false;
-    const key = `${monitor.envKey}|${normalizeName(monitor.name)}`;
+    const key = `${monitor.envKey}|${normalizeCompanyIdentity(monitor.name) || normalizeName(monitor.name)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
+function normalizeCompanyIdentity(value) {
+  return normalizeName(value)
+    .replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 function clean(value) { const text = String(value || '').replace(/\s+/g, ' ').trim(); return text || null; }
 function normalizeName(value) { return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 function positiveInt(value, fallback) { const n = Number(value); return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback; }
