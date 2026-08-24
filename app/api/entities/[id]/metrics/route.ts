@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntityMetrics, getEntityRoleBreakdown, getEntityMapData, getEntityOccupationalHealthSignals } from '@/lib/metrics';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
     const [metrics, roles, mapData, occupationalHealth] = await Promise.all([
