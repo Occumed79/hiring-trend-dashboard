@@ -81,22 +81,33 @@ export async function loadTheirStackMonitors(): Promise<TheirStackMonitor[]> {
 
 function matchEntityMonitors(entity: { name?: string | null; aliases?: string[] | null }, monitors: TheirStackMonitor[]) {
   const names = [entity?.name, ...(Array.isArray(entity?.aliases) ? entity.aliases : [])]
-    .map(normalizeName)
+    .flatMap(value => [normalizeName(value), normalizeCompanyIdentity(value)])
     .filter(Boolean);
   if (!names.length) return [];
-  return dedupeAssignments(monitors.filter(monitor => names.includes(normalizeName(monitor.name))));
+  return dedupeAssignments(monitors.filter(monitor => {
+    const exact = normalizeName(monitor.name);
+    const identity = normalizeCompanyIdentity(monitor.name);
+    return names.includes(exact) || names.includes(identity);
+  }));
 }
 
 function dedupeAssignments(monitors: TheirStackMonitor[]) {
   const seen = new Set<string>();
   return monitors.filter(monitor => {
     // Peraton intentionally exists under two different keys, so the key is part
-    // of the identity. Accidental duplicates within the same key collapse here.
-    const key = `${monitor.envKey}|${normalizeName(monitor.name)}`;
+    // of the identity. Accidental legal-suffix variants within the same key collapse.
+    const key = `${monitor.envKey}|${normalizeCompanyIdentity(monitor.name) || normalizeName(monitor.name)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function normalizeCompanyIdentity(value: unknown) {
+  return normalizeName(value)
+    .replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizeName(value: unknown) {
