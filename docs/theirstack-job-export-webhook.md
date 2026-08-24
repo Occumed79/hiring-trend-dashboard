@@ -4,25 +4,42 @@ This receiver is for the **Job Search → Export → Webhook** delivery path doc
 
 TheirStack documents Job Search exports as company-credit exports, with up to **200 jobs per company per export**. The export UI can deliver results by CSV, Excel, or external webhook.
 
-## Receiver
+## Receiver token
 
-`POST /api/ingest/theirstack/export?token=<THEIRSTACK_EXPORT_WEBHOOK_SECRET>`
+Hiring Insights no longer depends on a manually populated Render secret for this workflow.
 
-Set this secret only on the `hiring-trend-dashboard` Render web service:
+- If `THEIRSTACK_EXPORT_WEBHOOK_SECRET` exists on the web service, the app uses it.
+- Otherwise the app generates a random receiver token and persists it in Neon in `runtime_secrets`.
+- The generated token is never committed to GitHub.
+- The receiver accepts the token either in the URL query string or the `x-theirstack-export-secret` header.
 
-```text
-THEIRSTACK_EXPORT_WEBHOOK_SECRET=<long-random-value>
-```
+Receiver shape:
 
-Do not reuse a TheirStack API key as the webhook secret.
+`POST /api/ingest/theirstack/export?token=<receiver-token>`
 
-## Behavior
+## One-click handoff
+
+From a monitored employer profile, click **TheirStack Bulk Export**.
+
+Hiring Insights then:
+
+1. resolves the employer's live TheirStack workspace assignment;
+2. calls the supported `POST /v0/app-urls` endpoint with `type: job_search` and the employer/open-job/lookback filters;
+3. receives a TheirStack app URL that opens and runs that exact Job Search;
+4. builds the authenticated Hiring Insights export receiver URL;
+5. copies the receiver URL to the clipboard; and
+6. opens TheirStack in a new tab on the prepared Job Search.
+
+The only remaining provider-side action is **Export → Webhook → paste**. TheirStack's public OpenAPI does not expose an endpoint that directly confirms/initiates the company-credit Job Search export, so Hiring Insights does not replay undocumented internal app requests to fake that final click.
+
+## Receiver behavior
 
 - accepts JSON exports as a single job, an array of jobs, or common envelope shapes (`jobs`, `data`, `results`, `records`, `items`, `payload`)
 - scans nested JSON as a fallback so the first real TheirStack export can establish the exact payload shape without losing the delivery
-- matches exported company names to active Hiring Insights entity names/aliases
+- matches exported company names to active Hiring Insights entity names/aliases, including common legal-suffix variants
 - imports only gap-filling rows under source `theirstack_export`
 - skips an export row when the same apply URL is already active from another source, preserving ATS/official/direct-source authority
+- persists the export as supplemental Source Coverage evidence
 - never closes jobs or treats a capped export as a complete inventory
 - rebuilds affected hiring snapshots and re-syncs Algolia after successful imports
 - does not invoke Clarifai/Groq inline; normal enrichment runs can enrich new export rows later
@@ -30,22 +47,6 @@ Do not reuse a TheirStack API key as the webhook secret.
 
 ## Inspect recent receipts
 
-`GET /api/ingest/theirstack/export?token=<THEIRSTACK_EXPORT_WEBHOOK_SECRET>&limit=20`
+`GET /api/ingest/theirstack/export?token=<receiver-token>&limit=20`
 
 The response shows detected/imported/unmatched/rejected/duplicate counts and the small redacted sample used to verify the live TheirStack payload contract.
-
-## UI path
-
-The screenshots supplied on 2026-08-22 show a **Company Search**, which generates `POST /v1/companies/search` and a `company.new` saved-search webhook. That is not the bulk-job path.
-
-Use:
-
-1. Open the same search.
-2. Switch from **Companies** to **Jobs**.
-3. Keep the selected company filter and job age filter.
-4. Run the job search.
-5. Choose **Export** (not the separate Webhooks action).
-6. Select **Webhook** as the export delivery method.
-7. Paste the receiver URL above.
-
-The first real export is also useful for confirming the exact delivery shape and company-credit charge in TheirStack request history.
