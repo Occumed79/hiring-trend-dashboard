@@ -32,7 +32,7 @@ export default function GlobalJobSearch() {
       setLoading(true);
       setError('');
       try {
-        const response = await fetch(`/api/search/jobs?q=${encodeURIComponent(trimmed)}&limit=60`, { signal: controller.signal });
+        const response = await fetch(`/api/search/jobs?q=${encodeURIComponent(trimmed)}&limit=60`, { signal: controller.signal, cache: 'no-store' });
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(body?.error || 'Search request failed.');
         setResult(body || { hits: [], nbHits: 0 });
@@ -52,6 +52,8 @@ export default function GlobalJobSearch() {
 
   const hits = Array.isArray(result?.hits) ? result.hits : [];
   const employers = useMemo(() => new Set(hits.map((hit: any) => hit.entity_name).filter(Boolean)).size, [hits]);
+  const engineLabel = result?.engine === 'database_fallback' ? 'Live Database' : 'Algolia';
+  const engineDetail = result?.engine === 'database_fallback' ? 'automatic fallback' : 'indexed search';
 
   return (
     <div className="min-h-full p-5 lg:p-6 max-w-[1500px] mx-auto space-y-5">
@@ -66,13 +68,13 @@ export default function GlobalJobSearch() {
                 <h1 className="text-[26px] lg:text-[30px] font-semibold text-white tracking-tight">Global Hiring Search</h1>
               </div>
               <p className="text-xs text-slate-500 mt-2 max-w-2xl">
-                Search every tracked employer, open role, location, role category, and Clarifai occupational-health signal from one place.
+                Search every tracked employer, open role, location, role category, and occupational-health signal from one place.
               </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3.5 py-3 min-w-[150px]">
               <p className="text-[9px] uppercase tracking-[0.13em] text-slate-500">Search engine</p>
-              <p className="text-sm font-semibold text-slate-200 mt-1">Algolia</p>
-              <p className="text-[9px] text-slate-600 mt-0.5">live job index</p>
+              <p className="text-sm font-semibold text-slate-200 mt-1">{engineLabel}</p>
+              <p className="text-[9px] text-slate-600 mt-0.5">{engineDetail}</p>
             </div>
           </div>
 
@@ -116,25 +118,26 @@ export default function GlobalJobSearch() {
             </div>
           </div>
         </section>
-      ) : result?.configured === false ? (
-        <section className="glass-card luminous-panel p-6 text-sm text-amber-200">
-          Algolia is wired in the app, but the Algolia Application ID and API keys still need to be added to the Render environment.
-        </section>
-      ) : result?.warming ? (
-        <section className="glass-card luminous-panel p-6 text-sm text-slate-300">
-          The Algolia index is ready to populate. Refresh an employer or let the scheduled ingest run once to build the first search records.
-        </section>
       ) : (
         <section className="space-y-3">
-          <div className="flex items-center justify-between px-1">
+          <div className="flex items-center justify-between gap-3 px-1 flex-wrap">
             <p className="text-xs text-slate-500">
               {loading ? 'Searching…' : `${Number(result?.nbHits || hits.length).toLocaleString()} matches · ${employers.toLocaleString()} employers shown`}
             </p>
-            {Number(result?.processingTimeMS || 0) > 0 && <p className="text-[10px] text-slate-700">{result.processingTimeMS} ms</p>}
+            <div className="flex items-center gap-2">
+              {!loading && result?.engine === 'database_fallback' && (
+                <span className="text-[9px] rounded-full border border-cyan-400/20 bg-cyan-500/8 px-2 py-1 text-cyan-200">Live DB fallback</span>
+              )}
+              {Number(result?.processingTimeMS || 0) > 0 && <p className="text-[10px] text-slate-700">{result.processingTimeMS} ms</p>}
+            </div>
           </div>
 
           {!loading && hits.length === 0 ? (
-            <div className="glass-card p-8 text-center text-sm text-slate-600">No matching active jobs.</div>
+            <div className="glass-card p-8 text-center">
+              <p className="text-sm text-slate-500">No matching active jobs.</p>
+              {result?.configured === false && <p className="text-[10px] text-slate-700 mt-2">Algolia is not configured, so this search was checked directly against the live hiring database.</p>}
+              {result?.algolia_warming && <p className="text-[10px] text-slate-700 mt-2">The Algolia index is still warming; live database fallback remains active.</p>}
+            </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {hits.map((hit: any) => <SearchResultCard key={hit.objectID || hit.job_id} hit={hit} />)}
