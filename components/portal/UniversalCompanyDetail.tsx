@@ -20,6 +20,8 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [preparingExport, setPreparingExport] = useState(false);
+  const [exportPrepared, setExportPrepared] = useState(false);
   const useWorldMap = portal.mapType === 'world';
   const noun = entityNoun(portal.id);
 
@@ -63,6 +65,24 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
     finally { setRefreshing(false); }
   }
 
+  async function prepareTheirStackExport() {
+    setPreparingExport(true); setExportPrepared(false); setError('');
+    const popup = window.open('about:blank', '_blank');
+    try {
+      const response = await fetch(`/api/entities/${entity.id}/theirstack/export-prep`, { method: 'POST', cache: 'no-store' });
+      const body = await readJson(response);
+      if (body?.receiver_url && navigator.clipboard?.writeText) await navigator.clipboard.writeText(body.receiver_url).catch(() => {});
+      if (popup) popup.location.href = body.app_url;
+      else window.open(body.app_url, '_blank', 'noopener,noreferrer');
+      setExportPrepared(true);
+    } catch (err) {
+      if (popup) popup.close();
+      setError(err instanceof Error ? err.message : 'Could not prepare the TheirStack bulk export.');
+    } finally {
+      setPreparingExport(false);
+    }
+  }
+
   async function removeEntity() {
     setRemoving(true); setError('');
     try {
@@ -80,6 +100,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
   const mappedJobs = Number(coverage?.mapped_jobs ?? data?.metrics?.mappedJobs ?? 0);
   const mappedPct = activeJobs > 0 ? Math.round((mappedJobs / activeJobs) * 100) : 0;
   const hiringUrl = ingest?.career_page_url || entity.career_page_url;
+  const canPrepareTheirStackExport = Boolean(ingest?.integrations?.theirstack?.monitored && ingest?.integrations?.theirstack_export?.configured);
 
   return (
     <div className="min-h-full p-5 lg:p-6 space-y-5 max-w-[1740px] mx-auto">
@@ -97,6 +118,11 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={refreshEntity} disabled={refreshing} className="px-4 py-2.5 rounded-xl border border-blue-400/35 bg-blue-500/12 text-blue-100 text-xs font-medium hover:bg-blue-500/22 disabled:opacity-50 transition-all">{refreshing ? 'Refreshing…' : 'Refresh Intelligence'}</button>
+            {canPrepareTheirStackExport && (
+              <button onClick={prepareTheirStackExport} disabled={preparingExport} className="px-4 py-2.5 rounded-xl border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 text-xs font-medium hover:bg-cyan-500/18 disabled:opacity-50 transition-all">
+                {preparingExport ? 'Preparing Export…' : 'TheirStack Bulk Export'}
+              </button>
+            )}
             {!confirming ? <button onClick={() => setConfirming(true)} className="px-3.5 py-2.5 rounded-xl border border-red-400/25 bg-red-500/8 text-red-200 text-xs hover:bg-red-500/16 transition-all">Stop Tracking</button> : (
               <div className="flex items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-2.5"><span className="text-xs text-red-100">Remove?</span><button onClick={removeEntity} disabled={removing} className="text-xs text-red-100 underline disabled:opacity-50">{removing ? 'Removing…' : 'Yes'}</button><button onClick={() => setConfirming(false)} disabled={removing} className="text-xs text-slate-400 underline disabled:opacity-50">Cancel</button></div>
             )}
@@ -110,6 +136,7 @@ export default function UniversalCompanyDetail({ entity, portal, onBack, onRemov
         </div>
       </section>
       {ingest?.status === 'queued' && <div className="rounded-2xl border border-blue-400/20 bg-blue-500/8 px-4 py-3 text-xs text-blue-100 flex items-center gap-3"><span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />Resolving authoritative and corroborating hiring sources and building the first hiring snapshot. This view will refresh automatically.</div>}
+      {exportPrepared && <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/8 px-4 py-3 text-xs text-cyan-100">TheirStack opened with this employer and the current lookback already loaded. The Hiring Insights export receiver URL was copied to your clipboard — choose Export → Webhook and paste it. TheirStack will deliver the company-credit export back into this app.</div>}
       {error && <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>}
       <SourceCoveragePanel rows={ingest?.source_coverage} registry={ingest?.government_registry} assessment={ingest?.coverage_assessment} incidents={ingest?.source_incidents} loading={loading} />
       <IntegrationStatusPanel integrations={ingest?.integrations} />
