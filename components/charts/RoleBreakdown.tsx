@@ -115,7 +115,7 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
             </div>
           ) : (
             <p className="text-[10px] text-slate-600 py-2">
-              {Number(occupationalHealth.totalJobs || 0) > 0 ? 'Add CLARIFAI_PAT or GROQ_API_KEY to begin occupational-health enrichment.' : 'No active jobs to analyze yet.'}
+              {Number(occupationalHealth.totalJobs || 0) > 0 ? 'No occupational-health enrichment has been persisted for these active roles yet.' : 'No active jobs to analyze yet.'}
             </p>
           )}
         </div>
