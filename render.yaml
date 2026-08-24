@@ -50,6 +50,18 @@ services:
         sync: false
       - key: THEIRSTACK_API_KEY_5
         sync: false
+      - key: THEIRSTACK_COMPANY_SWEEP_LOOKBACK_DAYS
+        value: "30"
+      - key: THEIRSTACK_COMPANY_SWEEP_INTERVAL_DAYS
+        value: "14"
+      - key: THEIRSTACK_API_CREDIT_RESERVE
+        value: "20"
+      - key: THEIRSTACK_TIMEOUT_MS
+        value: "15000"
+      - key: THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED
+        value: "false"
+      - key: THEIRSTACK_EXPORT_WEBHOOK_SECRET
+        sync: false
       - key: KEENABLE_API_KEY
         sync: false
       - key: CLARIFAI_PAT
@@ -253,6 +265,16 @@ services:
         sync: false
       - key: THEIRSTACK_API_KEY_5
         sync: false
+      - key: THEIRSTACK_COMPANY_SWEEP_LOOKBACK_DAYS
+        value: "30"
+      - key: THEIRSTACK_COMPANY_SWEEP_INTERVAL_DAYS
+        value: "14"
+      - key: THEIRSTACK_API_CREDIT_RESERVE
+        value: "20"
+      - key: THEIRSTACK_TIMEOUT_MS
+        value: "15000"
+      - key: THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED
+        value: "false"
       - key: KEENABLE_API_KEY
         sync: false
       - key: CLARIFAI_PAT
