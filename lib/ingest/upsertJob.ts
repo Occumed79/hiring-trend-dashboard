@@ -6,6 +6,33 @@ import { geocodeLocationCandidates } from '@/lib/geo/geocode';
 import { normalizeApplyUrl } from './jobIdentity';
 import { assessJobQuality } from './jobQuality';
 
+type Bounds = { minLat: number; maxLat: number; minLng: number; maxLng: number };
+
+// Coarse, deliberately padded bounds are only used to reject obviously corrupt
+// source coordinates. They are not a geocoder. Large/territorial countries such
+// as the US and Canada are intentionally omitted to avoid rejecting valid remote
+// territories. The generic non-Antarctic guard catches the prior Kuwait→Antarctica failure.
+const COUNTRY_BOUNDS: Record<string, Bounds> = {
+  KW: { minLat: 27, maxLat: 31.5, minLng: 45, maxLng: 49.5 },
+  QA: { minLat: 23.5, maxLat: 27, minLng: 49.5, maxLng: 53 },
+  BH: { minLat: 24.5, maxLat: 27.5, minLng: 49, maxLng: 52 },
+  AE: { minLat: 21.5, maxLat: 27.5, minLng: 50, maxLng: 57 },
+  SA: { minLat: 15, maxLat: 34, minLng: 33, maxLng: 57 },
+  IQ: { minLat: 28, maxLat: 39, minLng: 37, maxLng: 50 },
+  DE: { minLat: 46.5, maxLat: 56, minLng: 4, maxLng: 16.5 },
+  PL: { minLat: 48, maxLat: 56, minLng: 13, maxLng: 25 },
+  GB: { minLat: 48, maxLat: 62, minLng: -11, maxLng: 4 },
+  ES: { minLat: 26, maxLat: 45, minLng: -20, maxLng: 5 },
+  IT: { minLat: 34, maxLat: 48, minLng: 5, maxLng: 20 },
+  GR: { minLat: 33, maxLat: 43, minLng: 18, maxLng: 30 },
+  NL: { minLat: 49.5, maxLat: 54, minLng: 2, maxLng: 8 },
+  BE: { minLat: 48.5, maxLat: 52, minLng: 2, maxLng: 7 },
+  JP: { minLat: 23, maxLat: 47, minLng: 122, maxLng: 154 },
+  KR: { minLat: 32, maxLat: 40, minLng: 124, maxLng: 132 },
+  MX: { minLat: 13, maxLat: 34, minLng: -119, maxLng: -85 },
+  AU: { minLat: -45, maxLat: -9, minLng: 110, maxLng: 155 },
+};
+
 export async function upsertIngestedJob(entity: any, item: any): Promise<boolean> {
   if (!item.external_id || !item.source || !item.title) return false;
   const quality = assessJobQuality(item);
@@ -27,8 +54,13 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   const parsedSourceLat = toNumber(item.lat);
   const parsedSourceLng = toNumber(item.lng);
   const zeroZeroPlaceholder = parsedSourceLat === 0 && parsedSourceLng === 0;
-  const sourceLat = zeroZeroPlaceholder ? null : parsedSourceLat;
-  const sourceLng = zeroZeroPlaceholder ? null : parsedSourceLng;
+  const hasCompleteSourceCoordinates = parsedSourceLat !== null && parsedSourceLng !== null;
+  const sourceCoordinateRejection = hasCompleteSourceCoordinates && !zeroZeroPlaceholder
+    ? coordinateRejectionReason(country, parsedSourceLat!, parsedSourceLng!)
+    : hasCompleteSourceCoordinates ? 'zero-zero placeholder' : null;
+  const sourceCoordinatesAccepted = hasCompleteSourceCoordinates && !sourceCoordinateRejection;
+  const sourceLat = sourceCoordinatesAccepted ? parsedSourceLat : null;
+  const sourceLng = sourceCoordinatesAccepted ? parsedSourceLng : null;
 
   const shouldGeocode = !isRemote && (sourceLat === null || sourceLng === null) && (!inferred || inferredIsFallback);
   const geocoded = shouldGeocode ? await geocodeLocationCandidates(locationCandidates) : null;
@@ -54,6 +86,9 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
     normalized_fallback_point: inferredIsFallback ? inferred : null,
     normalized_geocoded: !!geocoded,
     normalized_zero_zero_coordinate_rejected: zeroZeroPlaceholder,
+    normalized_source_coordinate_rejected: Boolean(sourceCoordinateRejection),
+    normalized_source_coordinate_rejection_reason: sourceCoordinateRejection,
+    normalized_rejected_source_coordinates: sourceCoordinateRejection ? { lat: parsedSourceLat, lng: parsedSourceLng, country } : null,
     normalized_job_quality: 'accepted',
   };
 
@@ -77,6 +112,16 @@ export async function upsertIngestedJob(entity: any, item: any): Promise<boolean
   );
 
   return existing.length === 0;
+}
+
+function coordinateRejectionReason(country: string | null, lat: number, lng: number) {
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return 'outside valid latitude/longitude range';
+  if (country && country !== 'AQ' && lat < -60) return `latitude is in Antarctica but stated country is ${country}`;
+  const bounds = country ? COUNTRY_BOUNDS[country] : null;
+  if (bounds && (lat < bounds.minLat || lat > bounds.maxLat || lng < bounds.minLng || lng > bounds.maxLng)) {
+    return `coordinates fall outside coarse ${country} bounds`;
+  }
+  return null;
 }
 
 function hasExplicitUsEvidence(item: any) {
