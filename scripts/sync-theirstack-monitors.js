@@ -39,15 +39,24 @@ async function run() {
     for (const envKey of KEY_SLOTS) {
       const apiKey = String(process.env[envKey] || '').trim();
       const bootstrap = STATIC_MONITORS.filter(row => row.envKey === envKey);
+      const fallback = bootstrap.map(row => ({ ...row, source: 'config_fallback', listId: null, listName: null }));
+
       if (!apiKey) {
-        await persistAssignments(client, envKey, bootstrap.map(row => ({ ...row, source: 'config_fallback', listId: null, listName: null })), {
+        await persistAssignments(client, envKey, fallback, {
           status: 'missing_key', listId: null, listName: null, overlap: 0, liveCount: 0, error: 'API key missing',
         });
+        for (const monitor of uniqueAssignments(fallback)) {
+          const result = await ensureEntity(client, monitor, entityIndex);
+          inserted += result.inserted;
+          existing += result.existing;
+          reactivated += result.reactivated;
+        }
         fallbackWorkspaces++;
         continue;
       }
 
       try {
+        const priorState = await readSyncState(client, envKey);
         const lists = await fetchJson(apiKey, LISTS_URL);
         const candidates = [];
         for (const list of Array.isArray(lists) ? lists : []) {
@@ -56,7 +65,7 @@ async function run() {
           candidates.push({ list, members, overlap: overlapCount(members, bootstrap) });
         }
 
-        const selected = selectMonitorList(candidates, envKey, bootstrap);
+        const selected = selectMonitorList(candidates, envKey, bootstrap, priorState?.list_id);
         const liveNames = selected ? selected.members.map(member => clean(member?.company_name || member?.company_object?.name)).filter(Boolean) : [];
         const useLive = Boolean(selected && liveNames.length);
         const assignments = useLive
@@ -68,7 +77,7 @@ async function run() {
               listId: Number(selected.list.id),
               listName: clean(selected.list.name),
             }))
-          : bootstrap.map(row => ({ ...row, source: 'config_fallback', listId: null, listName: null }));
+          : fallback;
 
         const unique = uniqueAssignments(assignments);
         await persistAssignments(client, envKey, unique, {
@@ -89,14 +98,14 @@ async function run() {
 
         if (useLive) {
           liveWorkspaces++;
-          console.log(`${envKey}: live list "${selected.list.name}" (${selected.list.id}) -> ${unique.length} monitored employers; bootstrap overlap ${selected.overlap}/${bootstrap.length}.`);
+          const continuity = Number(priorState?.list_id) === Number(selected.list.id) ? 'persisted list identity' : 'safe bootstrap match';
+          console.log(`${envKey}: live list "${selected.list.name}" (${selected.list.id}) -> ${unique.length} monitored employers; bootstrap overlap ${selected.overlap}/${bootstrap.length}; selected by ${continuity}.`);
         } else {
           fallbackWorkspaces++;
           console.warn(`${envKey}: no safe live list match; using ${unique.length} bootstrap assignments.`);
         }
       } catch (error) {
         const message = errorMessage(error);
-        const fallback = bootstrap.map(row => ({ ...row, source: 'config_fallback', listId: null, listName: null }));
         await persistAssignments(client, envKey, fallback, {
           status: 'error_fallback', listId: null, listName: null, overlap: 0, liveCount: 0, error: message,
         });
@@ -148,6 +157,11 @@ async function ensureTables(client) {
   )`);
 }
 
+async function readSyncState(client, envKey) {
+  const rows = await client.query(`SELECT list_id, list_name, status, last_synced_at FROM theirstack_monitor_sync_state WHERE env_key=$1 LIMIT 1`, [envKey]);
+  return rows.rows[0] || null;
+}
+
 async function persistAssignments(client, envKey, assignments, state) {
   await client.query('BEGIN');
   try {
@@ -168,7 +182,9 @@ async function persistAssignments(client, envKey, assignments, state) {
          (env_key,status,list_id,list_name,bootstrap_overlap,live_count,last_error,last_synced_at,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
        ON CONFLICT (env_key) DO UPDATE SET
-         status=EXCLUDED.status,list_id=EXCLUDED.list_id,list_name=EXCLUDED.list_name,
+         status=EXCLUDED.status,
+         list_id=CASE WHEN EXCLUDED.list_id IS NOT NULL THEN EXCLUDED.list_id ELSE theirstack_monitor_sync_state.list_id END,
+         list_name=CASE WHEN EXCLUDED.list_id IS NOT NULL THEN EXCLUDED.list_name ELSE theirstack_monitor_sync_state.list_name END,
          bootstrap_overlap=EXCLUDED.bootstrap_overlap,live_count=EXCLUDED.live_count,
          last_error=EXCLUDED.last_error,last_synced_at=NOW(),updated_at=NOW()`,
       [envKey, state.status, state.listId, state.listName, state.overlap || 0, state.liveCount || 0, state.error ? String(state.error).slice(0, 2000) : null],
@@ -206,10 +222,16 @@ async function ensureEntity(client, monitor, entityIndex) {
   return { inserted: 1, existing: 0, reactivated: 0 };
 }
 
-function selectMonitorList(candidates, envKey, bootstrap) {
+function selectMonitorList(candidates, envKey, bootstrap, priorListId) {
   if (!candidates.length) return null;
   const override = explicitListId(envKey);
   if (override) return candidates.find(row => Number(row.list?.id) === override) || null;
+
+  const prior = Number(priorListId);
+  if (Number.isInteger(prior) && prior > 0) {
+    const persisted = candidates.find(row => Number(row.list?.id) === prior);
+    if (persisted) return persisted;
+  }
 
   const sorted = [...candidates].sort((a, b) => {
     if (b.overlap !== a.overlap) return b.overlap - a.overlap;
