@@ -27,10 +27,11 @@ export async function refreshTheirStackForEntity(entityId: string) {
   let importedJobs = 0;
   let signalJobs = 0;
   let duplicateSkipped = 0;
-  let anySuccess = false;
+  let anyCompletedCheck = false;
 
   for (const monitor of monitors) {
     const apiKey = String(process.env[monitor.envKey] || '').trim();
+    const coverageSource = `${SOURCE}:${monitor.envKey}`;
     if (!apiKey) {
       workspaceResults.push({ env_key: monitor.envKey, status: 'skipped', reason: 'API key missing' });
       continue;
@@ -56,69 +57,90 @@ export async function refreshTheirStackForEntity(entityId: string) {
       const company = findCompany(companies, monitor.name);
       const sample = Array.isArray(company?.jobs_found) ? company.jobs_found : [];
       const volume = Math.max(0, Number(company?.num_jobs_found || 0));
+      const observedJobs = Math.max(volume, sample.length);
+      const coverageStatus = observedJobs > 0 ? 'success' : 'zero';
       signalJobs += volume;
+      anyCompletedCheck = true;
 
       let workspaceImported = 0;
       let workspaceDuplicates = 0;
-      for (const row of sample) {
-        const job = normalizeCompanyJob(row, company, monitor.envKey);
-        if (!job) continue;
-        if (job.raw_data.normalized_apply_url && await hasExistingActiveUrl(entity.id, job.raw_data.normalized_apply_url)) {
-          workspaceDuplicates++;
-          duplicateSkipped++;
-          continue;
+      if (company) {
+        for (const row of sample) {
+          const job = normalizeCompanyJob(row, company, monitor.envKey);
+          if (!job) continue;
+          if (job.raw_data.normalized_apply_url && await hasExistingActiveUrl(entity.id, job.raw_data.normalized_apply_url)) {
+            workspaceDuplicates++;
+            duplicateSkipped++;
+            continue;
+          }
+          if (await upsertIngestedJob(entity, job)) workspaceImported++;
         }
-        if (await upsertIngestedJob(entity, job)) workspaceImported++;
       }
       importedJobs += workspaceImported;
-      anySuccess = true;
 
       await persistSourceCoverage(entity.id, [{
-        source: SOURCE,
+        source: coverageSource,
         source_class: 'supplemental',
-        status: sample.length ? 'success' : 'zero',
-        jobs_found: sample.length,
+        status: coverageStatus,
+        jobs_found: observedJobs,
         authoritative_zero: false,
         details: {
           lineage_root: 'theirstack',
-          source_key: `${SOURCE}:${monitor.envKey}`,
+          source_key: coverageSource,
           key_slot: monitor.envKey,
           monitored_name: monitor.name,
+          matched_company_name: clean(company?.name),
           lookback_days: LOOKBACK_DAYS,
           num_jobs_found: volume,
           sample_jobs_returned: sample.length,
           partial_signal: volume > sample.length,
           refresh_mode: 'entity_profile_company_search',
           company_search_cost_model: '3 API credits per returned company',
+          note: company ? null : 'No matching monitored company with recent jobs was returned by Company Search.',
         },
       }]);
 
       workspaceResults.push({
         env_key: monitor.envKey,
-        status: 'success',
+        status: coverageStatus,
         signal_jobs: volume,
         sample_jobs: sample.length,
         imported_jobs: workspaceImported,
         duplicate_skipped: workspaceDuplicates,
+        matched_company: clean(company?.name),
       });
     } catch (error) {
       const reason = errorMessage(error);
       workspaceResults.push({ env_key: monitor.envKey, status: 'error', reason });
       await persistSourceCoverage(entity.id, [{
-        source: SOURCE,
+        source: coverageSource,
         source_class: 'supplemental',
         status: 'error',
         jobs_found: 0,
         authoritative_zero: false,
-        details: { lineage_root: 'theirstack', key_slot: monitor.envKey, monitored_name: monitor.name, reason, refresh_mode: 'entity_profile_company_search' },
+        details: {
+          lineage_root: 'theirstack',
+          source_key: coverageSource,
+          key_slot: monitor.envKey,
+          monitored_name: monitor.name,
+          reason,
+          refresh_mode: 'entity_profile_company_search',
+        },
       }]).catch(() => {});
     }
   }
 
-  if (anySuccess) {
+  if (anyCompletedCheck) {
     await buildHiringSnapshot(entity.id);
     const algolia = await syncEntityToAlgolia(entity.id);
-    return { status: 'success', imported_jobs: importedJobs, signal_jobs: signalJobs, duplicate_skipped: duplicateSkipped, workspaces: workspaceResults, algolia };
+    return {
+      status: 'success',
+      imported_jobs: importedJobs,
+      signal_jobs: signalJobs,
+      duplicate_skipped: duplicateSkipped,
+      workspaces: workspaceResults,
+      algolia,
+    };
   }
 
   return {
@@ -172,8 +194,9 @@ async function requestJson(url: string, apiKey: string, body: Record<string, unk
 }
 
 function findCompany(companies: any[], name: string) {
-  const target = normalizeName(name);
-  return companies.find(company => normalizeName(company?.name) === target) || companies[0] || null;
+  const target = normalizeCompanyIdentity(name);
+  if (!target) return null;
+  return companies.find(company => normalizeCompanyIdentity(company?.name) === target) || null;
 }
 
 function normalizeCompanyJob(row: any, company: any, envKey: string) {
@@ -260,6 +283,13 @@ function numberOrNull(value: unknown) {
 
 function normalizeName(value: unknown) {
   return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeCompanyIdentity(value: unknown) {
+  return normalizeName(value)
+    .replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function integerEnv(name: string, fallback: number) {
