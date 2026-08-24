@@ -9,9 +9,10 @@ type Integration = {
 
 type IntegrationMap = Record<string, Integration | undefined>;
 
-const ORDER = ['theirstack', 'keenable', 'algolia', 'clarifai', 'groq', 'langsearch', 'nlx', 'careeronestop'];
+const ORDER = ['theirstack', 'theirstack_export', 'keenable', 'algolia', 'clarifai', 'groq', 'langsearch', 'nlx', 'careeronestop'];
 const LABELS: Record<string, string> = {
-  theirstack: 'TheirStack',
+  theirstack: 'TheirStack Company Search',
+  theirstack_export: 'TheirStack Bulk Export',
   keenable: 'Keenable',
   algolia: 'Algolia Search',
   clarifai: 'Clarifai',
@@ -41,7 +42,7 @@ export default function IntegrationStatusPanel({ integrations }: { integrations?
         </span>
       </div>
 
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
+      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
         {rows.map(row => {
           const active = Boolean(row.configured);
           const theirStackTargeted = row.id !== 'theirstack' || Boolean(row.monitored);
@@ -73,7 +74,8 @@ function statusClass(state: string) {
 
 function defaultDetail(id: string) {
   const details: Record<string, string> = {
-    theirstack: 'Credit-aware employer monitoring and company hiring signal.',
+    theirstack: 'Credit-aware employer monitoring using Company Search hiring-volume signals and sample jobs.',
+    theirstack_export: 'Company-credit Job Export receiver for high-volume gap filling; separate from per-job Job Search API polling.',
     keenable: 'Supplemental employer-specific web discovery.',
     algolia: 'Fast global job index with live database safety net.',
     clarifai: 'Primary occupational-health signal enrichment.',
