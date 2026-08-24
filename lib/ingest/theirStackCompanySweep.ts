@@ -3,7 +3,7 @@ import { upsertIngestedJob } from './upsertJob';
 import { persistSourceCoverage } from './sourceCoverage';
 import { buildHiringSnapshot } from './buildSnapshot';
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
-import { uniqueTheirStackMonitors, type TheirStackEnvKey, type TheirStackMonitor } from './theirStackMonitors';
+import { loadTheirStackMonitors, type TheirStackEnvKey, type TheirStackMonitor } from './theirStackMonitors';
 
 const COMPANY_SEARCH_URL = 'https://api.theirstack.com/v1/companies/search';
 const CREDIT_BALANCE_URL = 'https://api.theirstack.com/v0/billing/credit-balance';
@@ -39,7 +39,8 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
   await ensureSweepStateTable();
   const entities = await query(`SELECT id, name, aliases FROM entities WHERE is_active = true`) as EntityRow[];
   const entityIndex = buildEntityIndex(entities);
-  const groups = groupByKey(uniqueTheirStackMonitors());
+  const runtimeMonitors = await loadTheirStackMonitors();
+  const groups = groupByKey(runtimeMonitors);
   const results: WorkspaceResult[] = [];
 
   for (const [envKey, monitors] of groups) {
@@ -88,10 +89,8 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
       for (const company of companies) {
         const companyName = clean(company?.name);
         if (!companyName) continue;
-        const companyIdentity = normalizeCompanyIdentity(companyName);
-        if (!companyIdentity) continue;
-        returnedNames.add(companyIdentity);
-        const entity = entityIndex.get(companyIdentity);
+        returnedNames.add(normalizeName(companyName));
+        const entity = entityIndex.get(normalizeName(companyName));
         if (!entity) {
           unmatchedCompanies++;
           continue;
@@ -99,7 +98,6 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
 
         const jobs = Array.isArray(company?.jobs_found) ? company.jobs_found : [];
         const numJobsFound = Math.max(0, Number(company?.num_jobs_found || 0));
-        const observedJobs = Math.max(numJobsFound, jobs.length);
         signalJobs += numJobsFound;
         if (numJobsFound > jobs.length) {
           highVolumeCompanies.push({ name: companyName, num_jobs_found: numJobsFound, sample_jobs_returned: jobs.length });
@@ -112,23 +110,24 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
             duplicateSkipped++;
             continue;
           }
-          const inserted = await upsertIngestedJob(entity, job);
-          if (inserted) importedJobs++;
+          await upsertIngestedJob(entity, job);
+          importedJobs++;
           affected.set(entity.id, entity);
         }
 
         await persistSourceCoverage(entity.id, [{
           source: coverageSource,
           source_class: 'supplemental',
-          status: observedJobs > 0 ? 'success' : 'zero',
-          jobs_found: observedJobs,
+          status: jobs.length || numJobsFound ? 'success' : 'zero',
+          jobs_found: Math.max(jobs.length, numJobsFound),
           authoritative_zero: false,
           details: {
             lineage_root: 'theirstack',
             source_key: coverageSource,
             key_slot: envKey,
-            monitored_name: entity.name,
-            returned_company_name: companyName,
+            live_monitor_source: monitors.find(m => normalizeName(m.name) === normalizeName(companyName))?.source || 'config_fallback',
+            monitor_list_id: monitors.find(m => normalizeName(m.name) === normalizeName(companyName))?.listId || null,
+            monitor_list_name: monitors.find(m => normalizeName(m.name) === normalizeName(companyName))?.listName || null,
             lookback_days: LOOKBACK_DAYS,
             num_jobs_found: numJobsFound,
             sample_jobs_returned: jobs.length,
@@ -138,14 +137,9 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
         }]);
       }
 
-      // Monitors not returned by a successful min_num_jobs_found=1 search are a
-      // non-authoritative zero signal for this lookback window. Coverage rows are
-      // workspace-specific so employers assigned to two keys (for example Peraton)
-      // retain both independent key checks without one overwriting the other.
       for (const monitor of monitors) {
-        const identity = normalizeCompanyIdentity(monitor.name);
-        if (identity && returnedNames.has(identity)) continue;
-        const entity = identity ? entityIndex.get(identity) : null;
+        if (returnedNames.has(normalizeName(monitor.name))) continue;
+        const entity = entityIndex.get(normalizeName(monitor.name));
         if (!entity) continue;
         await persistSourceCoverage(entity.id, [{
           source: coverageSource,
@@ -157,9 +151,11 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
             lineage_root: 'theirstack',
             source_key: coverageSource,
             key_slot: envKey,
-            monitored_name: monitor.name,
+            live_monitor_source: monitor.source || 'config_fallback',
+            monitor_list_id: monitor.listId || null,
+            monitor_list_name: monitor.listName || null,
             lookback_days: LOOKBACK_DAYS,
-            note: 'No matching monitored company with >=1 recent job was returned by Company Search.',
+            note: 'No exact monitored company with >=1 matching recent job was returned by Company Search.',
           },
         }]);
       }
@@ -194,12 +190,13 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
 
   return {
     strategy: 'company_search_signal',
+    monitor_source: runtimeMonitors.some(row => row.source === 'live_list') ? 'live_saved_lists' : 'config_fallback',
     source: SOURCE,
     lookback_days: LOOKBACK_DAYS,
     interval_days: INTERVAL_DAYS,
     credit_reserve: CREDIT_RESERVE,
     legacy_full_job_search_enabled: LEGACY_JOB_SEARCH_ENABLED,
-    note: 'TheirStack Company Search returns only the last 5 matching jobs per company. num_jobs_found is the source-volume signal; capped company-credit Job Export remains the bulk fallback.',
+    note: 'TheirStack Company Search returns only the last 5 matching jobs per company. num_jobs_found is retained as a volume signal; capped company-credit Job Export remains the bulk fallback.',
     workspaces: results,
     totals: {
       returned_companies: results.reduce((sum, row) => sum + row.returned_companies, 0),
@@ -376,7 +373,7 @@ function buildEntityIndex(entities: EntityRow[]) {
   const map = new Map<string, EntityRow>();
   for (const entity of entities) {
     for (const name of [entity.name, ...(Array.isArray(entity.aliases) ? entity.aliases : [])]) {
-      const normalized = normalizeCompanyIdentity(name);
+      const normalized = normalizeName(name);
       if (normalized && !map.has(normalized)) map.set(normalized, entity);
     }
   }
@@ -386,7 +383,7 @@ function buildEntityIndex(entities: EntityRow[]) {
 function dedupeCompanies(rows: any[]) {
   const seen = new Set<string>();
   return rows.filter(row => {
-    const key = String(row?.id || normalizeCompanyIdentity(row?.name)).trim();
+    const key = String(row?.id || normalizeName(row?.name)).trim();
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -398,7 +395,6 @@ function emptyWorkspace(envKey: TheirStackEnvKey, count: number, status: Workspa
 }
 function isDue(value: unknown) { if (!value) return true; const then = new Date(String(value)).getTime(); return !Number.isFinite(then) || Date.now() - then >= INTERVAL_DAYS * 86400000; }
 function normalizeName(value: unknown) { return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-function normalizeCompanyIdentity(value: unknown) { return normalizeName(value).replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
 function clean(value: unknown) { const text = String(value ?? '').replace(/\s+/g, ' ').trim(); return text || null; }
 function normalizeUrl(value: unknown) { if (!value) return null; try { const url = new URL(String(value).trim()); if (!['http:', 'https:'].includes(url.protocol)) return null; url.hash = ''; return url.toString(); } catch { return null; } }
 function normalizeDate(value: unknown) { if (!value) return null; const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? null : date.toISOString(); }
