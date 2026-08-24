@@ -164,6 +164,7 @@ function SourceTile({ row }: { row: SourceRow }) {
         ? 'border-amber-400/25 bg-amber-500/[0.055] text-amber-200'
         : 'border-white/10 bg-white/[0.03] text-slate-400';
   const jobs = Math.max(0, Number(row.jobs_found || 0));
+  const theirStackSignal = isTheirStackCompanySignal(row.source);
 
   return (
     <div className="rounded-xl border border-white/8 bg-white/[0.025] px-3.5 py-3 min-w-0">
@@ -179,7 +180,7 @@ function SourceTile({ row }: { row: SourceRow }) {
       <div className="mt-2.5 flex items-end justify-between gap-3">
         <div>
           <span className="text-[18px] leading-none font-semibold text-blue-100">{jobs.toLocaleString()}</span>
-          <span className="ml-1.5 text-[9px] uppercase tracking-[0.1em] text-slate-600">jobs</span>
+          <span className="ml-1.5 text-[9px] uppercase tracking-[0.1em] text-slate-600">{theirStackSignal ? 'recent jobs signaled' : 'jobs'}</span>
         </div>
         <span className="text-[9px] text-slate-600">{formatChecked(row.last_checked_at)}</span>
       </div>
@@ -198,12 +199,18 @@ function sourceLabel(source: string) {
     'usajobs': 'USAJOBS',
     'career_page': 'Official Career Page',
     'web:langsearch': 'Verified Web Discovery',
+    'web:keenable': 'Keenable Web Discovery',
     'identity:sam': 'SAM.gov Entity Identity',
     'identity:usaspending': 'USAspending Recipient Identity',
     'adzuna': 'Adzuna',
+    'theirstack_export': 'TheirStack Job Export',
   };
   const normalized = String(source || '').toLowerCase();
   if (labels[normalized]) return labels[normalized];
+  if (isTheirStackCompanySignal(normalized)) {
+    const slot = theirStackSlot(normalized);
+    return `TheirStack Company Search${slot ? ` · Key ${slot}` : ''}`;
+  }
   if (normalized.startsWith('directory:')) return titleCase(normalized.split(':').slice(-1)[0].replace(/[-_]/g,' '));
   if (normalized.startsWith('primary:')) return 'Official Hiring Surface';
   if (normalized.startsWith('sitemap:')) return 'Official Job Sitemap';
@@ -216,16 +223,35 @@ function sourceLabel(source: string) {
 
 function sourceDetail(row: SourceRow) {
   const details = row.details || {};
+  if (isTheirStackCompanySignal(row.source)) {
+    const lookback = Math.max(1, Number(details.lookback_days || 30));
+    const sample = Math.max(0, Number(details.sample_jobs_returned || 0));
+    const volume = Math.max(0, Number(details.num_jobs_found ?? row.jobs_found ?? 0));
+    if (details.reason) return String(details.reason);
+    if (details.note && volume === 0) return String(details.note);
+    return `${lookback}-day hiring signal · ${sample} sample job${sample === 1 ? '' : 's'} returned${volume > sample ? ' · partial sample / gap-fill only' : ''}`;
+  }
+  if (row.source === 'theirstack_export') return 'Company-credit bulk job export · gap-fill only';
   if (row.source === 'registry:census_governments') return [details.government_type, details.government_state, details.government_fips ? `FIPS ${details.government_fips}` : null].filter(Boolean).join(' · ') || 'Authoritative government identity';
   if (details.agency) return `Agency ${details.agency}`;
   if (details.organization_name) return String(details.organization_name);
   if (details.board) return details.board;
   if (details.state) return `State filter: ${details.state}`;
   if (details.ats_provider) return `${titleCase(String(details.ats_provider).replace(/_/g,' '))} · ${details.source_type || 'source'}`;
-  if (details.lineage_root) return `Lineage: ${details.lineage_root}`;
   if (details.reason) return String(details.reason);
   if (details.error) return String(details.error);
+  if (details.lineage_root) return `Lineage: ${details.lineage_root}`;
   return row.source_class === 'authoritative' ? 'Primary source' : row.source_class === 'verified' ? 'Verified source' : 'Corroborating source';
+}
+
+function isTheirStackCompanySignal(source: unknown) {
+  return String(source || '').toLowerCase().startsWith('theirstack_company');
+}
+
+function theirStackSlot(source: unknown) {
+  const value = String(source || '');
+  const match = value.match(/THEIRSTACK_API_KEY(?:_(\d+))?/i);
+  return match ? (match[1] || '1') : '';
 }
 
 function incidentLabel(incident: ReliabilityIncident) {
