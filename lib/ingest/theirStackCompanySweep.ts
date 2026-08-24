@@ -44,6 +44,7 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
 
   for (const [envKey, monitors] of groups) {
     const apiKey = String(process.env[envKey] || '').trim();
+    const coverageSource = `${SOURCE}:${envKey}`;
     if (!apiKey) {
       results.push(emptyWorkspace(envKey, monitors.length, 'skipped', 'API key missing'));
       continue;
@@ -87,8 +88,10 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
       for (const company of companies) {
         const companyName = clean(company?.name);
         if (!companyName) continue;
-        returnedNames.add(normalizeName(companyName));
-        const entity = entityIndex.get(normalizeName(companyName));
+        const companyIdentity = normalizeCompanyIdentity(companyName);
+        if (!companyIdentity) continue;
+        returnedNames.add(companyIdentity);
+        const entity = entityIndex.get(companyIdentity);
         if (!entity) {
           unmatchedCompanies++;
           continue;
@@ -96,6 +99,7 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
 
         const jobs = Array.isArray(company?.jobs_found) ? company.jobs_found : [];
         const numJobsFound = Math.max(0, Number(company?.num_jobs_found || 0));
+        const observedJobs = Math.max(numJobsFound, jobs.length);
         signalJobs += numJobsFound;
         if (numJobsFound > jobs.length) {
           highVolumeCompanies.push({ name: companyName, num_jobs_found: numJobsFound, sample_jobs_returned: jobs.length });
@@ -108,21 +112,23 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
             duplicateSkipped++;
             continue;
           }
-          await upsertIngestedJob(entity, job);
-          importedJobs++;
+          const inserted = await upsertIngestedJob(entity, job);
+          if (inserted) importedJobs++;
           affected.set(entity.id, entity);
         }
 
         await persistSourceCoverage(entity.id, [{
-          source: SOURCE,
+          source: coverageSource,
           source_class: 'supplemental',
-          status: jobs.length ? 'success' : 'zero',
-          jobs_found: jobs.length,
+          status: observedJobs > 0 ? 'success' : 'zero',
+          jobs_found: observedJobs,
           authoritative_zero: false,
           details: {
             lineage_root: 'theirstack',
-            source_key: `${SOURCE}:${envKey}`,
+            source_key: coverageSource,
             key_slot: envKey,
+            monitored_name: entity.name,
+            returned_company_name: companyName,
             lookback_days: LOOKBACK_DAYS,
             num_jobs_found: numJobsFound,
             sample_jobs_returned: jobs.length,
@@ -132,24 +138,28 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
         }]);
       }
 
-      // Exact-name monitors not returned by a successful min_num_jobs_found=1 search
-      // are recorded as a non-authoritative zero signal for the lookback window.
+      // Monitors not returned by a successful min_num_jobs_found=1 search are a
+      // non-authoritative zero signal for this lookback window. Coverage rows are
+      // workspace-specific so employers assigned to two keys (for example Peraton)
+      // retain both independent key checks without one overwriting the other.
       for (const monitor of monitors) {
-        if (returnedNames.has(normalizeName(monitor.name))) continue;
-        const entity = entityIndex.get(normalizeName(monitor.name));
+        const identity = normalizeCompanyIdentity(monitor.name);
+        if (identity && returnedNames.has(identity)) continue;
+        const entity = identity ? entityIndex.get(identity) : null;
         if (!entity) continue;
         await persistSourceCoverage(entity.id, [{
-          source: SOURCE,
+          source: coverageSource,
           source_class: 'supplemental',
           status: 'zero',
           jobs_found: 0,
           authoritative_zero: false,
           details: {
             lineage_root: 'theirstack',
-            source_key: `${SOURCE}:${envKey}`,
+            source_key: coverageSource,
             key_slot: envKey,
+            monitored_name: monitor.name,
             lookback_days: LOOKBACK_DAYS,
-            note: 'No exact monitored company with >=1 matching recent job was returned by Company Search.',
+            note: 'No matching monitored company with >=1 recent job was returned by Company Search.',
           },
         }]);
       }
@@ -189,7 +199,7 @@ export async function runTheirStackCompanySweep(options: { force?: boolean } = {
     interval_days: INTERVAL_DAYS,
     credit_reserve: CREDIT_RESERVE,
     legacy_full_job_search_enabled: LEGACY_JOB_SEARCH_ENABLED,
-    note: 'TheirStack Company Search returns only the last 5 matching jobs per company. num_jobs_found is retained as a volume signal; capped company-credit Job Export remains the bulk fallback.',
+    note: 'TheirStack Company Search returns only the last 5 matching jobs per company. num_jobs_found is the source-volume signal; capped company-credit Job Export remains the bulk fallback.',
     workspaces: results,
     totals: {
       returned_companies: results.reduce((sum, row) => sum + row.returned_companies, 0),
@@ -366,7 +376,7 @@ function buildEntityIndex(entities: EntityRow[]) {
   const map = new Map<string, EntityRow>();
   for (const entity of entities) {
     for (const name of [entity.name, ...(Array.isArray(entity.aliases) ? entity.aliases : [])]) {
-      const normalized = normalizeName(name);
+      const normalized = normalizeCompanyIdentity(name);
       if (normalized && !map.has(normalized)) map.set(normalized, entity);
     }
   }
@@ -376,7 +386,7 @@ function buildEntityIndex(entities: EntityRow[]) {
 function dedupeCompanies(rows: any[]) {
   const seen = new Set<string>();
   return rows.filter(row => {
-    const key = String(row?.id || normalizeName(row?.name)).trim();
+    const key = String(row?.id || normalizeCompanyIdentity(row?.name)).trim();
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -388,6 +398,7 @@ function emptyWorkspace(envKey: TheirStackEnvKey, count: number, status: Workspa
 }
 function isDue(value: unknown) { if (!value) return true; const then = new Date(String(value)).getTime(); return !Number.isFinite(then) || Date.now() - then >= INTERVAL_DAYS * 86400000; }
 function normalizeName(value: unknown) { return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function normalizeCompanyIdentity(value: unknown) { return normalizeName(value).replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc|holdings?|group)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
 function clean(value: unknown) { const text = String(value ?? '').replace(/\s+/g, ' ').trim(); return text || null; }
 function normalizeUrl(value: unknown) { if (!value) return null; try { const url = new URL(String(value).trim()); if (!['http:', 'https:'].includes(url.protocol)) return null; url.hash = ''; return url.toString(); } catch { return null; } }
 function normalizeDate(value: unknown) { if (!value) return null; const date = new Date(String(value)); return Number.isNaN(date.getTime()) ? null : date.toISOString(); }
