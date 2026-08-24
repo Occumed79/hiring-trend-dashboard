@@ -6,7 +6,11 @@ import { readSourceCoverage } from '@/lib/ingest/sourceCoverage';
 import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
 import { readOpenSourceIncidents, refreshStaleSourceReliabilityOnRead } from '@/lib/ingest/sourceReliability';
+import { monitorsForEntity } from '@/lib/ingest/theirStackMonitors';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -15,7 +19,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     await refreshStaleSourceReliabilityOnRead(params.id).catch(() => {});
 
     const [entities, logs, jobs, sourceCoverage, assessment, sourceGraph, sourceIncidents] = await Promise.all([
-      query(`SELECT id, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
+      query(`SELECT id, name, aliases, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
                     government_registry_id, government_type, government_state, government_fips
              FROM entities WHERE id = $1 LIMIT 1`, [params.id]),
       query(`SELECT status, source, jobs_found, jobs_new, jobs_closed, error_message, ran_at
@@ -35,6 +39,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const awaitingInitialIngest = !latest || lastRunAt < createdAt;
     const mapped = jobs.filter(hasRealMappedLocation);
     const geocoded = jobs.filter((job) => String(job.raw_data?.normalized_location_quality || '') === 'geocoded job location');
+    const theirStackMonitors = monitorsForEntity(entity);
+    const configuredTheirStackMonitors = theirStackMonitors.filter(monitor => Boolean(String(process.env[monitor.envKey] || '').trim()));
+    const legacyTheirStack = ['1', 'true', 'yes', 'on'].includes(String(process.env.THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED || '').trim().toLowerCase());
 
     return NextResponse.json({
       status: awaitingInitialIngest ? 'queued' : latest.status,
@@ -57,6 +64,43 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       source_graph: sourceGraph,
       coverage_assessment: assessment,
       source_incidents: sourceIncidents,
+      integrations: {
+        theirstack: {
+          monitored: theirStackMonitors.length > 0,
+          configured: configuredTheirStackMonitors.length > 0,
+          mode: theirStackMonitors.length
+            ? `${legacyTheirStack ? 'Full Job Search' : 'Credit-aware Company Search'} · ${configuredTheirStackMonitors.length}/${theirStackMonitors.length} workspace${theirStackMonitors.length === 1 ? '' : 's'} configured`
+            : 'Not in the TheirStack monitor registry for this entity.',
+        },
+        keenable: {
+          configured: Boolean(String(process.env.KEENABLE_API_KEY || '').trim()),
+          mode: 'Supplemental employer-specific web discovery.',
+        },
+        algolia: {
+          configured: Boolean(String(process.env.ALGOLIA_APP_ID || '').trim() && String(process.env.ALGOLIA_SEARCH_API_KEY || process.env.ALGOLIA_WRITE_API_KEY || '').trim()),
+          mode: 'Global job index · live database fallback enabled.',
+        },
+        clarifai: {
+          configured: Boolean(String(process.env.CLARIFAI_PAT || '').trim()),
+          mode: 'Primary occupational-health enrichment.',
+        },
+        groq: {
+          configured: Boolean(String(process.env.GROQ_API_KEY || '').trim()),
+          mode: 'Occupational-health fallback model.',
+        },
+        langsearch: {
+          configured: Boolean(String(process.env.LANGSEARCH_API_KEY || process.env.LANGSEARCH_API_KEY_2 || '').trim()),
+          mode: 'Verified web discovery and corroboration.',
+        },
+        nlx: {
+          configured: Boolean(String(process.env.NLX_API_KEY || '').trim()),
+          mode: 'National Labor Exchange verification.',
+        },
+        careeronestop: {
+          configured: Boolean(String(process.env.CAREERONESTOP_API_TOKEN || '').trim() && String(process.env.CAREERONESTOP_USER_ID || '').trim()),
+          mode: 'CareerOneStop verification.',
+        },
+      },
       coverage: {
         active_jobs: jobs.length,
         mapped_jobs: mapped.length,
