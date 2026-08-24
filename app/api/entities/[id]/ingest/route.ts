@@ -8,6 +8,7 @@ import { readCoverageAssessment } from '@/lib/ingest/coverageAssessment';
 import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
 import { readOpenSourceIncidents, refreshStaleSourceReliabilityOnRead } from '@/lib/ingest/sourceReliability';
 import { monitorsForEntityLive } from '@/lib/ingest/theirStackMonitors';
+import { getTheirStackExportSecret } from '@/lib/ingest/theirStackExportSecret';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const theirStackMonitors = await monitorsForEntityLive(entity);
     const configuredTheirStackMonitors = theirStackMonitors.filter(monitor => Boolean(String(process.env[monitor.envKey] || '').trim()));
     const liveTheirStackMonitors = theirStackMonitors.filter(monitor => monitor.source === 'live_list');
+    const theirStackExportSecret = await getTheirStackExportSecret().catch(() => null);
     const legacyTheirStack = ['1', 'true', 'yes', 'on'].includes(String(process.env.THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED || '').trim().toLowerCase());
 
     return NextResponse.json({
@@ -73,8 +75,10 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
             : 'Not in the live TheirStack monitor assignments for this entity.',
         },
         theirstack_export: {
-          configured: Boolean(String(process.env.THEIRSTACK_EXPORT_WEBHOOK_SECRET || '').trim()),
-          mode: 'One-click TheirStack Job Search handoff + company-credit Job Export receiver for high-volume gap filling.',
+          configured: Boolean(theirStackExportSecret?.secret),
+          mode: theirStackExportSecret
+            ? `${theirStackExportSecret.source === 'environment' ? 'Configured' : 'Auto-provisioned'} receiver token · one-click TheirStack Job Search handoff + company-credit Job Export receiver.`
+            : 'Export receiver token could not be provisioned.',
         },
         keenable: { configured: Boolean(String(process.env.KEENABLE_API_KEY || '').trim()), mode: 'Supplemental employer-specific web discovery.' },
         algolia: { configured: Boolean(String(process.env.ALGOLIA_APP_ID || '').trim() && String(process.env.ALGOLIA_SEARCH_API_KEY || process.env.ALGOLIA_WRITE_API_KEY || '').trim()), mode: 'Global job index · live database fallback enabled.' },
