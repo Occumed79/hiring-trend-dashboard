@@ -5,7 +5,11 @@ import CompanyLanding from './CompanyLanding';
 import UniversalAddEntityModal from './UniversalAddEntityModal';
 import UniversalCompanyDetail from './UniversalCompanyDetail';
 
-export default function CompanyPortalView({ portal }: { portal: Portal }) {
+export default function CompanyPortalView({ portal, focusEntityId, onFocusHandled }: {
+  portal: Portal;
+  focusEntityId?: string | null;
+  onFocusHandled?: () => void;
+}) {
   const [entities, setEntities] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -16,7 +20,7 @@ export default function CompanyPortalView({ portal }: { portal: Portal }) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/entities?portal=${encodeURIComponent(portal.id)}`, { signal });
+      const res = await fetch(`/api/entities?portal=${encodeURIComponent(portal.id)}`, { signal, cache: 'no-store' });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || `Could not load tracked ${portal.label.toLowerCase()}.`);
       setEntities(Array.isArray(data) ? data : []);
@@ -35,6 +39,14 @@ export default function CompanyPortalView({ portal }: { portal: Portal }) {
     load(controller.signal);
     return () => controller.abort();
   }, [portal.id]);
+
+  useEffect(() => {
+    if (!focusEntityId || !entities.length) return;
+    const match = entities.find(entity => String(entity.id) === String(focusEntityId));
+    if (!match) return;
+    setSelected(match);
+    onFocusHandled?.();
+  }, [focusEntityId, entities, onFocusHandled]);
 
   function added(entity: any) {
     setShowAdd(false);
