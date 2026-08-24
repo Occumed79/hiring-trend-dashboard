@@ -11,6 +11,14 @@ export async function persistSourceCoverage(entityId: string, checks: CoverageCh
     if (!existing || rank(check.status) > rank(existing.status) || check.jobs_found > existing.jobs_found) unique.set(check.source, check);
   }
 
+  // Older builds stored all Company Search workspaces under one generic source,
+  // which hid intentional cross-key assignments such as Peraton. Once a
+  // workspace-specific row is written, retire that legacy latest-state row. The
+  // immutable history is intentionally preserved for auditability.
+  if (Array.from(unique.keys()).some(source => String(source).startsWith('theirstack_company:'))) {
+    await query(`DELETE FROM entity_source_coverage WHERE entity_id = $1 AND source = 'theirstack_company'`, [entityId]).catch(() => {});
+  }
+
   for (const check of Array.from(unique.values())) {
     const success = check.status === 'success' || check.status === 'zero';
     const sourceKey = clean(check.details?.source_key) || clean(check.source);
@@ -58,7 +66,7 @@ export async function persistSourceCoverage(entityId: string, checks: CoverageCh
 
 export async function readSourceCoverage(entityId: string) {
   try {
-    return await query(
+    const rows = await query(
       `SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
               lineage_root, details, last_checked_at, last_success_at
        FROM entity_source_coverage WHERE entity_id = $1
@@ -66,6 +74,10 @@ export async function readSourceCoverage(entityId: string) {
                 jobs_found DESC, source ASC`,
       [entityId],
     );
+    const hasWorkspaceSpecificTheirStack = rows.some((row: any) => String(row.source || '').startsWith('theirstack_company:'));
+    return hasWorkspaceSpecificTheirStack
+      ? rows.filter((row: any) => String(row.source || '') !== 'theirstack_company')
+      : rows;
   } catch {
     return [];
   }
@@ -77,6 +89,8 @@ function lineageForSource(source: unknown) {
   if (normalized === 'nlx') return 'nlx';
   if (normalized === 'usajobs') return 'usajobs';
   if (normalized === 'gov:neogov_rss') return 'neogov';
+  if (normalized.startsWith('theirstack_company')) return 'theirstack';
+  if (normalized === 'theirstack_export') return 'theirstack';
   if (normalized.startsWith('board:')) return normalized;
   if (normalized.startsWith('identity:')) return normalized;
   if (normalized.startsWith('ats:')) return normalized;
