@@ -142,6 +142,7 @@ async function assessEntityCoverage(entityId: string): Promise<CoverageAssessmen
       authoritative_zero_requires_verification: true,
       stale_checks_excluded_from_lineage_score: true,
       identity_and_discovery_sources_excluded_from_lineage_count: true,
+      primary_observed_inventory_fallback: true,
     },
   };
 }
@@ -168,6 +169,20 @@ function findCheckForExpectedSource(source:any, checkByKey:Map<string,any>, chec
     const aliases = [provider, provider ? `ats:${provider}` : '', source.source_type === 'career_page' ? 'career_page' : ''].filter(Boolean);
     const candidates = checks.filter(check => aliases.includes(String(check.source || '').toLowerCase()));
     if (candidates.length) return candidates.sort((a,b)=>checkedAt(b)-checkedAt(a))[0];
+
+    // Primary connector coverage often uses a connector-specific source label
+    // (for example "amentum_careers") rather than the source-graph key. If an
+    // authoritative non-identity inventory check succeeded recently, it is valid
+    // evidence that the primary authoritative surface is healthy even when those
+    // two labels do not happen to match byte-for-byte.
+    const observedAuthoritative = checks
+      .filter(check => check?.source_class === 'authoritative'
+        && isRecent(check)
+        && isHealthyObservedCheck(check)
+        && isHiringInventoryCheck(check)
+        && Number(check?.jobs_found || 0) > 0)
+      .sort((a,b) => Number(b?.jobs_found || 0) - Number(a?.jobs_found || 0) || checkedAt(b) - checkedAt(a));
+    if (observedAuthoritative.length) return observedAuthoritative[0];
   }
   return null;
 }
@@ -175,8 +190,8 @@ function emptyAssessment(): CoverageAssessment {
   return { score:0, grade:'unknown', expected_sources:0, checked_sources:0, authoritative_sources:0, healthy_authoritative_sources:0, independent_lineages:0, gaps:['No hiring sources have been registered yet.'], details:{ algorithm:'source graph not initialized' } };
 }
 function isFirstParty(source:any) { const lineage=String(source?.lineage_root||'').toLowerCase(); return source?.source_class==='authoritative' && (/^ats:/.test(lineage)||/^official-domain:/.test(lineage)||/^state-jobs:/.test(lineage)||/^usps$/.test(lineage)||/^federal-/.test(lineage)); }
-function isHiringInventoryCheck(check:any) { const source=String(check?.source||'').toLowerCase(); return !source.startsWith('identity:') && source!=='registry:census_governments' && !source.startsWith('coverage:') && source!=='web:langsearch' && source!=='adzuna' && !source.startsWith('jobapi:'); }
-function isHiringLineage(lineage:string) { return !lineage.startsWith('identity:') && !lineage.startsWith('registry:') && !lineage.startsWith('coverage:') && lineage!=='web:langsearch' && lineage!=='adzuna' && !lineage.startsWith('jobapi:'); }
+function isHiringInventoryCheck(check:any) { const source=String(check?.source||'').toLowerCase(); return !source.startsWith('identity:') && source!=='registry:census_governments' && !source.startsWith('coverage:') && source!=='web:langsearch' && source!=='adzuna' && !source.startsWith('jobapi:') && !source.startsWith('theirstack_company'); }
+function isHiringLineage(lineage:string) { return !lineage.startsWith('identity:') && !lineage.startsWith('registry:') && !lineage.startsWith('coverage:') && lineage!=='web:langsearch' && lineage!=='adzuna' && !lineage.startsWith('jobapi:') && lineage!=='theirstack'; }
 function normalizeLineage(value:unknown) { const text=String(value||'').trim().toLowerCase(); if(!text)return ''; if(text==='careeronestop'||text.startsWith('nlx-mirror:'))return 'nlx'; return text; }
 function lineageForObservedSource(source:unknown) { const value=String(source||'').toLowerCase(); if(value==='nlx')return 'nlx'; if(value.startsWith('board:'))return value; if(value==='usajobs')return 'usajobs'; if(value==='gov:neogov_rss')return 'neogov'; if(value.startsWith('ats:'))return value; if(['workday','greenhouse','lever','smartrecruiters','bamboohr','ashby','recruitee','workable','personio'].includes(value))return `ats:${value}`; return value; }
 function label(source:any) { return String(source?.metadata?.organization_name||source?.source_key||source?.source_url||'source'); }
