@@ -48,6 +48,15 @@ test('JobSpy does not attempt proxy rotation or access-control bypass', () => {
   assert.match(jobspy, /We do not attempt to bypass board access controls/);
 });
 
+test('JobSpy location parsing treats US state abbreviations as states before country parsing', () => {
+  const stateCheck = jobspy.indexOf("US_STATE_CODES.has(last.toUpperCase())");
+  const countryCheck = jobspy.indexOf('const country = normalizeCountry(last)');
+  assert.ok(stateCheck >= 0 && countryCheck > stateCheck);
+  assert.match(jobspy, /country: 'US'/);
+  assert.match(jobspy, /return map\[text\] \|\| null/);
+  assert.doesNotMatch(jobspy, /return \/\^\[a-z\]\{2\}\$\/i\.test\(text\)/);
+});
+
 test('supplemental ranking migration is applied before app runtime', () => {
   assert.match(migration, /CREATE OR REPLACE FUNCTION source_preference/);
   assert.match(migration, /jobspy:%/);
