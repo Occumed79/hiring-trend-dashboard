@@ -1,5 +1,6 @@
 import { query } from '@/db/client';
 import { evaluateSourceReliability, type ReliabilityIssue } from './sourceReliabilityRules';
+import { assessAndPersistEntityCoverage } from './coverageAssessment';
 
 const STALE_HOURS = positiveInt(process.env.SOURCE_CHECK_STALE_HOURS, 48);
 const HISTORY_RETENTION_DAYS = positiveInt(process.env.SOURCE_HISTORY_RETENTION_DAYS, 180);
@@ -7,48 +8,26 @@ const HISTORY_RETENTION_DAYS = positiveInt(process.env.SOURCE_HISTORY_RETENTION_
 export async function evaluateAndPersistSourceReliability(entityId: string): Promise<ReliabilityIssue[]> {
   if (!entityId) return [];
 
-  // These reads are intentionally fail-closed. A failed diagnostic read is not
-  // evidence of recovery and must never resolve an existing incident.
   const [checks, previousRows, assessments, pairBaselines] = await Promise.all([
-    query(
-      `SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
-              lineage_root, details, last_checked_at, last_success_at
-       FROM entity_source_coverage WHERE entity_id=$1`,
-      [entityId],
-    ),
-    query(
-      `WITH ranked AS (
-         SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
-                lineage_root, details, checked_at,
-                ROW_NUMBER() OVER (PARTITION BY source ORDER BY checked_at DESC, id DESC) AS rn
-         FROM entity_source_coverage_history
-         WHERE entity_id=$1
-       )
-       SELECT * FROM ranked WHERE rn=2`,
-      [entityId],
-    ),
-    query(
-      `SELECT score, grade, expected_sources, checked_sources, authoritative_sources,
-              healthy_authoritative_sources, independent_lineages, gaps, details, assessed_at
-       FROM entity_coverage_assessment WHERE entity_id=$1 LIMIT 1`,
-      [entityId],
-    ),
-    query(
-      `SELECT source_a,source_b,sample_count,median_ratio,p10_ratio,p90_ratio,median_abs_delta,window_days,metadata,updated_at
-       FROM source_pair_baselines
-       WHERE sample_count >= 5 AND updated_at >= NOW() - INTERVAL '3 days'`,
-    ),
+    query(`SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
+                  lineage_root, details, last_checked_at, last_success_at
+           FROM entity_source_coverage WHERE entity_id=$1`, [entityId]),
+    query(`WITH ranked AS (
+             SELECT source, source_key, source_class, status, jobs_found, authoritative_zero,
+                    lineage_root, details, checked_at,
+                    ROW_NUMBER() OVER (PARTITION BY source ORDER BY checked_at DESC, id DESC) AS rn
+             FROM entity_source_coverage_history WHERE entity_id=$1
+           ) SELECT * FROM ranked WHERE rn=2`, [entityId]),
+    query(`SELECT score, grade, expected_sources, checked_sources, authoritative_sources,
+                  healthy_authoritative_sources, independent_lineages, gaps, details, assessed_at
+           FROM entity_coverage_assessment WHERE entity_id=$1 LIMIT 1`, [entityId]),
+    query(`SELECT source_a,source_b,sample_count,median_ratio,p10_ratio,p90_ratio,median_abs_delta,window_days,metadata,updated_at
+           FROM source_pair_baselines WHERE sample_count >= 5 AND updated_at >= NOW() - INTERVAL '3 days'`),
   ]);
 
   const previous: Record<string, any> = {};
   for (const row of previousRows) previous[String(row.source)] = row;
-  const issues = evaluateSourceReliability({
-    checks,
-    previous,
-    assessment: assessments[0] || null,
-    pairBaselines,
-    staleHours: STALE_HOURS,
-  });
+  const issues = evaluateSourceReliability({ checks, previous, assessment: assessments[0] || null, pairBaselines, staleHours: STALE_HOURS });
 
   const openKeys = new Set(issues.map(issue => issue.key));
   for (const issue of issues) {
@@ -65,46 +44,65 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
     );
   }
 
-  const currentOpen = await query(
-    `SELECT incident_key FROM entity_source_incidents WHERE entity_id=$1 AND status='open'`,
-    [entityId],
-  );
+  const currentOpen = await query(`SELECT incident_key FROM entity_source_incidents WHERE entity_id=$1 AND status='open'`, [entityId]);
   const resolvedKeys = currentOpen.map(row => String(row.incident_key)).filter(key => !openKeys.has(key));
   if (resolvedKeys.length) {
-    await query(
-      `UPDATE entity_source_incidents
-       SET status='resolved', resolved_at=NOW(), last_seen_at=NOW()
-       WHERE entity_id=$1 AND status='open' AND incident_key = ANY($2::text[])`,
-      [entityId, resolvedKeys],
-    );
+    await query(`UPDATE entity_source_incidents SET status='resolved', resolved_at=NOW(), last_seen_at=NOW()
+                 WHERE entity_id=$1 AND status='open' AND incident_key = ANY($2::text[])`, [entityId, resolvedKeys]);
   }
 
-  await query(
-    `DELETE FROM entity_source_coverage_history
-     WHERE entity_id=$1 AND checked_at < NOW() - ($2::int * INTERVAL '1 day')`,
-    [entityId, HISTORY_RETENTION_DAYS],
-  ).catch(() => {});
-
+  await query(`DELETE FROM entity_source_coverage_history
+               WHERE entity_id=$1 AND checked_at < NOW() - ($2::int * INTERVAL '1 day')`, [entityId, HISTORY_RETENTION_DAYS]).catch(() => {});
   return issues;
 }
 
 export async function refreshStaleSourceReliabilityOnRead(entityId: string) {
   if (!entityId) return;
-  const rows = await query(
-    `SELECT source, source_class, last_checked_at
-     FROM entity_source_coverage
-     WHERE entity_id=$1 AND source_class='authoritative'
-       AND source NOT LIKE 'identity:%'
-       AND source NOT LIKE 'registry:%'
-       AND source NOT LIKE 'coverage:%'
-       AND source <> 'web:langsearch'
-       AND source <> 'adzuna'
-       AND source NOT LIKE 'jobapi:%'
-       AND last_checked_at < NOW() - ($2::int * INTERVAL '1 hour')
+
+  // Repair the old model where a bounded structured sitemap sample was stored as
+  // an authoritative inventory. This also repairs the latest coverage row so old
+  // "sitemap zero" incidents disappear without requiring the user to re-add the
+  // company or wait for another discovery cycle.
+  const demoted = await query(
+    `WITH changed AS (
+       UPDATE entity_job_sources
+       SET source_class='verified',
+           metadata=COALESCE(metadata,'{}'::jsonb) || '{"enumeration_complete":false,"bounded_sample":true}'::jsonb,
+           updated_at=NOW()
+       WHERE entity_id=$1 AND source_type='sitemap' AND source_class='authoritative'
+       RETURNING source_key
+     ) SELECT source_key FROM changed`,
+    [entityId],
+  ).catch(() => []);
+  if (demoted.length) {
+    const keys = demoted.map((row:any) => String(row.source_key));
+    await query(
+      `UPDATE entity_source_coverage
+       SET source_class='verified', authoritative_zero=false, updated_at=NOW()
+       WHERE entity_id=$1 AND (source = ANY($2::text[]) OR source_key = ANY($2::text[]))`,
+      [entityId, keys],
+    ).catch(() => {});
+  }
+
+  const needsRefresh = await query(
+    `SELECT 1
+     WHERE EXISTS (
+       SELECT 1 FROM entity_source_coverage
+       WHERE entity_id=$1 AND source_class='authoritative'
+         AND source NOT LIKE 'identity:%' AND source NOT LIKE 'registry:%' AND source NOT LIKE 'coverage:%'
+         AND source <> 'web:langsearch' AND source <> 'adzuna' AND source NOT LIKE 'jobapi:%'
+         AND last_checked_at < NOW() - ($2::int * INTERVAL '1 hour')
+     ) OR EXISTS (
+       SELECT 1 FROM entity_source_incidents WHERE entity_id=$1 AND status='open'
+     )
      LIMIT 1`,
     [entityId, STALE_HOURS],
-  );
-  if (rows.length) await evaluateAndPersistSourceReliability(entityId);
+  ).catch(() => []);
+
+  if (demoted.length || needsRefresh.length) {
+    await assessAndPersistEntityCoverage(entityId).catch(() => {});
+    await evaluateAndPersistSourceReliability(entityId);
+  }
 }
 
 export async function readOpenSourceIncidents(entityId: string) {
