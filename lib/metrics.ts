@@ -60,7 +60,7 @@ export async function getEntityRoleBreakdown(entityId: string) {
 
 export async function getEntityOccupationalHealthSignals(entityId: string) {
   const jobs = await getVerifiedActiveJobs(entityId);
-  const enriched = jobs.filter(job => job.raw_data?.clarifai_oh);
+  const enriched = jobs.filter(job => job.raw_data?.occupational_health_ai || job.raw_data?.clarifai_oh);
   const signals: Record<string, number> = {
     preplacement_exam: 0,
     drug_testing: 0,
@@ -78,7 +78,7 @@ export async function getEntityOccupationalHealthSignals(entityId: string) {
 
   let scoreTotal = 0;
   for (const job of enriched) {
-    const oh = job.raw_data.clarifai_oh || {};
+    const oh = job.raw_data.occupational_health_ai || job.raw_data.clarifai_oh || {};
     if (oh.likely_preplacement_exam) signals.preplacement_exam++;
     if (oh.likely_drug_testing) signals.drug_testing++;
     if (oh.likely_hearing_conservation) signals.hearing_conservation++;
