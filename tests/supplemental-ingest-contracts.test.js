@@ -20,8 +20,17 @@ test('supplemental source health does not shadow the main ingest log', () => {
   assert.doesNotMatch(supplemental, /INSERT INTO ingest_log/);
 });
 
-test('supplemental duplicate URLs defer to canonical sources and TheirStack beats Keenable', () => {
+test('JobSpy participates in shared dedupe but failures are isolated from other sources', () => {
+  assert.match(supplemental, /fetchJobSpyJobs/);
+  assert.match(supplemental, /Promise\.all/);
+  assert.match(supplemental, /fetchJobSpyJobs\(entity\)\.catch/);
+  assert.match(supplemental, /\.\.\.jobSpy\.jobs/);
+  assert.match(supplemental, /inventory_complete:\s*false/);
+});
+
+test('supplemental duplicate URLs defer to higher-preference or canonical sources', () => {
   assert.match(supplemental, /retireSupplementalUrlDuplicates/);
-  assert.match(supplemental, /preferred\.source NOT IN \(\$2, \$3\)/);
-  assert.match(supplemental, /supplemental\.source = \$3 AND preferred\.source = \$2/);
+  assert.match(supplemental, /supplemental\.source = ANY\(\$2::text\[\]\)/);
+  assert.match(supplemental, /source_preference\(preferred\.source\) > source_preference\(supplemental\.source\)/);
+  assert.match(supplemental, /NOT \(preferred\.source = ANY\(\$2::text\[\]\)\)/);
 });
