@@ -1,5 +1,5 @@
 import { query } from '@/db/client';
-import { enrichEntityOccupationalHealth } from '@/lib/ai/occupationalHealthAi';
+import { buildDiscoveryAssist, enrichEntityJobTaxonomy } from '@/lib/ai/jobIntelligenceAi';
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
 import { fetchTheirStackJobs } from './theirStack';
 import { fetchKeenableJobs } from './keenable';
@@ -52,19 +52,30 @@ export async function runSupplementalIngest(entityId?: string | null) {
 }
 
 async function ingestSupplementalEntity(entity: any) {
+  // One low-cost AI planning call may generate conservative employer-specific
+  // search phrases. They are query expansion only; all returned jobs still need
+  // the normal canonical employer-evidence checks before they can be stored.
+  const discoveryAssist = await buildDiscoveryAssist(entity).catch(error => ({
+    queries: [],
+    provider: null,
+    status: 'error',
+    reason: errorMessage(error),
+  }));
+  const discoveryEntity = { ...entity, discovery_queries: discoveryAssist.queries };
+
   // These sources are intentionally independent promises. A scraper, search API,
-  // rate-limit, or quota failure must never block the other supplemental sources.
+  // rate-limit, quota failure, or AI-planning failure must never block the others.
   const [theirStack, keenable, jobSpy, tinyFish] = await Promise.all([
     fetchTheirStackJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`theirstack: ${errorMessage(error)}`] })),
-    fetchKeenableJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`keenable: ${errorMessage(error)}`] })),
-    fetchJobSpyJobs(entity).catch(error => ({
+    fetchKeenableJobs(discoveryEntity).catch(error => ({ jobs: [], used: [], skipped: [`keenable: ${errorMessage(error)}`] })),
+    fetchJobSpyJobs(discoveryEntity).catch(error => ({
       jobs: [],
       used: [],
       skipped: [`jobspy: ${errorMessage(error)}`],
       site_results: [],
       trigger: { mode: 'error', run: false, reason: errorMessage(error), active_jobs: 0, theirstack_signal: 0 },
     })),
-    fetchTinyFishJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`tinyfish: ${errorMessage(error)}`] })),
+    fetchTinyFishJobs(discoveryEntity).catch(error => ({ jobs: [], used: [], skipped: [`tinyfish: ${errorMessage(error)}`] })),
   ]);
 
   const discovered = [...theirStack.jobs, ...keenable.jobs, ...jobSpy.jobs, ...tinyFish.jobs];
@@ -89,12 +100,15 @@ async function ingestSupplementalEntity(entity: any) {
   const duplicateClosures = await retireSupplementalUrlDuplicates(entity.id);
   const closedCount = inventoryClosures + duplicateClosures;
 
-  const occupationalHealth = await enrichEntityOccupationalHealth(entity.id, entity.name).catch(error => ({
+  // The AI pool is deliberately limited to the two dashboard needs the user
+  // requested: functional role categories and location categories. It does not
+  // perform occupational-health inference.
+  const jobTaxonomy = await enrichEntityJobTaxonomy(entity.id, entity.name).catch(error => ({
     status: 'error',
-    enriched: 0,
-    cached: 0,
-    failed: 0,
-    reason: error instanceof Error ? error.message : String(error),
+    analyzed: 0,
+    changed_roles: 0,
+    location_categorized: 0,
+    reason: errorMessage(error),
   }));
 
   await buildHiringSnapshot(entity.id);
@@ -125,7 +139,8 @@ async function ingestSupplementalEntity(entity: any) {
       jobs: jobSpy.jobs.length,
     },
     tinyfish: { jobs: tinyFish.jobs.length, used: tinyFish.used, skipped: tinyFish.skipped },
-    occupational_health: occupationalHealth,
+    discovery_assist: discoveryAssist,
+    job_taxonomy_ai: jobTaxonomy,
     algolia,
     sources_used: sourcesUsed,
     sources_skipped: sourcesSkipped,
