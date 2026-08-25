@@ -5,10 +5,11 @@ import CompanyLanding from './CompanyLanding';
 import UniversalAddEntityModal from './UniversalAddEntityModal';
 import UniversalCompanyDetail from './UniversalCompanyDetail';
 
-export default function CompanyPortalView({ portal, focusEntityId, onFocusHandled }: {
+export default function CompanyPortalView({ portal, focusEntityId, onFocusHandled, onEntityChange }: {
   portal: Portal;
   focusEntityId?: string | null;
   onFocusHandled?: () => void;
+  onEntityChange?: (entity: any | null) => void;
 }) {
   const [entities, setEntities] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
@@ -36,6 +37,7 @@ export default function CompanyPortalView({ portal, focusEntityId, onFocusHandle
   useEffect(() => {
     const controller = new AbortController();
     setSelected(null);
+    onEntityChange?.(null);
     load(controller.signal);
     return () => controller.abort();
   }, [portal.id]);
@@ -45,27 +47,39 @@ export default function CompanyPortalView({ portal, focusEntityId, onFocusHandle
     const match = entities.find(entity => String(entity.id) === String(focusEntityId));
     if (!match) return;
     setSelected(match);
+    onEntityChange?.(match);
     onFocusHandled?.();
-  }, [focusEntityId, entities, onFocusHandled]);
+  }, [focusEntityId, entities, onFocusHandled, onEntityChange]);
+
+  function selectEntity(entity: any) {
+    setSelected(entity);
+    onEntityChange?.(entity);
+  }
 
   function added(entity: any) {
     setShowAdd(false);
-    setSelected(entity);
+    selectEntity(entity);
     load().catch(() => {});
   }
 
   function removed(id: string) {
     setEntities(prev => prev.filter(e => e.id !== id));
     setSelected(null);
+    onEntityChange?.(null);
     load().catch(() => {});
+  }
+
+  function back() {
+    setSelected(null);
+    onEntityChange?.(null);
   }
 
   return (
     <>
       {selected ? (
-        <UniversalCompanyDetail entity={selected} portal={portal} onBack={() => setSelected(null)} onRemoved={removed} />
+        <UniversalCompanyDetail entity={selected} portal={portal} onBack={back} onRemoved={removed} />
       ) : (
-        <CompanyLanding portal={portal} entities={entities} loading={loading} error={error} onSelectEntity={setSelected} onAddEntity={() => setShowAdd(true)} />
+        <CompanyLanding portal={portal} entities={entities} loading={loading} error={error} onSelectEntity={selectEntity} onAddEntity={() => setShowAdd(true)} />
       )}
       {showAdd && <UniversalAddEntityModal portal={portal} onClose={() => setShowAdd(false)} onAdded={added} />}
     </>
