@@ -10,7 +10,7 @@ type Integration = {
 
 type IntegrationMap = Record<string, Integration | undefined>;
 
-const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'jobspy', 'adzuna', 'keenable', 'tinyfish', 'geoapify', 'algolia', 'occupational_ai', 'langsearch', 'careeronestop'];
+const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'jobspy', 'adzuna', 'keenable', 'tinyfish', 'geoapify', 'algolia', 'job_intelligence_ai', 'langsearch', 'careeronestop'];
 const LABELS: Record<string, string> = {
   theirstack: 'TheirStack Company Search',
   theirstack_dataset: 'TheirStack Jobs Dataset',
@@ -21,7 +21,7 @@ const LABELS: Record<string, string> = {
   tinyfish: 'TinyFish Search',
   geoapify: 'Geoapify Geocoding',
   algolia: 'Algolia Search',
-  occupational_ai: 'Occupational Health AI',
+  job_intelligence_ai: 'AI Job Intelligence',
   langsearch: 'LangSearch',
   careeronestop: 'CareerOneStop / NLx Mirror',
 };
@@ -81,7 +81,7 @@ function defaultDetail(id: string) {
     tinyfish: 'Free live-web Search API used as supplemental employer-verified job discovery.',
     geoapify: 'Job-location geocoding and coordinate normalization.',
     algolia: 'Fast global job index with live database safety net.',
-    occupational_ai: 'Groq, Cerebras, Fireworks, and OpenRouter provider pool for occupational-health signal enrichment.',
+    job_intelligence_ai: 'Groq, Cerebras, Fireworks, and OpenRouter help expand employer-specific discovery queries and classify only job-role and location categories.',
     langsearch: 'Verified web discovery and source corroboration.',
     careeronestop: 'CareerOneStop jobs feed used as the active NLx-resilience mirror.',
   };
