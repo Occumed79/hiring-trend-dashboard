@@ -2,9 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-function read(path) {
-  return fs.readFileSync(path, 'utf8');
-}
+function read(path) { return fs.readFileSync(path, 'utf8'); }
 
 test('Algolia uses separate search and write credentials without requiring admin credentials', () => {
   const source = read('lib/search/algolia.ts');
@@ -20,21 +18,21 @@ test('Algolia uses separate search and write credentials without requiring admin
   assert.doesNotMatch(render, /key: ALGOLIA_ADMIN_API_KEY/);
 });
 
-test('Algolia indexes active jobs, deletes closed jobs, and carries occupational-health signals', () => {
+test('Algolia indexes active jobs, deletes closed jobs, and carries role and location taxonomy', () => {
   const source = read('lib/search/algolia.ts');
   assert.match(source, /action: 'updateObject'/);
   assert.match(source, /action: 'deleteObject'/);
-  assert.match(source, /occupational_health_score/);
-  assert.match(source, /occupational_health_signals/);
-  assert.match(source, /respirator fit testing pulmonary/);
-  assert.match(source, /hearing conservation audiogram/);
+  assert.match(source, /role_category/);
+  assert.match(source, /location_category/);
+  assert.match(source, /job_location_category/);
+  assert.doesNotMatch(source, /occupational_health_score|occupational_health_signals|respirator fit testing|hearing conservation/);
 });
 
-test('supplemental ingest syncs Algolia after Clarifai enrichment and keeps Algolia out of evidence source coverage', () => {
+test('supplemental ingest syncs Algolia after job taxonomy enrichment and keeps Algolia out of evidence source coverage', () => {
   const source = read('lib/ingest/runSupplementalIngest.ts');
-  const clarifaiIndex = source.indexOf('enrichEntityOccupationalHealth(entity.id');
+  const taxonomyIndex = source.indexOf('enrichEntityJobTaxonomy(entity.id');
   const algoliaIndex = source.indexOf('syncEntityToAlgolia(entity.id)');
-  assert.ok(clarifaiIndex >= 0 && algoliaIndex > clarifaiIndex);
+  assert.ok(taxonomyIndex >= 0 && algoliaIndex > taxonomyIndex);
   assert.match(source, /algolia,/);
   assert.doesNotMatch(source, /source:\s*['"]algolia/);
 });
