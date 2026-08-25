@@ -8,7 +8,10 @@ export const revalidate = 0;
 
 const APP_URL_ENDPOINT = 'https://api.theirstack.com/v0/app-urls';
 const TIMEOUT_MS = clamp(integerEnv('THEIRSTACK_TIMEOUT_MS', 15000), 1000, 60000);
-const LOOKBACK_DAYS = clamp(integerEnv('THEIRSTACK_COMPANY_SWEEP_LOOKBACK_DAYS', 30), 1, 90);
+// Keep the manual company-credit export window independent from the broader
+// Company Search hiring signal. The export handoff defaults to 10 days so the
+// UI export is far more likely to stay under TheirStack's 200-job/company cap.
+const LOOKBACK_DAYS = clamp(integerEnv('THEIRSTACK_EXPORT_LOOKBACK_DAYS', 10), 1, 30);
 
 export async function POST(_: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -59,7 +62,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
       receiver_url: receiver.toString(),
       receiver_secret_source: receiverSecretState.source,
       export_cap_per_company: 200,
-      handoff: 'Open the generated TheirStack Job Search, choose Export → Webhook, and paste the receiver URL that Hiring Insights copied for you.',
+      handoff: `Open the generated ${LOOKBACK_DAYS}-day TheirStack Job Search, choose Export → Webhook, and paste the receiver URL that Hiring Insights copied for you.`,
     }, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
