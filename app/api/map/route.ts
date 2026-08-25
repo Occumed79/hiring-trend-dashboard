@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const VALID_PORTALS = new Set(['current_clients', 'prospects', 'private_companies', 'federal_agencies', 'state_agencies', 'counties_and_cities']);
-const VALID_ROLE_CATEGORIES = new Set(['security', 'logistics', 'medical', 'admin', 'aviation', 'engineering', 'remote', 'overseas', 'other']);
+const VALID_ROLE_CATEGORIES = new Set(['security', 'logistics', 'medical', 'admin', 'aviation', 'engineering', 'other']);
 const US_STATE_CODES = new Set('AL AK AZ AR CA CO CT DC DE FL GA HI IA ID IL IN KS KY LA MA MD ME MI MN MO MS MT NC ND NE NH NJ NM NV NY OH OK OR PA RI SC SD TN TX UT VA VT WA WI WV WY'.split(' '));
 
 export async function GET(req: NextRequest) {
@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
     const roleCategory = searchParams.get('role_category');
     const newOnly = searchParams.get('new_only') === 'true';
     const overseasOnly = searchParams.get('overseas_only') === 'true';
+    const remoteOnly = searchParams.get('remote_only') === 'true';
     const federalOnly = searchParams.get('federal_only') === 'true';
     const includeMeta = searchParams.get('include_meta') === 'true';
     // Fake entity/state fallback pins are intentionally OFF by default. The map
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
     if (roleCategory) { params.push(roleCategory); sql += ` AND j.role_category = $${params.length}`; }
     if (newOnly) { params.push(new Date(Date.now() - 7 * 86400000).toISOString()); sql += ` AND j.posted_at IS NOT NULL AND j.posted_at >= $${params.length}`; }
     if (overseasOnly) sql += ` AND j.is_overseas = true`;
+    if (remoteOnly) sql += ` AND j.is_remote = true`;
     if (federalOnly) { params.push('federal_agencies'); sql += ` AND e.portal = $${params.length}`; }
     sql += ` LIMIT 5000`;
 
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
 
       // City is the minimum precision shown on the production map. State-only,
       // country-only, remote-centroid, or entity-HQ guesses remain in diagnostics
-      // instead of becoming misleading dots.
+      // instead of becoming misleading points.
       if (!city || /^remote$/i.test(city)) {
         if (!isFallback) unmappedJobs += 1;
         continue;
