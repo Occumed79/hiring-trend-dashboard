@@ -1,4 +1,4 @@
--- TheirStack live saved-list assignments and runtime receiver token state.
+-- TheirStack live saved-list assignments, dataset entitlement cache, and runtime receiver token state.
 -- Idempotent so Render cron migrations and runtime safety checks can coexist.
 
 CREATE TABLE IF NOT EXISTS theirstack_monitor_assignments (
@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS theirstack_monitor_sync_state (
   live_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
   last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS theirstack_dataset_access (
+  env_key TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  accessible BOOLEAN NOT NULL DEFAULT false,
+  dataset_name TEXT,
+  options JSONB NOT NULL DEFAULT '[]'::jsonb,
+  last_error TEXT,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
