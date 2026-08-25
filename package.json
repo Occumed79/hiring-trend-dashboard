@@ -54,7 +54,7 @@
     "react-leaflet": "^4.2.1",
     "recharts": "^2.12.4",
     "tailwindcss": "^3.4.1",
-    "ts-jobspy": "^2.0.4",
+    "ts-jobspy": "2.0.3",
     "typescript": "^5"
   },
   "devDependencies": {
