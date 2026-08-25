@@ -43,15 +43,15 @@ export type OccupationalHealthEnrichment = {
 };
 
 export async function enrichEntityOccupationalHealth(entityId: string, entityName: string) {
-  const clarifaiPat = String(process.env.CLARIFAI_PAT || '').trim();
-  const groqApiKey = String(process.env.GROQ_API_KEY || '').trim();
+  const clarifaiPat = String(process.env.CLARIFAI_PAT || process.env.CLARIFAI_API_KEY || '').trim();
+  const groqApiKey = String(process.env.GROQ_API_KEY || process.env.GROQ_API_KEY_2 || '').trim();
   if (!clarifaiPat && !groqApiKey) {
     return {
       status: 'skipped',
       enriched: 0,
       cached: 0,
       failed: 0,
-      reason: 'CLARIFAI_PAT and GROQ_API_KEY missing',
+      reason: 'Clarifai and Groq credentials missing',
       providers: { clarifai: 0, groq: 0 },
     };
   }
@@ -73,7 +73,7 @@ export async function enrichEntityOccupationalHealth(entityId: string, entityNam
   const state: ProviderState = {
     clarifaiCircuitOpen: !clarifaiPat,
     groqAttempts: 0,
-    lastClarifaiError: clarifaiPat ? undefined : 'CLARIFAI_PAT missing',
+    lastClarifaiError: clarifaiPat ? undefined : 'Clarifai credential missing',
   };
   const candidates: Array<{ row: any; hash: string; input: string }> = [];
 
@@ -92,8 +92,6 @@ export async function enrichEntityOccupationalHealth(entityId: string, entityNam
     : MAX_JOBS_PER_RUN;
 
   for (const candidate of candidates.slice(0, runLimit)) {
-    // If Clarifai is known unavailable and the Groq fallback budget is exhausted,
-    // stop cleanly and leave the remaining jobs pending for the next run.
     if (state.clarifaiCircuitOpen && state.groqAttempts >= GROQ_MAX_FALLBACKS_PER_RUN) break;
 
     attempted++;
@@ -104,8 +102,6 @@ export async function enrichEntityOccupationalHealth(entityId: string, entityNam
          SET raw_data = COALESCE(raw_data, '{}'::jsonb) || $2::jsonb
          WHERE id = $1`,
         [candidate.row.id, JSON.stringify({
-          // Keep the existing clarifai_oh field name for backward compatibility
-          // with metrics/Algolia while recording which provider actually produced it.
           clarifai_oh: analysis.result,
           clarifai_oh_hash: candidate.hash,
           clarifai_oh_version: VERSION,
@@ -167,22 +163,14 @@ async function analyzeJobWithFallback(
     state.groqAttempts++;
     try {
       const result = await analyzeJob('groq', groqApiKey, input);
-      return {
-        result,
-        provider: 'groq',
-        model: GROQ_MODEL,
-        fallbackReason: clarifaiError || 'Clarifai unavailable',
-      };
+      return { result, provider: 'groq', model: GROQ_MODEL, fallbackReason: clarifaiError || 'Clarifai unavailable' };
     } catch (error) {
       const groqError = errorMessage(error);
       throw new Error(`Clarifai failed (${clarifaiError || 'unavailable'}); Groq fallback failed (${groqError})`);
     }
   }
 
-  throw new Error(
-    `Clarifai failed (${clarifaiError || 'unavailable'}); ` +
-    (groqApiKey ? 'Groq fallback budget exhausted for this run' : 'GROQ_API_KEY missing'),
-  );
+  throw new Error(`Clarifai failed (${clarifaiError || 'unavailable'}); ` + (groqApiKey ? 'Groq fallback budget exhausted for this run' : 'Groq credential missing'));
 }
 
 async function analyzeJob(provider: ProviderName, apiKey: string, input: string): Promise<OccupationalHealthEnrichment> {
@@ -205,14 +193,8 @@ async function analyzeJob(provider: ProviderName, apiKey: string, input: string)
         temperature: 0,
         max_tokens: 700,
         messages: [
-          {
-            role: 'system',
-            content: 'You are an occupational-health demand analyst. Infer only plausible job-related occupational-health service signals from the supplied posting evidence. Do not diagnose people. Return one JSON object only, with no markdown.',
-          },
-          {
-            role: 'user',
-            content: `${input}\n\nReturn exactly these keys: safety_sensitive (boolean), physical_demand (low|moderate|high|unknown), likely_preplacement_exam (boolean), likely_drug_testing (boolean), likely_hearing_conservation (boolean), likely_respirator_use (boolean), likely_medical_surveillance (boolean), deployment_oconus (boolean), dot_cdl (boolean), hazardous_exposure (boolean), clearance_security (boolean), opportunity_score (integer 0-100), reason (one concise sentence). Base the score on likely demand for occupational-health services, not general hiring importance.`,
-          },
+          { role: 'system', content: 'You are an occupational-health demand analyst. Infer only plausible job-related occupational-health service signals from the supplied posting evidence. Do not diagnose people. Return one JSON object only, with no markdown.' },
+          { role: 'user', content: `${input}\n\nReturn exactly these keys: safety_sensitive (boolean), physical_demand (low|moderate|high|unknown), likely_preplacement_exam (boolean), likely_drug_testing (boolean), likely_hearing_conservation (boolean), likely_respirator_use (boolean), likely_medical_surveillance (boolean), deployment_oconus (boolean), dot_cdl (boolean), hazardous_exposure (boolean), clearance_security (boolean), opportunity_score (integer 0-100), reason (one concise sentence). Base the score on likely demand for occupational-health services, not general hiring importance.` },
         ],
       }),
       signal: controller.signal,
@@ -236,10 +218,7 @@ async function analyzeJob(provider: ProviderName, apiKey: string, input: string)
 
 function buildJobInput(entityName: string, row: any) {
   const raw = row.raw_data || {};
-  const description = firstText(raw, [
-    'description', 'job_description', 'description_text', 'content', 'snippet', 'summary',
-    'qualifications', 'responsibilities', 'job_text', 'body', 'details',
-  ]);
+  const description = firstText(raw, ['description', 'job_description', 'description_text', 'content', 'snippet', 'summary', 'qualifications', 'responsibilities', 'job_text', 'body', 'details']);
   return [
     `Employer: ${entityName}`,
     `Title: ${row.title || ''}`,
@@ -264,8 +243,6 @@ function firstText(raw: any, keys: string[]) {
 }
 
 function hashInput(input: string) {
-  // Keep the existing primary-model hash so already enriched unchanged jobs stay
-  // cached even when Groq produced the fallback result.
   return createHash('sha256').update(`${VERSION}\n${CLARIFAI_MODEL}\n${input}`).digest('hex');
 }
 
@@ -298,19 +275,8 @@ function normalizeResult(value: any): OccupationalHealthEnrichment {
 
 function isProviderAvailabilityError(error: unknown) {
   const message = errorMessage(error).toLowerCase();
-  return /http (401|403|408|429|5\d\d)/.test(message)
-    || /timeout|fetch failed|network|econn|enotfound|socket|temporarily unavailable/.test(message);
+  return /http (401|403|408|429|5\d\d)/.test(message) || /timeout|fetch failed|network|econn|enotfound|socket|temporarily unavailable/.test(message);
 }
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function integerEnv(name: string, fallback: number) {
-  const parsed = Number(process.env[name]);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
+function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
+function integerEnv(name: string, fallback: number) { const parsed = Number(process.env[name]); return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback; }
+function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
