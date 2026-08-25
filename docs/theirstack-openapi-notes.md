@@ -8,7 +8,7 @@ Key integration facts:
 - `POST /v1/companies/search`: response field `jobs_found` is documented as the last 5 jobs relevant to the search for each company.
 - `GET /v1/datasets`: lists bulk datasets available to the authenticated team and exposes `is_accessible`; Jobs dataset access is the preferred bulk route if enabled.
 - `POST /v1/datasets/credentials`: generates temporary read-only S3 credentials for accessible datasets; do not expose or persist those credentials in diagnostics.
-- `GET /v0/company_lists`: returns saved-list metadata for the authenticated team.
+- `GET /v0/company_lists`: returns saved-list metadata for the authenticated team. Some app-created export artifacts appear as `EXPORT_SNAPSHOT` list types; Hiring Insights may observe those for diagnostics but does not treat them as a public bulk-job API.
 - `GET /v0/company_lists/{list_id}/companies`: returns the actual company membership of a saved list with pagination. Hiring Insights now uses this supported endpoint to keep monitored employers synchronized with the live TheirStack workspaces.
 - `GET /v0/company_lists/{list_id}/companies/export`: deprecated; exports company details only, not jobs.
 - `POST /v0/app-urls` with `{ type: "job_search", filters: ... }`: returns a supported deep link that opens the TheirStack app with the supplied Job Search filters applied and runs the search automatically. Hiring Insights uses this for the one-click bulk-export handoff.
