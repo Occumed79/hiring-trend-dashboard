@@ -28,6 +28,7 @@ const GENERIC_TITLE_PATTERNS: RegExp[] = [
   /^\d+\s+.+\s+jobs?\s+(?:hiring|available|openings?)\s+in\b/i,
   /^\$?\d+[^ ]*\s*[-–—]\s*\$?\d+[^ ]*\/hr\s+.+\s+jobs?\b/i,
   /^.+\s+jobs?\s+in\s+[^,]+(?:,\s*[A-Z]{2})?$/i,
+  /\b(?:job vacancies|vacancies|job openings|open positions)\b.*\b(?:updated|202[4-9])\b/i,
 ];
 
 export type JobQualityResult = { ok: boolean; reason: string | null; applyUrl: string | null; strongDetailUrl: boolean };
@@ -43,6 +44,10 @@ export function assessJobQuality(item: any): JobQualityResult {
   if (isGenericNavigationTitle(title)) return reject('generic/navigation title', applyUrl, strongDetailUrl);
 
   const raw = item?.raw_data && typeof item.raw_data === 'object' ? item.raw_data : {};
+  if (source === 'web:tinyfish' && raw.tinyfish_quality_gate !== 'official-or-ats-detail-v2') {
+    return reject('legacy TinyFish row predates strict official/ATS quality gate', applyUrl, strongDetailUrl);
+  }
+
   const parser = String(raw.parser || '').toLowerCase();
   const hasStructuredEvidence = parser.includes('json_ld') || parser.includes('jsonld') || parser.includes('structured') || raw.normalized_employer_source
     || STRUCTURED_SOURCES.has(source) || source.startsWith('portal:') || source.startsWith('gov:');
