@@ -65,7 +65,7 @@ export async function importTheirStackJobExport(payload: any): Promise<TheirStac
     affected.set(entity.id, entity);
   }
 
-  for (const entry of observed.values()) {
+  for (const entry of Array.from(observed.values())) {
     await persistSourceCoverage(entry.entity.id, [{
       source: SOURCE,
       source_class: 'supplemental',
