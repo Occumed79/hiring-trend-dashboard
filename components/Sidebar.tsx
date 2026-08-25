@@ -1,28 +1,38 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Activity, ChevronDown, Map, Search } from 'lucide-react';
+import { Activity, ChevronDown, Map, Search, SlidersHorizontal } from 'lucide-react';
 import type { Portal } from '@/lib/portals';
 import {
   HIRING_MAP_STYLES,
   readHiringMapStyle,
   writeHiringMapStyle,
   type HiringMapStyleId,
-} from '@/components/map/arcgisBasemap';
+} from '@/components/map/maptilerBasemap';
 
 export default function Sidebar({
-  portals, activePortal, onSelect, searchActive = false, onOpenSearch, sourceHealthActive = false, onOpenSourceHealth,
+  portals,
+  activePortal,
+  onSelect,
+  searchActive = false,
+  onOpenSearch,
+  sourcesActive = false,
+  onOpenSources,
+  sourceHealthActive = false,
+  onOpenSourceHealth,
 }: {
   portals: Portal[];
   activePortal: Portal;
   onSelect: (p: Portal) => void;
   searchActive?: boolean;
   onOpenSearch?: () => void;
+  sourcesActive?: boolean;
+  onOpenSources?: () => void;
   sourceHealthActive?: boolean;
   onOpenSourceHealth?: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mapStyleOpen, setMapStyleOpen] = useState(false);
-  const [mapStyle, setMapStyle] = useState<HiringMapStyleId>('navigation-night');
+  const [mapStyle, setMapStyle] = useState<HiringMapStyleId>('dataviz-dark');
 
   useEffect(() => {
     setMapStyle(readHiringMapStyle());
@@ -35,6 +45,7 @@ export default function Sidebar({
   };
 
   const selectedStyle = HIRING_MAP_STYLES.find(style => style.id === mapStyle) || HIRING_MAP_STYLES[0];
+  const profileWorkspaceInactive = !searchActive && !sourcesActive && !sourceHealthActive;
 
   return (
     <aside className={`relative z-[3000] overflow-visible h-screen flex flex-col glass border-r border-white/10 transition-all duration-300 shrink-0 ${collapsed ? 'w-[68px]' : 'w-[220px]'}`}>
@@ -70,7 +81,7 @@ export default function Sidebar({
                 <>
                   <Search size={14} strokeWidth={1.8} className="shrink-0" />
                   <span className="text-[13px] font-medium text-inherit truncate leading-none">Global Search</span>
-                  <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded-full border border-blue-400/20 bg-blue-500/10 text-blue-300">Algolia</span>
+                  <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded-full border border-blue-400/20 bg-blue-500/10 text-blue-300">Search</span>
                 </>
               )}
             </button>
@@ -82,7 +93,7 @@ export default function Sidebar({
             key={portal.id}
             onClick={() => onSelect(portal)}
             title={collapsed ? portal.label : undefined}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${!searchActive && !sourceHealthActive && activePortal.id === portal.id ? 'active' : ''}`}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${profileWorkspaceInactive && activePortal.id === portal.id ? 'active' : ''}`}
           >
             {!collapsed ? (
               <span className="text-[13px] font-medium text-inherit truncate leading-none">{portal.label}</span>
@@ -94,23 +105,40 @@ export default function Sidebar({
           </button>
         ))}
 
+        {(onOpenSources || onOpenSourceHealth) && <div className="pt-2 mt-2 border-t border-white/[0.08]" />}
+
+        {onOpenSources && (
+          <button
+            onClick={onOpenSources}
+            title={collapsed ? 'Sources & Integrations' : undefined}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${sourcesActive ? 'active' : ''}`}
+          >
+            {collapsed ? (
+              <SlidersHorizontal size={16} className="mx-auto" strokeWidth={1.8} />
+            ) : (
+              <>
+                <SlidersHorizontal size={14} strokeWidth={1.8} className="shrink-0" />
+                <span className="text-[13px] font-medium text-inherit truncate leading-none">Sources & Integrations</span>
+              </>
+            )}
+          </button>
+        )}
+
         {onOpenSourceHealth && (
-          <div className="pt-2 mt-2 border-t border-white/[0.08]">
-            <button
-              onClick={onOpenSourceHealth}
-              title={collapsed ? 'Source Health' : undefined}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${sourceHealthActive ? 'active' : ''}`}
-            >
-              {collapsed ? (
-                <Activity size={16} className="mx-auto" strokeWidth={1.8} />
-              ) : (
-                <>
-                  <Activity size={14} strokeWidth={1.8} className="shrink-0" />
-                  <span className="text-[13px] font-medium text-inherit truncate leading-none">Source Health</span>
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={onOpenSourceHealth}
+            title={collapsed ? 'Source Health' : undefined}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left nav-pill ${sourceHealthActive ? 'active' : ''}`}
+          >
+            {collapsed ? (
+              <Activity size={16} className="mx-auto" strokeWidth={1.8} />
+            ) : (
+              <>
+                <Activity size={14} strokeWidth={1.8} className="shrink-0" />
+                <span className="text-[13px] font-medium text-inherit truncate leading-none">Source Health</span>
+              </>
+            )}
+          </button>
         )}
       </nav>
 
@@ -118,12 +146,10 @@ export default function Sidebar({
         <button
           onClick={() => setMapStyleOpen(open => !open)}
           className={`mx-auto border transition-all rounded-full flex items-center justify-center ${
-            collapsed
-              ? 'w-10 h-10 px-0'
-              : 'w-full min-h-[34px] px-3 gap-2 text-[10px]'
+            collapsed ? 'w-10 h-10 px-0' : 'w-full min-h-[34px] px-3 gap-2 text-[10px]'
           } ${
             mapStyleOpen
-              ? 'bg-blue-500/20 border-blue-400/45 text-blue-200 shadow-[0_0_18px_rgba(59,130,246,0.12)]'
+              ? 'bg-violet-500/20 border-violet-400/45 text-violet-100 shadow-[0_0_18px_rgba(168,85,247,0.12)]'
               : 'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/20 hover:bg-white/[0.075]'
           }`}
           title={collapsed ? `Map View: ${selectedStyle.label}` : undefined}
@@ -143,17 +169,15 @@ export default function Sidebar({
 
         {mapStyleOpen && (
           <div
-            className={`absolute z-[3200] bottom-[48px] rounded-2xl border border-white/15 bg-[#07101f]/96 backdrop-blur-2xl shadow-[0_22px_70px_rgba(0,0,0,0.55)] p-2 ${
-              collapsed ? 'left-[58px] w-[270px]' : 'left-2.5 w-[270px]'
-            }`}
+            className={`absolute z-[3200] bottom-[48px] rounded-2xl border border-white/15 bg-[#07101f]/96 backdrop-blur-2xl shadow-[0_22px_70px_rgba(0,0,0,0.55)] p-2 ${collapsed ? 'left-[58px] w-[270px]' : 'left-2.5 w-[270px]'}`}
             role="menu"
           >
             <div className="flex items-center justify-between px-2 pt-1 pb-2">
               <div>
                 <p className="text-[10px] font-medium text-slate-200">Map View</p>
-                <p className="text-[9px] text-slate-600 mt-0.5">ArcGIS basemap palette</p>
+                <p className="text-[9px] text-slate-600 mt-0.5">MapTiler basemap palette</p>
               </div>
-              <span className="map-provider-badge">ArcGIS</span>
+              <span className="map-provider-badge">MapTiler</span>
             </div>
 
             <div className="grid grid-cols-2 gap-1.5">
@@ -163,23 +187,12 @@ export default function Sidebar({
                   <button
                     key={style.id}
                     onClick={() => chooseMapStyle(style.id)}
-                    className={`group rounded-xl border p-2 text-left transition-all ${style.id === 'imagery' ? 'col-span-2' : ''} ${
-                      active
-                        ? 'bg-blue-500/15 border-blue-400/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
-                        : 'bg-white/[0.025] border-white/[0.07] hover:bg-white/[0.06] hover:border-white/15'
-                    }`}
+                    className={`group rounded-xl border p-2 text-left transition-all ${style.id === 'satellite-v4' ? 'col-span-2' : ''} ${active ? 'bg-violet-500/15 border-violet-400/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]' : 'bg-white/[0.025] border-white/[0.07] hover:bg-white/[0.06] hover:border-white/15'}`}
                     role="menuitem"
                   >
-                    <span
-                      className="block h-8 rounded-lg border border-white/10 shadow-inner mb-1.5"
-                      style={{ background: `linear-gradient(135deg, ${style.swatch[0]}, ${style.swatch[1]})` }}
-                    />
-                    <span className={`block text-[10px] leading-tight ${active ? 'text-blue-200' : 'text-slate-300'}`}>
-                      {style.label}
-                    </span>
-                    <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-600 mt-1">
-                      {style.tone === 'dark' ? 'Dark' : style.tone === 'light' ? 'Light' : 'Photo'}
-                    </span>
+                    <span className="block h-8 rounded-lg border border-white/10 shadow-inner mb-1.5" style={{ background: `linear-gradient(135deg, ${style.swatch[0]}, ${style.swatch[1]})` }} />
+                    <span className={`block text-[10px] leading-tight ${active ? 'text-violet-200' : 'text-slate-300'}`}>{style.label}</span>
+                    <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-600 mt-1">{style.tone === 'dark' ? 'Dark' : style.tone === 'light' ? 'Light' : 'Photo'}</span>
                   </button>
                 );
               })}
@@ -189,10 +202,7 @@ export default function Sidebar({
       </div>
 
       <button
-        onClick={() => {
-          setMapStyleOpen(false);
-          setCollapsed(!collapsed);
-        }}
+        onClick={() => { setMapStyleOpen(false); setCollapsed(!collapsed); }}
         className="px-4 py-4 border-t border-white/10 text-slate-500 hover:text-slate-200 text-[11px] flex items-center gap-2 transition-colors min-h-[48px]"
       >
         <span className="text-slate-400 text-sm leading-none">{collapsed ? '›' : '‹'}</span>
