@@ -11,7 +11,7 @@ import { monitorsForEntityLive } from '@/lib/ingest/theirStackMonitors';
 import { getTheirStackExportSecret } from '@/lib/ingest/theirStackExportSecret';
 import { probeTheirStackJobDatasets } from '@/lib/ingest/theirStackDatasets';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
-import { detectedRuntimeEnvName, firstRuntimeEnv, hasRuntimeEnv, RUNTIME_ENV } from '@/lib/runtimeEnv';
+import { detectedRuntimeEnvName, firstRuntimeEnv, RUNTIME_ENV } from '@/lib/runtimeEnv';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -21,7 +21,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     await refreshStaleSourceReliabilityOnRead(params.id).catch(() => {});
 
     const [entities, logs, jobs, sourceCoverage, assessment, sourceGraph, sourceIncidents] = await Promise.all([
-      query(`SELECT id, name, aliases, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
+      query(`SELECT id, name, aliases, portal, created_at, updated_at, ats_provider, ats_board_id, career_page_url,
                     government_registry_id, government_type, government_state, government_fips
              FROM entities WHERE id = $1 LIMIT 1`, [params.id]),
       query(`SELECT status, source, jobs_found, jobs_new, jobs_closed, error_message, ran_at
@@ -75,6 +75,12 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         : datasetErrors > 0
           ? 'check error'
           : 'not configured';
+    const jobSpyDisabled = ['0', 'false', 'no', 'off'].includes(String(process.env.JOBSPY_ENABLED || 'true').trim().toLowerCase())
+      || String(process.env.JOBSPY_MODE || 'gap').trim().toLowerCase() === 'off';
+    const jobSpyTargeted = ['current_clients', 'prospects', 'private_companies'].includes(String(entity.portal || ''));
+    const jobSpyAvailable = !jobSpyDisabled && jobSpyTargeted;
+    const jobSpyMode = String(process.env.JOBSPY_MODE || 'gap').trim().toLowerCase() || 'gap';
+    const jobSpyHours = Math.max(1, Number(process.env.JOBSPY_HOURS_OLD || 240));
 
     return NextResponse.json({
       status: awaitingInitialIngest ? 'queued' : latest.status,
@@ -118,6 +124,15 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
           mode: theirStackExportSecret
             ? `${theirStackExportSecret.source === 'environment' ? 'Configured' : 'Auto-provisioned'} receiver token · one-click TheirStack Job Search handoff + company-credit Job Export receiver.`
             : 'Export receiver token could not be provisioned.',
+        },
+        jobspy: {
+          configured: jobSpyAvailable,
+          status: jobSpyAvailable ? 'available' : jobSpyTargeted ? 'not configured' : 'not targeted',
+          mode: jobSpyAvailable
+            ? `Native Node JobSpy · Indeed + LinkedIn · ${jobSpyMode === 'gap' ? 'runs only when stored inventory is materially below the TheirStack signal' : `${jobSpyMode} mode`} · ${Math.round(jobSpyHours / 24)}-day recency window · no per-job API key.`
+            : jobSpyTargeted
+              ? 'JobSpy is disabled by runtime configuration.'
+              : 'JobSpy is intentionally limited to clients, prospects, and private companies.',
         },
         keenable: { configured: Boolean(keenableEnv), mode: keenableEnv ? `${keenableEnv} visible to web runtime.` : 'No supported Keenable key name is visible to the web runtime.' },
         algolia: {
