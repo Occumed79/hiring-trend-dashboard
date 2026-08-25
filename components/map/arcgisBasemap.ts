@@ -30,15 +30,15 @@ export type HiringBasemapConfig = {
 
 export const HIRING_MAP_STYLE_STORAGE_KEY = 'hiring-trend-map-style';
 export const HIRING_MAP_STYLE_EVENT = 'hiring-trend-map-style-change';
-export const DEFAULT_HIRING_MAP_STYLE: HiringMapStyleId = 'navigation-night';
+export const DEFAULT_HIRING_MAP_STYLE: HiringMapStyleId = 'streets';
 
 export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
+  { id: 'streets', label: 'Streets', shortLabel: 'Streets', description: 'Clean daytime street map', arcgisStyle: 'arcgis/streets', tone: 'light', swatch: ['#e5edf4', '#f8fafc'] },
+  { id: 'navigation', label: 'Navigation', shortLabel: 'Navigation', description: 'Bright blue-gray navigation map', arcgisStyle: 'arcgis/navigation', tone: 'light', swatch: ['#d9e8f4', '#ffffff'] },
+  { id: 'topographic', label: 'Topographic', shortLabel: 'Topo', description: 'Terrain and physical geography', arcgisStyle: 'arcgis/outdoor', tone: 'light', swatch: ['#d7ddbc', '#f0ead9'] },
   { id: 'navigation-night', label: 'Navigation Night', shortLabel: 'Night', description: 'Blue-black navigation map', arcgisStyle: 'arcgis/navigation-night', tone: 'dark', swatch: ['#07111f', '#173a68'] },
   { id: 'streets-night', label: 'Streets Night', shortLabel: 'Streets Night', description: 'Dark street-focused map', arcgisStyle: 'arcgis/streets-night', tone: 'dark', swatch: ['#101827', '#334766'] },
   { id: 'dark-gray', label: 'Dark Gray', shortLabel: 'Dark Gray', description: 'Neutral charcoal reference map', arcgisStyle: 'arcgis/dark-gray', tone: 'dark', swatch: ['#25282b', '#555b60'] },
-  { id: 'navigation', label: 'Navigation', shortLabel: 'Navigation', description: 'Bright blue-gray navigation map', arcgisStyle: 'arcgis/navigation', tone: 'light', swatch: ['#d9e8f4', '#ffffff'] },
-  { id: 'streets', label: 'Streets', shortLabel: 'Streets', description: 'Clean daytime street map', arcgisStyle: 'arcgis/streets', tone: 'light', swatch: ['#e5edf4', '#f8fafc'] },
-  { id: 'topographic', label: 'Topographic', shortLabel: 'Topo', description: 'Terrain and physical geography', arcgisStyle: 'arcgis/outdoor', tone: 'light', swatch: ['#d7ddbc', '#f0ead9'] },
   { id: 'imagery', label: 'Satellite', shortLabel: 'Satellite', description: 'Esri World Imagery satellite view', arcgisStyle: 'arcgis/imagery/labels', tone: 'photo', swatch: ['#11271f', '#62785f'] },
 ];
 
@@ -72,8 +72,8 @@ export function getFallbackHiringBasemap(styleId: HiringMapStyleId = DEFAULT_HIR
   return {
     provider: 'carto',
     styleId,
-    styleLabel: 'Fallback Dark',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    styleLabel: 'Streets fallback',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     attribution: '© OpenStreetMap contributors · © CARTO',
     maxZoom: 19,
   };
