@@ -4,15 +4,8 @@ import { getVerifiedActiveJobs, hasRealMappedLocation, isNewThisWeek } from '@/l
 const QUALITY_BASELINE_DATE = '2026-08-07';
 
 export async function getEntityMetrics(entityId: string) {
-  const d30 = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-  const d60 = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
-  const d90 = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
-
-  const [jobs, snap30, snap60, snap90, history] = await Promise.all([
+  const [jobs, history] = await Promise.all([
     getVerifiedActiveJobs(entityId),
-    getSnapshotAtOrBefore(entityId, d30),
-    getSnapshotAtOrBefore(entityId, d60),
-    getSnapshotAtOrBefore(entityId, d90),
     query(`SELECT snapshot_date, total_active, new_this_week, closed_count
            FROM hiring_snapshots
            WHERE entity_id = $1
@@ -23,9 +16,6 @@ export async function getEntityMetrics(entityId: string) {
 
   const totalNow = jobs.length;
   const newThisWeek = jobs.filter((job) => isNewThisWeek(job)).length;
-  const total30 = Number(snap30[0]?.total_active || 0);
-  const total60 = Number(snap60[0]?.total_active || 0);
-  const total90 = Number(snap90[0]?.total_active || 0);
   const historyRows = history.map((row: any) => ({
     date: row.snapshot_date,
     totalActive: Number(row.total_active || 0),
@@ -37,13 +27,23 @@ export async function getEntityMetrics(entityId: string) {
     historyRows.push({ date: new Date().toISOString().slice(0, 10), totalActive: totalNow, newThisWeek, closedCount: 0 });
   }
 
+  const trend30 = computeTrend(historyRows, totalNow, 30, true);
+  const trend60 = computeTrend(historyRows, totalNow, 60, false);
+  const trend90 = computeTrend(historyRows, totalNow, 90, false);
+
   return {
     totalActive: totalNow,
     newThisWeek,
     mappedJobs: jobs.filter(hasRealMappedLocation).length,
-    trend30: total30 ? Math.round(((totalNow - total30) / total30) * 100) : 0,
-    trend60: total60 ? Math.round(((totalNow - total60) / total60) * 100) : 0,
-    trend90: total90 ? Math.round(((totalNow - total90) / total90) * 100) : 0,
+    trend30: trend30.value,
+    trend30Label: trend30.label,
+    trend30HistoryDays: trend30.historyDays,
+    trend60: trend60.value,
+    trend60Label: trend60.label,
+    trend60HistoryDays: trend60.historyDays,
+    trend90: trend90.value,
+    trend90Label: trend90.label,
+    trend90HistoryDays: trend90.historyDays,
     history: historyRows,
   };
 }
@@ -116,15 +116,35 @@ export async function getEntityMapData(entityId: string) {
   return Array.from(grouped.values());
 }
 
-async function getSnapshotAtOrBefore(entityId: string, targetDate: string) {
-  return query(
-    `SELECT total_active
-     FROM hiring_snapshots
-     WHERE entity_id = $1
-       AND snapshot_date <= $2
-       AND snapshot_date >= $3::date
-     ORDER BY snapshot_date DESC
-     LIMIT 1`,
-    [entityId, targetDate, QUALITY_BASELINE_DATE]
-  );
+function computeTrend(historyRows: Array<{ date: any; totalActive: number }>, totalNow: number, requestedDays: number, allowPartial: boolean) {
+  const now = startOfDay(Date.now());
+  const target = now - requestedDays * 86400000;
+  const usable = historyRows
+    .map(row => ({ ...row, time: startOfDay(new Date(row.date).getTime()) }))
+    .filter(row => Number.isFinite(row.time) && row.time < now && row.totalActive > 0)
+    .sort((a,b) => a.time - b.time);
+  if (!usable.length) return { value: null as number | null, label: `${requestedDays}-Day`, historyDays: 0 };
+
+  const targetBaseline = [...usable].reverse().find(row => row.time <= target);
+  if (targetBaseline) {
+    return {
+      value: Math.round(((totalNow - targetBaseline.totalActive) / targetBaseline.totalActive) * 100),
+      label: `${requestedDays}-Day`,
+      historyDays: requestedDays,
+    };
+  }
+
+  const oldest = usable[0];
+  const availableDays = Math.max(1, Math.floor((now - oldest.time) / 86400000));
+  if (!allowPartial) return { value: null as number | null, label: `${requestedDays}-Day`, historyDays: availableDays };
+  return {
+    value: Math.round(((totalNow - oldest.totalActive) / oldest.totalActive) * 100),
+    label: `${availableDays}-Day`,
+    historyDays: availableDays,
+  };
+}
+
+function startOfDay(value: number) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
