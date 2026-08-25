@@ -18,8 +18,28 @@ export function extractLocationCandidates(row: any): string[] {
 
   return dedupe(candidates)
     .map(cleanCandidate)
-    .filter((value) => value.length >= 2)
+    .filter((value) => value.length >= 2 && !isLocationBlob(value))
     .slice(0, 40);
+}
+
+export function sanitizeDisplayLocation(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const cleaned = cleanCandidate(value);
+  if (!cleaned || isLocationBlob(cleaned)) return null;
+  return cleaned.slice(0, 180);
+}
+
+export function isLocationBlob(value: unknown): boolean {
+  const text = typeof value === 'string' ? cleanCandidate(value) : '';
+  if (!text) return false;
+  if (text.length > 180) return true;
+  const commas = (text.match(/,/g) || []).length;
+  const separators = (text.match(/[|;•]/g) || []).length;
+  const countryMentions = (text.match(/\b(?:united states|british indian ocean territory|kenya|mauritius|seychelles|uganda|kuwait|qatar|bahrain|iraq|germany|poland|australia|japan|canada|united kingdom)\b/gi) || []).length;
+  // A real city/state/country string normally has at most two commas. More than
+  // a few geographic segments is almost always an ATS location-filter payload.
+  if (commas >= 5 || separators >= 3 || countryMentions >= 3) return true;
+  return false;
 }
 
 function scanObjectForLocations(value: unknown, candidates: string[], depth: number) {
@@ -83,7 +103,7 @@ function pickString(obj: Record<string, unknown>, keys: string[]) {
 
 function looksLikeLocation(value: string) {
   const text = value.trim();
-  if (!text || text.length > 140) return false;
+  if (!text || text.length > 180 || isLocationBlob(text)) return false;
   if (/^https?:\/\//i.test(text)) return false;
   if (/\b(remote|hybrid|onsite|united states|usa|kuwait|qatar|bahrain|iraq|germany)\b/i.test(text)) return true;
   if (/\b[A-Z][a-zA-Z .'-]+,\s*[A-Z]{2}\b/.test(text)) return true;
@@ -101,7 +121,7 @@ function joinParts(...parts: unknown[]) {
 function add(candidates: string[], value: unknown) {
   if (typeof value !== 'string') return;
   const cleaned = cleanCandidate(value);
-  if (cleaned) candidates.push(cleaned);
+  if (cleaned && !isLocationBlob(cleaned)) candidates.push(cleaned);
 }
 
 function cleanCandidate(value: string) {
