@@ -8,9 +8,11 @@ function read(path) {
 
 test('Algolia uses separate search and write credentials without requiring admin credentials', () => {
   const source = read('lib/search/algolia.ts');
+  const runtimeEnv = read('lib/runtimeEnv.ts');
   const env = read('.env.example');
   const render = read('render.yaml');
-  assert.match(source, /ALGOLIA_APP_ID/);
+  assert.match(source, /RUNTIME_ENV\.algoliaAppId/);
+  assert.match(runtimeEnv, /ALGOLIA_APP_ID/);
   assert.match(source, /ALGOLIA_SEARCH_API_KEY/);
   assert.match(source, /ALGOLIA_WRITE_API_KEY/);
   assert.doesNotMatch(source, /ALGOLIA_ADMIN_API_KEY/);
