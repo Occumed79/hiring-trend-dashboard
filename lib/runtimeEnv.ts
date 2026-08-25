@@ -1,4 +1,4 @@
-export function firstRuntimeEnv(names: string[]): string {
+export function firstRuntimeEnv(names: readonly string[]): string {
   for (const name of names) {
     const value = String(process.env[name] || '').trim();
     if (value) return value;
@@ -6,7 +6,14 @@ export function firstRuntimeEnv(names: string[]): string {
   return '';
 }
 
-export function hasRuntimeEnv(names: string[]): boolean {
+export function detectedRuntimeEnvName(names: readonly string[]): string | null {
+  for (const name of names) {
+    if (String(process.env[name] || '').trim()) return name;
+  }
+  return null;
+}
+
+export function hasRuntimeEnv(names: readonly string[]): boolean {
   return Boolean(firstRuntimeEnv(names));
 }
 
