@@ -12,15 +12,16 @@
   text-transform: uppercase;
 }
 
+/* Hiring maps use tiny, flat point marks. Do not add glow rings, drop-shadows,
+   volume scaling, or pulsing effects: those turn city points into visual blobs. */
 .hiring-map-dot {
-  filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.38));
-  transition: fill-opacity 140ms ease, stroke-width 140ms ease, filter 140ms ease;
+  filter: none;
+  transition: fill-opacity 120ms ease;
 }
 
 .hiring-map-dot:hover {
-  filter: drop-shadow(0 0 9px rgba(125, 211, 252, 0.7));
+  filter: none;
   fill-opacity: 1 !important;
-  stroke-width: 1.8px !important;
 }
 
 .hiring-map-dot-fallback {
@@ -35,7 +36,7 @@
 }
 
 .hiring-map-city-dot {
-  --city-dot-size: 8px;
+  --city-dot-size: 5px;
   position: absolute;
   left: 50%;
   top: 50%;
@@ -43,26 +44,22 @@
   height: var(--city-dot-size);
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  border: 1.5px solid rgba(219, 234, 254, 0.92);
-  background: rgba(37, 99, 235, 0.94);
-  box-shadow:
-    0 0 0 2px rgba(37, 99, 235, 0.18),
-    0 2px 7px rgba(2, 6, 23, 0.55);
-  transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  border: 0;
+  background: #2563eb;
+  box-shadow: none;
+  transition: transform 100ms ease, background 100ms ease;
 }
 
 .hiring-map-city-dot-wrap:hover .hiring-map-city-dot {
-  transform: translate(-50%, -50%) scale(1.18);
-  background: rgba(59, 130, 246, 1);
-  box-shadow:
-    0 0 0 3px rgba(96, 165, 250, 0.18),
-    0 3px 9px rgba(2, 6, 23, 0.58);
+  transform: translate(-50%, -50%) scale(1.12);
+  background: #1d4ed8;
+  box-shadow: none;
 }
 
 .hiring-map-city-dot--fallback {
-  background: rgba(100, 116, 139, 0.58);
-  border-color: rgba(203, 213, 225, 0.7);
-  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.12);
+  background: #64748b;
+  border: 0;
+  box-shadow: none;
 }
 
 /* Keep Esri attribution present, but collapse the long provider string into a
