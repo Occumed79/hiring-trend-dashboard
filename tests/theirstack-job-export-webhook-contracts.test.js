@@ -4,9 +4,13 @@ const fs = require('node:fs');
 
 function read(path) { return fs.readFileSync(path, 'utf8'); }
 
-test('one-time TheirStack export receiver requires a dedicated secret', () => {
+test('one-time TheirStack export receiver requires the dedicated verified secret', () => {
   const route = read('app/api/ingest/theirstack/export/route.ts');
-  assert.match(route, /THEIRSTACK_EXPORT_WEBHOOK_SECRET/);
+  const secret = read('lib/ingest/theirStackExportSecret.ts');
+  assert.match(route, /verifyTheirStackExportSecret/);
+  assert.match(secret, /THEIRSTACK_EXPORT_WEBHOOK_SECRET/);
+  assert.match(secret, /runtime_secrets/);
+  assert.match(secret, /timingSafeEqual/);
   assert.match(route, /x-theirstack-export-secret/);
   assert.match(route, /searchParams\.get\('token'\)/);
   assert.match(route, /Unauthorized/);
