@@ -2,46 +2,51 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-function read(path) {
-  return fs.readFileSync(path, 'utf8');
-}
+function read(path) { return fs.readFileSync(path, 'utf8'); }
 
-test('Clarifai is an enrichment layer with cached job hashes and bounded runs', () => {
-  const source = read('lib/ai/clarifaiOccupationalHealth.ts');
-  assert.match(source, /CLARIFAI_PAT/);
-  assert.match(source, /https:\/\/api\.clarifai\.com\/v2\/ext\/openai\/v1/);
-  assert.match(source, /provider === 'clarifai' \? `Key \$\{apiKey\}`/);
-  assert.match(source, /clarifai_oh_hash/);
-  assert.match(source, /CLARIFAI_MAX_JOBS_PER_RUN/);
-  assert.match(source, /likely_hearing_conservation/);
-  assert.match(source, /likely_respirator_use/);
-  assert.match(source, /likely_medical_surveillance/);
-  assert.match(source, /opportunity_score/);
+test('AI pool is used for job role and location taxonomy, not occupational-health inference', () => {
+  const source = read('lib/ai/jobIntelligenceAi.ts');
+  assert.match(source, /buildDiscoveryAssist/);
+  assert.match(source, /enrichEntityJobTaxonomy/);
+  assert.match(source, /engineering.*security.*aviation.*admin.*logistics.*medical.*other/s);
+  assert.match(source, /remote.*domestic.*overseas.*unknown/s);
+  assert.match(source, /Never infer occupational-health/);
+  assert.doesNotMatch(source, /likely_hearing_conservation|likely_respirator_use|medical_surveillance|opportunity_score/);
 });
 
-test('supplemental ingest enriches after source reconciliation and keeps Clarifai out of source coverage', () => {
+test('supplemental ingest spends AI on discovery assist and taxonomy before Algolia sync', () => {
   const source = read('lib/ingest/runSupplementalIngest.ts');
-  const reconcileIndex = source.indexOf('retireSupplementalUrlDuplicates');
-  const enrichIndex = source.indexOf('enrichEntityOccupationalHealth(entity.id');
-  assert.ok(reconcileIndex >= 0 && enrichIndex > reconcileIndex);
-  assert.match(source, /occupational_health: occupationalHealth/);
-  assert.doesNotMatch(source, /source:\s*['"]clarifai/);
+  const assistIndex = source.indexOf('buildDiscoveryAssist(entity)');
+  const taxonomyIndex = source.indexOf('enrichEntityJobTaxonomy(entity.id');
+  const algoliaIndex = source.indexOf('syncEntityToAlgolia(entity.id)');
+  assert.ok(assistIndex >= 0);
+  assert.ok(taxonomyIndex > assistIndex);
+  assert.ok(algoliaIndex > taxonomyIndex);
+  assert.match(source, /discovery_queries/);
+  assert.doesNotMatch(source, /enrichEntityOccupationalHealth|occupational_health:/);
 });
 
-test('metrics and UI expose a separate occupational-health layer without replacing role classification', () => {
+test('metrics and profile UI expose role and location categories and no OH signal panel', () => {
   const metrics = read('lib/metrics.ts');
   const route = read('app/api/entities/[id]/metrics/route.ts');
   const roleBreakdown = read('components/charts/RoleBreakdown.tsx');
   assert.match(metrics, /getEntityRoleBreakdown/);
-  assert.match(metrics, /getEntityOccupationalHealthSignals/);
-  assert.match(route, /__occupationalHealth/);
-  assert.match(roleBreakdown, /Role Breakdown/);
-  assert.match(roleBreakdown, /Occupational Health Signals/);
-  assert.match(roleBreakdown, /separate from role classification/);
+  assert.match(metrics, /getEntityLocationBreakdown/);
+  assert.match(route, /__locations/);
+  assert.match(roleBreakdown, /Role Categories/);
+  assert.match(roleBreakdown, /Location Categories/);
+  assert.doesNotMatch(roleBreakdown, /Occupational Health Signals|OH score|hearing conservation|respirator/i);
 });
 
-test('Render declares the PAT for both web and daily cron services', () => {
-  const render = read('render.yaml');
-  const matches = render.match(/key: CLARIFAI_PAT/g) || [];
-  assert.equal(matches.length, 2);
+test('world map matches the clean point-reference design and is intentionally large', () => {
+  const map = read('components/map/WorldMap.tsx');
+  const basemap = read('components/map/arcgisBasemap.ts');
+  assert.match(map, /CircleMarker/);
+  assert.match(map, /radius=\{3\.25\}/);
+  assert.match(map, /scrollWheelZoom=\{false\}/);
+  assert.match(map, /doubleClickZoom=\{false\}/);
+  assert.match(map, /min-h-\[980px\]/);
+  assert.match(map, /minHeight: profileMode \? '82vh'/);
+  assert.doesNotMatch(map, /createHiringMarkerIcon|DivIcon/);
+  assert.match(basemap, /DEFAULT_HIRING_MAP_STYLE: HiringMapStyleId = 'streets'/);
 });
