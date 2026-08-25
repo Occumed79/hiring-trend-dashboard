@@ -6,11 +6,15 @@ import { getFallbackHiringBasemap } from './maptilerBasemap';
 const MAP_FILTERS = [
   { id: 'all', label: 'All Jobs' },
   { id: 'new_only', label: 'New' },
+  { id: 'remote', label: 'Remote' },
   { id: 'engineering', label: 'Engineering' },
   { id: 'security', label: 'Security' },
   { id: 'logistics', label: 'Logistics' },
   { id: 'medical', label: 'Medical' },
 ];
+
+const WORLD_CENTER: [number, number] = [22, 4];
+const WORLD_ZOOM = 2.25;
 
 type MapMeta = {
   total_jobs?: number;
@@ -71,6 +75,7 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
     params.set('include_meta', 'true');
     params.set('include_fallback', 'false');
     if (filter === 'new_only') params.set('new_only', 'true');
+    if (filter === 'remote') params.set('remote_only', 'true');
     if (['engineering', 'security', 'logistics', 'medical'].includes(filter)) params.set('role_category', filter);
 
     fetch(`/api/map?${params}`, { signal: controller.signal, cache: 'no-store' })
@@ -95,8 +100,15 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
   const totalJobs = mapMeta?.total_jobs ?? 0;
   const cities = mapMeta?.location_count ?? 0;
 
+  function resetMap() {
+    const map = mapRef.current;
+    if (!map) return;
+    map.invalidateSize?.({ animate: false });
+    map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: true });
+  }
+
   return (
-    <div className={`map-glass-card h-full flex flex-col gap-3.5 ${profileMode ? 'min-h-[900px]' : 'min-h-[660px]'}`}>
+    <div className={`map-glass-card h-full flex flex-col gap-3.5 ${profileMode ? 'min-h-[760px]' : 'min-h-[620px]'}`}>
       <div className="flex items-start justify-between flex-wrap gap-3 shrink-0">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -116,21 +128,26 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
       </div>
 
       {error && <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100 shrink-0">{error}</div>}
-      {tileFailed && <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.04] px-3 py-2 text-[10px] text-amber-100/70 shrink-0">MapTiler tiles could not be reached, so this view temporarily switched to a dark fallback basemap.</div>}
+      {tileFailed && <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.04] px-3 py-2 text-[10px] text-amber-100/70 shrink-0">MapTiler tiles could not be reached, so this view temporarily switched to the fallback basemap. Job points and every map interaction remain enabled.</div>}
 
-      <div ref={mapShellRef} className="relative map-container flex-1" style={{ minHeight: profileMode ? '76vh' : 560 }}>
-        {loading && <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/25 backdrop-blur-[1px] rounded-xl"><div className="w-5 h-5 border-2 border-violet-300 border-t-transparent rounded-full animate-spin" /></div>}
+      <div ref={mapShellRef} className="relative map-container flex-1" style={{ minHeight: profileMode ? 630 : 520 }}>
+        <button onClick={resetMap} className="absolute right-3 top-3 z-[1000] rounded-lg border border-white/15 bg-[#0b1020]/85 px-2.5 py-1.5 text-[10px] font-medium text-slate-200 shadow-lg backdrop-blur hover:bg-[#111a30]" type="button">Reset view</button>
+        {loading && <div className="absolute inset-0 z-[900] flex items-center justify-center bg-black/20 pointer-events-none rounded-xl"><div className="w-5 h-5 border-2 border-violet-300 border-t-transparent rounded-full animate-spin" /></div>}
         {!MapComponents ? <div className="w-full h-full bg-[#1b1d22] rounded-xl animate-pulse" /> : (
           <MapComponents.MapContainer
             ref={mapRef}
-            center={[22, 4]}
-            zoom={2.25}
+            center={WORLD_CENTER}
+            zoom={WORLD_ZOOM}
             zoomSnap={0.25}
             zoomDelta={0.5}
             preferCanvas={true}
+            dragging={true}
+            touchZoom={true}
+            boxZoom={true}
+            keyboard={true}
             scrollWheelZoom={true}
             doubleClickZoom={true}
-            zoomControl={false}
+            zoomControl={true}
             attributionControl={true}
             worldCopyJump={true}
             style={{ height: '100%', width: '100%', borderRadius: '12px', background: '#1b1d22' }}
@@ -142,11 +159,11 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
               attribution={ACTIVE_BASEMAP.attribution}
               minZoom={ACTIVE_BASEMAP.minZoom}
               maxZoom={ACTIVE_BASEMAP.maxZoom}
+              crossOrigin={true}
               eventHandlers={{ tileerror: () => { if (ACTIVE_BASEMAP.provider === 'maptiler') setTileFailed(true); } }}
               {...(ACTIVE_BASEMAP.tileSize ? { tileSize: ACTIVE_BASEMAP.tileSize } : {})}
               {...(ACTIVE_BASEMAP.zoomOffset !== undefined ? { zoomOffset: ACTIVE_BASEMAP.zoomOffset } : {})}
             />
-            <MapComponents.ZoomControl position="bottomright" />
             {mapData.map((point: any, index: number) => {
               const lat = Number(point.lat); const lng = Number(point.lng);
               if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
@@ -172,8 +189,8 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
       </div>
 
       <div className="flex items-center justify-between gap-3 text-[10px] text-slate-500 flex-wrap shrink-0">
-        <span>One small violet point per mapped job. Dense hiring centers form point clouds naturally; there are no clusters or count-sized bubbles.</span>
-        <span className="text-[9px] text-slate-600">Normal wheel, drag, double-click, and +/− zoom are enabled.</span>
+        <span>One point per mapped job. No clustering and no count-sized bubbles.</span>
+        <span className="text-[9px] text-slate-600">Drag · wheel/pinch zoom · double-click zoom · box zoom · keyboard · +/− controls are all enabled.</span>
       </div>
     </div>
   );
