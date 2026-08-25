@@ -13,7 +13,7 @@ export async function searchDatabaseJobs(searchText: string, limit = 40) {
     COALESCE(e.name, ''), COALESCE(j.title, ''), COALESCE(j.department, ''),
     COALESCE(j.role_category, ''), COALESCE(j.location, ''), COALESCE(j.city, ''),
     COALESCE(j.state, ''), COALESCE(j.country, ''), COALESCE(j.source, ''),
-    COALESCE(j.raw_data::text, '')
+    COALESCE(j.raw_data->>'job_location_category', '')
   ))`;
 
   const params: any[] = terms.map(term => `%${term}%`);
@@ -100,21 +100,7 @@ function searchTerms(searchText: string) {
 
 function toSearchHit(row: any) {
   const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
-  const oh = raw.clarifai_oh && typeof raw.clarifai_oh === 'object' ? raw.clarifai_oh : {};
-  const signals = [
-    oh.safety_sensitive && 'safety sensitive',
-    oh.likely_preplacement_exam && 'pre placement exam occupational physical',
-    oh.likely_drug_testing && 'drug testing',
-    oh.likely_hearing_conservation && 'hearing conservation audiogram',
-    oh.likely_respirator_use && 'respirator fit testing pulmonary',
-    oh.likely_medical_surveillance && 'medical surveillance',
-    oh.deployment_oconus && 'deployment oconus overseas',
-    oh.dot_cdl && 'DOT CDL driver',
-    oh.hazardous_exposure && 'hazardous exposure hazmat',
-    oh.clearance_security && 'clearance security',
-    String(oh.physical_demand || '').toLowerCase() === 'high' && 'high physical demand',
-  ].filter(Boolean) as string[];
-
+  const locationCategory = firstString(raw.job_location_category) || deriveLocationCategory(row);
   return {
     objectID: String(row.id),
     job_id: String(row.id),
@@ -125,6 +111,7 @@ function toSearchHit(row: any) {
     title: row.title || '',
     department: row.department || '',
     role_category: row.role_category || 'other',
+    location_category: locationCategory,
     location: row.location || '',
     city: row.city || '',
     state: row.state || '',
@@ -136,10 +123,15 @@ function toSearchHit(row: any) {
     is_active: true,
     posted_at: row.posted_at ? new Date(row.posted_at).toISOString() : null,
     apply_url: firstString(raw.normalized_apply_url, raw.final_url, raw.url, raw.job_apply_link, raw.job_url),
-    occupational_health_score: clamp(Math.round(Number(oh.opportunity_score) || 0), 0, 100),
-    occupational_health_signals: signals,
-    occupational_health_reason: firstString(oh.reason),
   };
+}
+
+function deriveLocationCategory(row: any) {
+  if (row.is_remote) return 'remote';
+  const country = String(row.country || '').trim().toUpperCase();
+  if (country === 'US') return 'domestic';
+  if (country) return 'overseas';
+  return 'unknown';
 }
 
 function firstString(...values: unknown[]) {
@@ -147,8 +139,4 @@ function firstString(...values: unknown[]) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }
