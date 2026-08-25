@@ -144,6 +144,7 @@ function sourceScore(source: unknown) {
   if (normalized.startsWith('ats:')) return 97;
   if (normalized.startsWith('portal:') || normalized.startsWith('gov:')) return 96;
   if (normalized.startsWith('scrapy:')) return 78;
+  if (normalized.startsWith('jobspy:')) return 60;
   if (normalized.startsWith('jobapi:')) return 55;
   return 50;
 }
