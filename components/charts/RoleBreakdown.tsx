@@ -91,7 +91,7 @@ export default function RoleBreakdown({ roles, loading }: { roles: any; loading:
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-200">Occupational Health Signals</h3>
-              <p className="text-[10px] text-slate-500 mt-0.5">AI enrichment · Clarifai primary / Groq fallback · separate from role classification</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">Multi-provider AI enrichment · separate from role classification</p>
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-semibold text-slate-100">{Number(occupationalHealth.averageOpportunityScore || 0)}</p>
