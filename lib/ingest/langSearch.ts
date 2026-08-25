@@ -1,3 +1,5 @@
+import { firstRuntimeEnv, RUNTIME_ENV } from '@/lib/runtimeEnv';
+
 type EntityLike = {
   name: string;
   aliases?: string[] | null;
@@ -100,25 +102,17 @@ async function requestLangSearch(apiKey: string, query: string) {
     const statusOrCode = response.ok ? apiCode : response.status;
 
     if (!response.ok) {
-      throw new LangSearchRequestError(
-        `HTTP ${response.status}`,
-        isKeyOrQuotaFailure(response.status)
-      );
+      throw new LangSearchRequestError(`HTTP ${response.status}`, isKeyOrQuotaFailure(response.status));
     }
 
     if (apiCode !== null && apiCode !== 200) {
-      throw new LangSearchRequestError(
-        `API code ${apiCode}`,
-        isKeyOrQuotaFailure(statusOrCode)
-      );
+      throw new LangSearchRequestError(`API code ${apiCode}`, isKeyOrQuotaFailure(statusOrCode));
     }
 
     return payload;
   } catch (error) {
     if (error instanceof LangSearchRequestError) throw error;
-    if ((error as any)?.name === 'AbortError') {
-      throw new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`);
-    }
+    if ((error as any)?.name === 'AbortError') throw new Error(`timeout after ${REQUEST_TIMEOUT_MS}ms`);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -153,7 +147,7 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
   if (!title || isGenericJobTitle(title)) return null;
 
   const location = extractLocation(searchableText);
-  const country = detectCountry(`${location || ''} ${searchableText}`) || 'US';
+  const country = detectCountry(`${location || ''} ${searchableText}`);
 
   return {
     external_id: `langsearch-${hashString(`${entity.name}|${url}|${title}`)}`,
@@ -167,7 +161,7 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
     lat: null,
     lng: null,
     is_remote: /\b(remote|work from home|wfh|virtual)\b/i.test(searchableText),
-    is_overseas: country !== 'US',
+    is_overseas: Boolean(country && country !== 'US'),
     posted_at: normalizeDate(page.datePublished),
     raw_data: {
       normalized_employer: entity.name,
@@ -186,11 +180,7 @@ function normalizeResult(page: LangSearchWebPage, entity: EntityLike, query: str
 
 function looksLikeJobDetail(url: string, title: string) {
   let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
+  try { parsed = new URL(url); } catch { return false; }
 
   const target = `${parsed.hostname}${parsed.pathname}${parsed.search}`.toLowerCase();
   const genericPath = /^\/(?:careers?|jobs?|employment|join-us|work-with-us)\/?$/i.test(parsed.pathname);
@@ -219,13 +209,11 @@ function looksLikeJobDetail(url: string, title: string) {
 function cleanJobTitle(value: string, entityName: string) {
   let title = cleanText(value) || '';
   const company = escapeRegExp(entityName.trim());
-
   title = title
     .replace(/\s*[|•]\s*(?:LinkedIn|Indeed(?:\.com)?|Glassdoor|ZipRecruiter|USAJOBS).*$/i, '')
     .replace(new RegExp(`\\s*[|–—-]\\s*(?:careers?|jobs?)?(?:\\s+at)?\\s*${company}.*$`, 'i'), '')
     .replace(/\s+/g, ' ')
     .trim();
-
   return title.length >= 3 && title.length <= 180 ? title : null;
 }
 
@@ -262,12 +250,16 @@ function detectCountry(value: string) {
     [/\baustralia\b/i, 'AU'],
     [/\bjapan\b/i, 'JP'],
     [/\b(?:south korea|korea)\b/i, 'KR'],
+    [/\bkenya\b/i, 'KE'],
+    [/\buganda\b/i, 'UG'],
+    [/\bmauritius\b/i, 'MU'],
+    [/\bseychelles\b/i, 'SC'],
+    [/\b(?:united arab emirates|uae)\b/i, 'AE'],
+    [/\bsaudi arabia\b/i, 'SA'],
   ];
 
-  for (const [pattern, code] of mappings) {
-    if (pattern.test(value)) return code;
-  }
-  if (/\b[A-Z][A-Za-z .'-]{1,48},\s*[A-Z]{2}\b/.test(value)) return 'US';
+  for (const [pattern, code] of mappings) if (pattern.test(value)) return code;
+  if (/\b[A-Z][A-Za-z .'-]{1,48},\s*(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/.test(value)) return 'US';
   return null;
 }
 
@@ -278,7 +270,8 @@ function splitCity(location?: string | null) {
 
 function splitState(location?: string | null) {
   if (!location || /^remote$/i.test(location)) return null;
-  return location.split(',')[1]?.trim() || null;
+  const value = location.split(',')[1]?.trim() || null;
+  return value && /^(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)$/i.test(value) ? value.toUpperCase() : null;
 }
 
 function normalizeUrl(value?: string | null) {
@@ -288,9 +281,7 @@ function normalizeUrl(value?: string | null) {
     if (!['http:', 'https:'].includes(url.protocol)) return null;
     url.hash = '';
     return url.toString();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function normalizeDate(value?: string | null) {
@@ -337,9 +328,7 @@ function readEndpoint() {
   try {
     const url = new URL(configured);
     return url.protocol === 'https:' ? url.toString() : DEFAULT_ENDPOINT;
-  } catch {
-    return DEFAULT_ENDPOINT;
-  }
+  } catch { return DEFAULT_ENDPOINT; }
 }
 
 function readFreshness() {
@@ -349,20 +338,10 @@ function readFreshness() {
 }
 
 function readApiKeys() {
-  const candidates = [
-    firstNonEmptyEnv([
-      'LANGSEARCH_API_KEY',
-      'LANGSEARCH-API-KEY',
-      'LANG_SEARCH_API_KEY',
-    ]),
-    firstNonEmptyEnv([
-      'LANGSEARCH_API_KEY_2',
-      'LANGSEARCH-API-KEY-2',
-      'LANG_SEARCH_API_KEY_2',
-    ]),
-  ].filter(Boolean);
-
-  return Array.from(new Set(candidates));
+  return Array.from(new Set([
+    firstRuntimeEnv(RUNTIME_ENV.langSearch),
+    firstRuntimeEnv(RUNTIME_ENV.langSearch2),
+  ].filter(Boolean)));
 }
 
 function parseApiCode(value: unknown) {
