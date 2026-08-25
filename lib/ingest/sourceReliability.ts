@@ -59,10 +59,6 @@ export async function evaluateAndPersistSourceReliability(entityId: string): Pro
 export async function refreshStaleSourceReliabilityOnRead(entityId: string) {
   if (!entityId) return;
 
-  // Repair the old model where a bounded structured sitemap sample was stored as
-  // an authoritative inventory. This also repairs the latest coverage row so old
-  // "sitemap zero" incidents disappear without requiring the user to re-add the
-  // company or wait for another discovery cycle.
   const demoted = await query(
     `WITH changed AS (
        UPDATE entity_job_sources
@@ -78,7 +74,7 @@ export async function refreshStaleSourceReliabilityOnRead(entityId: string) {
     const keys = demoted.map((row:any) => String(row.source_key));
     await query(
       `UPDATE entity_source_coverage
-       SET source_class='verified', authoritative_zero=false, updated_at=NOW()
+       SET source_class='verified', authoritative_zero=false
        WHERE entity_id=$1 AND (source = ANY($2::text[]) OR source_key = ANY($2::text[]))`,
       [entityId, keys],
     ).catch(() => {});
