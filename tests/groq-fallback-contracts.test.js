@@ -2,64 +2,48 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-function read(path) {
-  return fs.readFileSync(path, 'utf8');
-}
+function read(path) { return fs.readFileSync(path, 'utf8'); }
 
-test('Groq is the automatic OH fallback behind Clarifai', () => {
-  const source = read('lib/ai/clarifaiOccupationalHealth.ts');
+const source = read('lib/ai/occupationalHealthAi.ts');
+
+test('OH enrichment uses both configured Groq credential slots before external fallbacks', () => {
   assert.match(source, /GROQ_API_KEY/);
+  assert.match(source, /GROQ_API_KEY_2/);
+  assert.match(source, /Groq #1/);
+  assert.match(source, /Groq #2/);
   assert.match(source, /https:\/\/api\.groq\.com\/openai\/v1/);
   assert.match(source, /openai\/gpt-oss-20b/);
-  assert.match(source, /Authorization: provider === 'clarifai' \? `Key \$\{apiKey\}` : `Bearer \$\{apiKey\}`/);
-  assert.match(source, /analyzeJobWithFallback/);
-  assert.match(source, /provider: 'groq'/);
-  assert.match(source, /primary: 'clarifai'/);
-  assert.match(source, /fallback: 'groq'/);
 });
 
-test('missing Clarifai credential routes enrichment to Groq instead of skipping when Groq is configured', () => {
-  const source = read('lib/ai/clarifaiOccupationalHealth.ts');
-  assert.match(source, /process\.env\.CLARIFAI_PAT \|\| process\.env\.CLARIFAI_API_KEY/);
-  assert.match(source, /process\.env\.GROQ_API_KEY \|\| process\.env\.GROQ_API_KEY_2/);
-  assert.match(source, /if \(!clarifaiPat && !groqApiKey\)/);
-  assert.doesNotMatch(source, /if \(!pat\) return \{ status: 'skipped'/);
-  assert.match(source, /clarifaiCircuitOpen: !clarifaiPat/);
-  assert.match(source, /Clarifai credential missing/);
+test('Cerebras Fireworks and OpenRouter are active OpenAI-compatible fallback providers', () => {
+  assert.match(source, /CEREBRAS_API_KEY/);
+  assert.match(source, /https:\/\/api\.cerebras\.ai\/v1/);
+  assert.match(source, /FIREWORKS_AI_API_KEY/);
+  assert.match(source, /https:\/\/api\.fireworks\.ai\/inference\/v1/);
+  assert.match(source, /OPEN_ROUTER_API_KEY/);
+  assert.match(source, /OPENROUTER_API_KEY/);
+  assert.match(source, /https:\/\/openrouter\.ai\/api\/v1/);
+  assert.match(source, /\/chat\/completions/);
 });
 
-test('Clarifai availability failures open a circuit and bounded Groq fallback prevents runaway free-tier usage', () => {
-  const source = read('lib/ai/clarifaiOccupationalHealth.ts');
+test('provider availability failures open a per-run circuit without stopping the remaining providers', () => {
+  assert.match(source, /analyzeWithProviderPool/);
+  assert.match(source, /circuitOpen/);
   assert.match(source, /isProviderAvailabilityError/);
-  assert.match(source, /http \(401\|403\|408\|429\|5\\d\\d\)/);
-  assert.match(source, /GROQ_MAX_FALLBACKS_PER_RUN/);
-  assert.match(source, /groqAttempts >= GROQ_MAX_FALLBACKS_PER_RUN/);
-  assert.match(source, /pending: Math\.max\(0, candidates\.length - attempted\)/);
+  assert.match(source, /401\|403\|408\|429\|5\\d\\d/);
 });
 
-test('the same cached OH schema records the provider and remains compatible with metrics and Algolia', () => {
-  const source = read('lib/ai/clarifaiOccupationalHealth.ts');
+test('generic OH schema preserves legacy aliases while metrics prefer the generic field', () => {
   const metrics = read('lib/metrics.ts');
-  const algolia = read('lib/search/algolia.ts');
+  assert.match(source, /occupational_health_ai: analysis\.result/);
   assert.match(source, /clarifai_oh: analysis\.result/);
-  assert.match(source, /clarifai_oh_provider: analysis\.provider/);
-  assert.match(source, /occupational_health_ai_provider: analysis\.provider/);
-  assert.match(metrics, /raw_data\?\.clarifai_oh/);
-  assert.match(algolia, /raw_data\?\.clarifai_oh/);
+  assert.match(metrics, /occupational_health_ai \|\| job\.raw_data\?\.clarifai_oh/);
+  assert.match(metrics, /occupational_health_ai \|\| job\.raw_data\.clarifai_oh/);
 });
 
-test('Render declares Groq for both manual web refreshes and scheduled cron ingestion', () => {
-  const render = read('render.yaml');
-  const keys = render.match(/key: GROQ_API_KEY/g) || [];
-  const models = render.match(/key: GROQ_MODEL/g) || [];
-  assert.equal(keys.length, 2);
-  assert.equal(models.length, 2);
-});
-
-test('OH UI identifies Clarifai primary and Groq fallback without changing role classification', () => {
+test('OH UI describes a multi-provider layer and no longer advertises Clarifai', () => {
   const roleBreakdown = read('components/charts/RoleBreakdown.tsx');
-  assert.match(roleBreakdown, /Role Breakdown/);
-  assert.match(roleBreakdown, /Occupational Health Signals/);
-  assert.match(roleBreakdown, /Clarifai primary \/ Groq fallback/);
+  assert.match(roleBreakdown, /Multi-provider AI enrichment/);
+  assert.doesNotMatch(roleBreakdown, /Clarifai primary/);
   assert.match(roleBreakdown, /No occupational-health enrichment has been persisted/);
 });
