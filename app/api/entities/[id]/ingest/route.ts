@@ -10,6 +10,7 @@ import { readOpenSourceIncidents, refreshStaleSourceReliabilityOnRead } from '@/
 import { monitorsForEntityLive } from '@/lib/ingest/theirStackMonitors';
 import { getTheirStackExportSecret } from '@/lib/ingest/theirStackExportSecret';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
+import { firstRuntimeEnv, hasRuntimeEnv, RUNTIME_ENV } from '@/lib/runtimeEnv';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -44,6 +45,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const liveTheirStackMonitors = theirStackMonitors.filter(monitor => monitor.source === 'live_list');
     const theirStackExportSecret = await getTheirStackExportSecret().catch(() => null);
     const legacyTheirStack = ['1', 'true', 'yes', 'on'].includes(String(process.env.THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED || '').trim().toLowerCase());
+
+    const algoliaAppId = firstRuntimeEnv([...RUNTIME_ENV.algoliaAppId]);
+    const algoliaApiKey = firstRuntimeEnv(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY']);
 
     return NextResponse.json({
       status: awaitingInitialIngest ? 'queued' : latest.status,
@@ -80,13 +84,18 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
             ? `${theirStackExportSecret.source === 'environment' ? 'Configured' : 'Auto-provisioned'} receiver token · one-click TheirStack Job Search handoff + company-credit Job Export receiver.`
             : 'Export receiver token could not be provisioned.',
         },
-        keenable: { configured: Boolean(String(process.env.KEENABLE_API_KEY || '').trim()), mode: 'Supplemental employer-specific web discovery.' },
-        algolia: { configured: Boolean(String(process.env.ALGOLIA_APP_ID || '').trim() && String(process.env.ALGOLIA_SEARCH_API_KEY || process.env.ALGOLIA_WRITE_API_KEY || '').trim()), mode: 'Global job index · live database fallback enabled.' },
-        clarifai: { configured: Boolean(String(process.env.CLARIFAI_PAT || '').trim()), mode: 'Primary occupational-health enrichment.' },
-        groq: { configured: Boolean(String(process.env.GROQ_API_KEY || '').trim()), mode: 'Occupational-health fallback model.' },
-        langsearch: { configured: Boolean(String(process.env.LANGSEARCH_API_KEY || process.env.LANGSEARCH_API_KEY_2 || '').trim()), mode: 'Verified web discovery and corroboration.' },
-        nlx: { configured: Boolean(String(process.env.NLX_API_KEY || '').trim()), mode: 'National Labor Exchange verification.' },
-        careeronestop: { configured: Boolean(String(process.env.CAREERONESTOP_API_TOKEN || '').trim() && String(process.env.CAREERONESTOP_USER_ID || '').trim()), mode: 'CareerOneStop verification.' },
+        keenable: { configured: hasRuntimeEnv([...RUNTIME_ENV.keenable]), mode: 'Supplemental employer-specific web discovery.' },
+        algolia: {
+          configured: Boolean(algoliaAppId && algoliaApiKey),
+          mode: algoliaAppId
+            ? 'Global job index · live database fallback enabled.'
+            : 'API key detected only when present; Algolia still requires an application ID.',
+        },
+        clarifai: { configured: hasRuntimeEnv([...RUNTIME_ENV.clarifai]), mode: 'Primary occupational-health enrichment.' },
+        groq: { configured: hasRuntimeEnv([...RUNTIME_ENV.groq]), mode: 'Occupational-health fallback model · primary/secondary key aliases supported.' },
+        langsearch: { configured: hasRuntimeEnv([...RUNTIME_ENV.langSearch]) || hasRuntimeEnv([...RUNTIME_ENV.langSearch2]), mode: 'Verified web discovery and corroboration · hyphenated and underscored key names supported.' },
+        nlx: { configured: hasRuntimeEnv([...RUNTIME_ENV.nlx]), mode: 'National Labor Exchange verification.' },
+        careeronestop: { configured: hasRuntimeEnv([...RUNTIME_ENV.careerOneStopToken]) && hasRuntimeEnv([...RUNTIME_ENV.careerOneStopUser]), mode: 'CareerOneStop verification.' },
       },
       coverage: {
         active_jobs: jobs.length,
