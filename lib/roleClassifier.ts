@@ -5,12 +5,10 @@ const ROLE_PATTERNS: Record<string, RegExp> = {
   admin: /\b(admin|administrative|coordinator|receptionist|executive assistant|office manager|hr |human resources|payroll|clerk)\b/i,
   aviation: /\b(aviation|pilot|aircraft|flight|airfield|airport|helicopter|fixed wing|mechanic|avionics|faa)\b/i,
   engineering: /\b(engineer|developer|software|hardware|systems|network|devops|architect|technical|data|cyber|it |information technology)\b/i,
-  remote: /\b(remote|work from home|wfh|virtual|telecommute)\b/i,
-  overseas: /\b(overseas|deployed|deployment|contingency|oconus|iraq|afghanistan|kuwait|bahrain|qatar|djibouti|germany|japan|korea)\b/i,
 };
 
-export function classifyRole(title: string, location?: string | null): string {
-  const text = `${title} ${location || ''}`;
+export function classifyRole(title: string, _location?: string | null): string {
+  const text = String(title || '');
   for (const [category, pattern] of Object.entries(ROLE_PATTERNS)) {
     if (pattern.test(text)) return category;
   }
