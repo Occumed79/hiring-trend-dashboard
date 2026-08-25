@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    serverComponentsExternalPackages: ['pg', '@neondatabase/serverless']
+    serverComponentsExternalPackages: ['pg', '@neondatabase/serverless', 'ts-jobspy']
   }
 }
 module.exports = nextConfig
