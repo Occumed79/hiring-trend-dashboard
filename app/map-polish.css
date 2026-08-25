@@ -28,79 +28,41 @@
   stroke-dasharray: 2 2;
 }
 
-.hiring-map-pin-wrap {
+.hiring-map-city-dot-wrap {
   background: transparent !important;
   border: 0 !important;
   overflow: visible !important;
 }
 
-.hiring-map-pin {
-  --pin-size: 20px;
+.hiring-map-city-dot {
+  --city-dot-size: 8px;
   position: absolute;
   left: 50%;
-  bottom: 2px;
-  width: var(--pin-size);
-  height: var(--pin-size);
-  display: grid;
-  place-items: center;
-  border-radius: 50% 50% 50% 10%;
-  transform: translateX(-50%) rotate(-45deg);
-  border: 1.5px solid rgba(224, 242, 254, 0.92);
-  background: linear-gradient(145deg, #60a5fa 0%, #2563eb 58%, #1d4ed8 100%);
-  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.38), 0 0 0 2px rgba(59, 130, 246, 0.14);
-  transition: transform 140ms ease, filter 140ms ease, box-shadow 140ms ease;
-}
-
-.hiring-map-pin::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  background: rgba(239, 246, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-}
-
-.hiring-map-pin-wrap:hover .hiring-map-pin {
-  transform: translateX(-50%) translateY(-2px) rotate(-45deg) scale(1.08);
-  filter: saturate(1.08) brightness(1.08);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.44), 0 0 0 3px rgba(96, 165, 250, 0.18);
-}
-
-.hiring-map-pin__label {
-  position: relative;
-  z-index: 1;
-  transform: rotate(45deg);
-  color: #eff6ff;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.55);
-}
-
-.hiring-map-pin__label:empty::before {
-  content: '';
-  display: block;
-  width: 5px;
-  height: 5px;
+  top: 50%;
+  width: var(--city-dot-size);
+  height: var(--city-dot-size);
+  transform: translate(-50%, -50%);
   border-radius: 999px;
-  background: rgba(239, 246, 255, 0.96);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  border: 1.5px solid rgba(219, 234, 254, 0.92);
+  background: rgba(37, 99, 235, 0.94);
+  box-shadow:
+    0 0 0 2px rgba(37, 99, 235, 0.18),
+    0 2px 7px rgba(2, 6, 23, 0.55);
+  transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
-.hiring-map-pin__label--small {
-  font-size: 8px;
+.hiring-map-city-dot-wrap:hover .hiring-map-city-dot {
+  transform: translate(-50%, -50%) scale(1.18);
+  background: rgba(59, 130, 246, 1);
+  box-shadow:
+    0 0 0 3px rgba(96, 165, 250, 0.18),
+    0 3px 9px rgba(2, 6, 23, 0.58);
 }
 
-.hiring-map-pin__label--tiny {
-  font-size: 7px;
-}
-
-.hiring-map-pin--fallback {
-  border-color: rgba(203, 213, 225, 0.72);
-  background: linear-gradient(145deg, #64748b 0%, #475569 100%);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.28);
-  opacity: 0.66;
+.hiring-map-city-dot--fallback {
+  background: rgba(100, 116, 139, 0.58);
+  border-color: rgba(203, 213, 225, 0.7);
+  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.12);
 }
 
 /* Keep Esri attribution present, but collapse the long provider string into a
