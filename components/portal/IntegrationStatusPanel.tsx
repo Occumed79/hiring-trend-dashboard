@@ -10,19 +10,20 @@ type Integration = {
 
 type IntegrationMap = Record<string, Integration | undefined>;
 
-const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'jobspy', 'keenable', 'algolia', 'clarifai', 'groq', 'langsearch', 'nlx', 'careeronestop'];
+const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'jobspy', 'adzuna', 'keenable', 'tinyfish', 'geoapify', 'algolia', 'occupational_ai', 'langsearch', 'careeronestop'];
 const LABELS: Record<string, string> = {
   theirstack: 'TheirStack Company Search',
   theirstack_dataset: 'TheirStack Jobs Dataset',
   theirstack_export: 'TheirStack Bulk Export',
   jobspy: 'JobSpy Boards',
+  adzuna: 'Adzuna',
   keenable: 'Keenable',
+  tinyfish: 'TinyFish Search',
+  geoapify: 'Geoapify Geocoding',
   algolia: 'Algolia Search',
-  clarifai: 'Clarifai',
-  groq: 'Groq Fallback',
+  occupational_ai: 'Occupational Health AI',
   langsearch: 'LangSearch',
-  nlx: 'National Labor Exchange',
-  careeronestop: 'CareerOneStop',
+  careeronestop: 'CareerOneStop / NLx Mirror',
 };
 
 export default function IntegrationStatusPanel({ integrations }: { integrations?: IntegrationMap | null }) {
@@ -75,13 +76,14 @@ function defaultDetail(id: string) {
     theirstack_dataset: 'Checks whether any configured TheirStack workspace is entitled to the bulk Jobs Dataset.',
     theirstack_export: 'Company-credit Job Export receiver for high-volume gap filling; separate from per-job Job Search API polling.',
     jobspy: 'Native Node Indeed + LinkedIn discovery used only as supplemental gap-fill evidence; never treated as complete inventory.',
+    adzuna: 'Three credential-pair fallback pool for private-employer job discovery.',
     keenable: 'Supplemental employer-specific web discovery.',
+    tinyfish: 'Free live-web Search API used as supplemental employer-verified job discovery.',
+    geoapify: 'Job-location geocoding and coordinate normalization.',
     algolia: 'Fast global job index with live database safety net.',
-    clarifai: 'Primary occupational-health signal enrichment.',
-    groq: 'Fallback occupational-health enrichment when Clarifai cannot run.',
+    occupational_ai: 'Groq, Cerebras, Fireworks, and OpenRouter provider pool for occupational-health signal enrichment.',
     langsearch: 'Verified web discovery and source corroboration.',
-    nlx: 'National Labor Exchange verification layer.',
-    careeronestop: 'CareerOneStop job verification layer.',
+    careeronestop: 'CareerOneStop jobs feed used as the active NLx-resilience mirror.',
   };
   return details[id] || 'Integration status.';
 }
