@@ -192,7 +192,7 @@ export default function Sidebar({
                   >
                     <span className="block h-8 rounded-lg border border-white/10 shadow-inner mb-1.5" style={{ background: `linear-gradient(135deg, ${style.swatch[0]}, ${style.swatch[1]})` }} />
                     <span className={`block text-[10px] leading-tight ${active ? 'text-violet-200' : 'text-slate-300'}`}>{style.label}</span>
-                    <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-600 mt-1">{style.tone === 'dark' ? 'Dark' : style.tone === 'light' ? 'Light' : 'Photo'}</span>
+                    <span className="block text-[8px] uppercase tracking-[0.12em] text-slate-600 mt-1">{style.tone === 'dark' ? 'Dark' : style.tone === 'light' ? 'Light' : style.tone === 'color' ? 'Color' : 'Photo'}</span>
                   </button>
                 );
               })}
