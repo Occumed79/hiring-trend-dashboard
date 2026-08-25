@@ -1,4 +1,4 @@
-export type HiringMapStyleId = 'dataviz-dark' | 'streets-v4' | 'satellite-v4' | 'outdoor-v2';
+export type HiringMapStyleId = 'dataviz-dark' | 'streets-v4' | 'satellite-v4' | 'outdoor-v4';
 
 export type HiringMapStyleOption = {
   id: HiringMapStyleId;
@@ -43,7 +43,7 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     swatch: ['#dfe8ee', '#f8fafc'],
   },
   {
-    id: 'outdoor-v2',
+    id: 'outdoor-v4',
     label: 'Outdoor',
     shortLabel: 'Outdoor',
     description: 'MapTiler outdoor and terrain map',
