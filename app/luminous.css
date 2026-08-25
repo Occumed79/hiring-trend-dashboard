@@ -1,7 +1,7 @@
 :root {
-  --luminous-blue: rgba(96, 165, 250, 0.42);
-  --luminous-cyan: rgba(34, 211, 238, 0.28);
-  --luminous-silver: rgba(226, 232, 240, 0.22);
+  --luminous-blue: rgba(96, 165, 250, 0.32);
+  --luminous-cyan: rgba(34, 211, 238, 0.20);
+  --luminous-silver: rgba(226, 232, 240, 0.16);
 }
 
 body::before {
@@ -11,70 +11,64 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(circle at 18% 12%, rgba(59, 130, 246, 0.22), transparent 26%),
-    radial-gradient(circle at 86% 18%, rgba(125, 211, 252, 0.13), transparent 24%),
-    radial-gradient(circle at 52% 82%, rgba(99, 102, 241, 0.16), transparent 28%);
-  animation: luminousDrift 18s ease-in-out infinite alternate;
-}
-
-@keyframes luminousDrift {
-  from { transform: translate3d(-1.5%, -1%, 0) scale(1); opacity: 0.7; }
-  to { transform: translate3d(1.5%, 1%, 0) scale(1.06); opacity: 1; }
+    radial-gradient(circle at 18% 12%, rgba(59, 130, 246, 0.16), transparent 26%),
+    radial-gradient(circle at 86% 18%, rgba(125, 211, 252, 0.09), transparent 24%),
+    radial-gradient(circle at 52% 82%, rgba(99, 102, 241, 0.11), transparent 28%);
+  opacity: 0.82;
 }
 
 .luminous-panel {
   position: relative;
   box-shadow:
-    0 2px 0 rgba(255,255,255,0.12) inset,
-    0 0 0 1px rgba(147,197,253,0.10),
-    0 16px 60px rgba(3, 7, 18, 0.55),
-    0 0 44px rgba(59, 130, 246, 0.10);
+    0 2px 0 rgba(255,255,255,0.10) inset,
+    0 0 0 1px rgba(147,197,253,0.08),
+    0 16px 60px rgba(3, 7, 18, 0.50),
+    0 0 36px rgba(59, 130, 246, 0.07);
 }
 
+/* Keep a quiet glass highlight, but do not sweep a bright stripe across every
+   card whenever the pointer crosses it. */
 .luminous-panel::after {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.13) 42%, transparent 58%);
-  transform: translateX(-130%);
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  background: linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.035) 46%, transparent 62%);
+  opacity: 0.45;
 }
 
 .luminous-panel:hover::after {
-  opacity: 1;
-  animation: glassSweep 1.15s ease forwards;
-}
-
-@keyframes glassSweep {
-  to { transform: translateX(130%); }
+  opacity: 0.55;
 }
 
 .aurora-sweep {
   position: absolute;
   inset: -40%;
   pointer-events: none;
-  background: conic-gradient(from 140deg, transparent, rgba(96,165,250,0.14), transparent, rgba(34,211,238,0.10), transparent);
+  background: conic-gradient(from 140deg, transparent, rgba(96,165,250,0.07), transparent, rgba(34,211,238,0.05), transparent);
   filter: blur(34px);
-  animation: auroraRotate 20s linear infinite;
-  opacity: 0.65;
-}
-
-@keyframes auroraRotate {
-  to { transform: rotate(360deg); }
+  opacity: 0.36;
 }
 
 .luminous-button {
   box-shadow:
-    0 0 24px rgba(59, 130, 246, 0.22),
-    inset 0 1px 0 rgba(255,255,255,0.14);
+    0 0 18px rgba(59, 130, 246, 0.15),
+    inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
 .map-glass-card,
 .glass-card,
 .glass-card-hero,
 .glass-card-metric {
-  border-color: rgba(191, 219, 254, 0.16);
+  border-color: rgba(191, 219, 254, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  .aurora-sweep,
+  .luminous-panel::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
