@@ -2,6 +2,7 @@ import { query } from '@/db/client';
 import { getVerifiedActiveJobs, hasRealMappedLocation, isNewThisWeek } from '@/lib/verifiedJobs';
 
 const QUALITY_BASELINE_DATE = '2026-08-07';
+const US_STATE_CODES = new Set('AL AK AZ AR CA CO CT DC DE FL GA HI IA ID IL IN KS KY LA MA MD ME MI MN MO MS MT NC ND NE NH NJ NM NV NY OH OK OR PA RI SC SD TN TX UT VA VT WA WI WV WY'.split(' '));
 
 export async function getEntityMetrics(entityId: string) {
   const [jobs, history] = await Promise.all([
@@ -59,37 +60,66 @@ export async function getEntityRoleBreakdown(entityId: string) {
   return result;
 }
 
-export async function getEntityLocationBreakdown(entityId: string) {
+export async function getEntityCountryBreakdown(entityId: string) {
   const jobs = await getVerifiedActiveJobs(entityId);
-  const result: Record<string, number> = { domestic: 0, overseas: 0, remote: 0, unresolved: 0 };
+  const result: Record<string, number> = {};
   for (const job of jobs) {
-    const stored = String(job.raw_data?.job_location_category || '').trim().toLowerCase();
-    if (stored === 'remote') { result.remote++; continue; }
-    if (stored === 'domestic') { result.domestic++; continue; }
-    if (stored === 'overseas') { result.overseas++; continue; }
-
-    if (Boolean(job.is_remote) || /\b(remote|virtual|work from home|wfh)\b/i.test(String(job.location || ''))) {
-      result.remote++;
-      continue;
-    }
-    const country = String(job.country || '').trim().toUpperCase();
-    if (country === 'US') result.domestic++;
-    else if (country) result.overseas++;
-    else result.unresolved++;
+    const country = normalizedJobCountry(job);
+    if (!country) continue;
+    result[country] = (result[country] || 0) + 1;
   }
   return result;
 }
 
+// Compatibility export for any code still importing the former location function.
+export const getEntityLocationBreakdown = getEntityCountryBreakdown;
+
 export async function getEntityMapData(entityId: string) {
   const jobs = (await getVerifiedActiveJobs(entityId)).filter(hasRealMappedLocation);
-  const grouped = new Map<string, any>();
-  for (const job of jobs) {
-    const key = [job.city || '', job.state || '', job.country || '', Number(job.lat).toFixed(5), Number(job.lng).toFixed(5)].join('|');
-    const current = grouped.get(key) || { city: job.city, state: job.state, country: job.country, lat: Number(job.lat), lng: Number(job.lng), count: 0 };
-    current.count += 1;
-    grouped.set(key, current);
-  }
-  return Array.from(grouped.values());
+  return jobs.map((job: any) => ({
+    job_id: String(job.id),
+    title: job.title,
+    city: job.city,
+    state: job.state,
+    country: normalizedJobCountry(job) || job.country,
+    lat: Number(job.lat),
+    lng: Number(job.lng),
+  }));
+}
+
+function normalizedJobCountry(job: any) {
+  const state = String(job?.state || '').trim().toUpperCase();
+  if (US_STATE_CODES.has(state)) return 'US';
+  const country = normalizeCountry(job?.country);
+  if (country) return country;
+  const location = String(job?.location || '').trim();
+  if (/\b(?:united states|u\.s\.|usa)\b/i.test(location)) return 'US';
+  if (/\baustralia\b/i.test(location)) return 'AU';
+  if (/\bcanada\b/i.test(location)) return 'CA';
+  if (/\bgermany\b/i.test(location)) return 'DE';
+  if (/\bkuwait\b/i.test(location)) return 'KW';
+  if (/\bqatar\b/i.test(location)) return 'QA';
+  if (/\bpoland\b/i.test(location)) return 'PL';
+  if (/\bjapan\b/i.test(location)) return 'JP';
+  if (/\b(?:united kingdom|great britain)\b/i.test(location)) return 'GB';
+  return null;
+}
+
+function normalizeCountry(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  const map: Record<string,string> = {
+    us:'US', usa:'US', 'united states':'US', 'united states of america':'US',
+    au:'AU', australia:'AU', ca:'CA', canada:'CA', gb:'GB', uk:'GB', 'united kingdom':'GB',
+    de:'DE', germany:'DE', kw:'KW', kuwait:'KW', qa:'QA', qatar:'QA', pl:'PL', poland:'PL',
+    jp:'JP', japan:'JP', kr:'KR', 'south korea':'KR', ae:'AE', uae:'AE', 'united arab emirates':'AE',
+    sa:'SA', 'saudi arabia':'SA', mx:'MX', mexico:'MX', fr:'FR', france:'FR', es:'ES', spain:'ES',
+    it:'IT', italy:'IT', be:'BE', belgium:'BE', nl:'NL', netherlands:'NL', ke:'KE', kenya:'KE',
+    ug:'UG', uganda:'UG', mu:'MU', mauritius:'MU', sc:'SC', seychelles:'SC', io:'IO', 'british indian ocean territory':'IO',
+  };
+  if (map[lower]) return map[lower];
+  return /^[A-Za-z]{2}$/.test(text) ? text.toUpperCase() : null;
 }
 
 function computeTrend(historyRows: Array<{ date: any; totalActive: number }>, totalNow: number, requestedDays: number, allowPartial: boolean) {
