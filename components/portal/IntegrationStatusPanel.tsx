@@ -10,11 +10,12 @@ type Integration = {
 
 type IntegrationMap = Record<string, Integration | undefined>;
 
-const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'keenable', 'algolia', 'clarifai', 'groq', 'langsearch', 'nlx', 'careeronestop'];
+const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'jobspy', 'keenable', 'algolia', 'clarifai', 'groq', 'langsearch', 'nlx', 'careeronestop'];
 const LABELS: Record<string, string> = {
   theirstack: 'TheirStack Company Search',
   theirstack_dataset: 'TheirStack Jobs Dataset',
   theirstack_export: 'TheirStack Bulk Export',
+  jobspy: 'JobSpy Boards',
   keenable: 'Keenable',
   algolia: 'Algolia Search',
   clarifai: 'Clarifai',
@@ -73,6 +74,7 @@ function defaultDetail(id: string) {
     theirstack: 'Credit-aware employer monitoring using Company Search hiring-volume signals and sample jobs.',
     theirstack_dataset: 'Checks whether any configured TheirStack workspace is entitled to the bulk Jobs Dataset.',
     theirstack_export: 'Company-credit Job Export receiver for high-volume gap filling; separate from per-job Job Search API polling.',
+    jobspy: 'Native Node Indeed + LinkedIn discovery used only as supplemental gap-fill evidence; never treated as complete inventory.',
     keenable: 'Supplemental employer-specific web discovery.',
     algolia: 'Fast global job index with live database safety net.',
     clarifai: 'Primary occupational-health signal enrichment.',
