@@ -28,7 +28,7 @@ const LABELS: Record<string, string> = {
 
 export default function IntegrationStatusPanel({ integrations }: { integrations?: IntegrationMap | null }) {
   const map = integrations || {};
-  const rows = ORDER.map(id => ({ id, ...(map[id] || {}) }));
+  const rows = ORDER.map(id => ({ id, ...(map[id] || (id === 'job_intelligence_ai' ? map.occupational_ai : undefined) || {}) }));
   const configured = rows.filter(row => row.configured).length;
 
   return (
