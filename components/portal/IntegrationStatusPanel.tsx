@@ -10,12 +10,20 @@ type Integration = {
 
 type IntegrationMap = Record<string, Integration | undefined>;
 
-const ORDER = ['theirstack', 'theirstack_dataset', 'theirstack_export', 'jobspy', 'adzuna', 'keenable', 'tinyfish', 'geoapify', 'algolia', 'job_intelligence_ai', 'langsearch', 'careeronestop'];
+const ORDER = [
+  'maptiler',
+  'theirstack', 'theirstack_dataset', 'theirstack_export',
+  'jobspy', 'adzuna', 'keenable', 'tinyfish',
+  'geoapify', 'algolia', 'job_intelligence_ai', 'langsearch',
+  'nlx', 'careeronestop', 'sam_identity', 'usaspending_identity',
+];
+
 const LABELS: Record<string, string> = {
+  maptiler: 'MapTiler Dataviz Map',
   theirstack: 'TheirStack Company Search',
   theirstack_dataset: 'TheirStack Jobs Dataset',
   theirstack_export: 'TheirStack Bulk Export',
-  jobspy: 'JobSpy Boards',
+  jobspy: 'JobSpy Indeed',
   adzuna: 'Adzuna',
   keenable: 'Keenable',
   tinyfish: 'TinyFish Search',
@@ -23,12 +31,15 @@ const LABELS: Record<string, string> = {
   algolia: 'Algolia Search',
   job_intelligence_ai: 'AI Job Intelligence',
   langsearch: 'LangSearch',
+  nlx: 'National Labor Exchange',
   careeronestop: 'CareerOneStop / NLx Mirror',
+  sam_identity: 'SAM.gov Entity Identity',
+  usaspending_identity: 'USAspending Recipient Identity',
 };
 
 export default function IntegrationStatusPanel({ integrations }: { integrations?: IntegrationMap | null }) {
   const map = integrations || {};
-  const rows = ORDER.map(id => ({ id, ...(map[id] || (id === 'job_intelligence_ai' ? map.occupational_ai : undefined) || {}) }));
+  const rows = ORDER.map(id => ({ id, ...(map[id] || {}) }));
   const configured = rows.filter(row => row.configured).length;
 
   return (
@@ -37,7 +48,7 @@ export default function IntegrationStatusPanel({ integrations }: { integrations?
       <div className="relative z-10 flex items-start justify-between gap-4 flex-wrap mb-4">
         <div>
           <h2 className="text-[15px] font-semibold text-slate-100">Intelligence Integrations</h2>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Actual server-side integration state for this entity. This is separate from whether a source happened to return jobs on the latest check.</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Server-side wiring and entitlement state. Identity services are labeled separately from job-inventory sources so a successful identity lookup is never shown as “0 jobs.”</p>
         </div>
         <span className="rounded-full border border-blue-400/20 bg-blue-500/8 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-blue-200">{configured}/{rows.length} active / available</span>
       </div>
@@ -72,18 +83,22 @@ function statusClass(state: string) {
 
 function defaultDetail(id: string) {
   const details: Record<string, string> = {
+    maptiler: 'MapTiler Dataviz Dark basemap for hiring-point visualization.',
     theirstack: 'Credit-aware employer monitoring using Company Search hiring-volume signals and sample jobs.',
     theirstack_dataset: 'Checks whether any configured TheirStack workspace is entitled to the bulk Jobs Dataset.',
-    theirstack_export: 'Company-credit Job Export receiver for high-volume gap filling; separate from per-job Job Search API polling.',
-    jobspy: 'Native Node Indeed + LinkedIn discovery used only as supplemental gap-fill evidence; never treated as complete inventory.',
+    theirstack_export: 'Company-credit Job Export receiver for high-volume gap filling.',
+    jobspy: 'Indeed-only JobSpy discovery used as supplemental gap-fill evidence. LinkedIn is excluded.',
     adzuna: 'Three credential-pair fallback pool for private-employer job discovery.',
     keenable: 'Supplemental employer-specific web discovery.',
-    tinyfish: 'Free live-web Search API used as supplemental employer-verified job discovery.',
+    tinyfish: 'Strict official-career/ATS job-detail discovery only.',
     geoapify: 'Job-location geocoding and coordinate normalization.',
-    algolia: 'Fast global job index with live database safety net.',
-    job_intelligence_ai: 'Groq, Cerebras, Fireworks, and OpenRouter help expand employer-specific discovery queries and classify only job-role and location categories.',
+    algolia: 'Fast global job index with live database fallback.',
+    job_intelligence_ai: 'AI providers expand discovery conservatively and classify role and country/location data.',
     langsearch: 'Verified web discovery and source corroboration.',
-    careeronestop: 'CareerOneStop jobs feed used as the active NLx-resilience mirror.',
+    nlx: 'Direct National Labor Exchange connector; requires NLX API credentials.',
+    careeronestop: 'CareerOneStop jobs feed used as the NLx-resilience mirror.',
+    sam_identity: 'SAM.gov entity identity enrichment; not a job source.',
+    usaspending_identity: 'No-key USAspending recipient identity verification; not a job source.',
   };
   return details[id] || 'Integration status.';
 }
