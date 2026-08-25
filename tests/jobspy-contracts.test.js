@@ -11,7 +11,7 @@ const entityRoute = fs.readFileSync('app/api/entities/[id]/ingest/route.ts', 'ut
 const integrationPanel = fs.readFileSync('components/portal/IntegrationStatusPanel.tsx', 'utf8');
 
 test('JobSpy uses the native Node package instead of shelling out to Python or Docker', () => {
-  assert.equal(packageJson.dependencies['ts-jobspy'], '^2.0.4');
+  assert.equal(packageJson.dependencies['ts-jobspy'], '2.0.3');
   assert.match(packageJson.engines.node, />=20/);
   assert.match(jobspy, /import\('ts-jobspy'\)/);
   assert.doesNotMatch(jobspy, /child_process|execSync|spawn\(|docker run|python3/);
