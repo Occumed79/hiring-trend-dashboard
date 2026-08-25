@@ -32,8 +32,9 @@ export default function RoleBreakdown({ roles, locations, loading }: { roles: an
         .sort((a, b) => b.value - a.value)
         .filter(d => d.value > 0)
     : [];
-  const locationData = locations
-    ? Object.entries(locations)
+  const locationSource = locations || roles?.__locations || null;
+  const locationData = locationSource
+    ? Object.entries(locationSource)
         .map(([name, value]) => ({ name, value: Number(value) }))
         .sort((a, b) => b.value - a.value)
         .filter(item => item.value > 0)
