@@ -1,11 +1,11 @@
-export type HiringMapStyleId = 'dataviz-dark' | 'streets-v4' | 'satellite-v4' | 'outdoor-v4';
+export type HiringMapStyleId = 'dataviz-dark' | 'dataviz' | 'dataviz-light' | 'streets-v4' | 'satellite-v4' | 'outdoor-v4';
 
 export type HiringMapStyleOption = {
   id: HiringMapStyleId;
   label: string;
   shortLabel: string;
   description: string;
-  tone: 'dark' | 'light' | 'photo';
+  tone: 'dark' | 'light' | 'color' | 'photo';
   swatch: [string, string];
 };
 
@@ -33,6 +33,22 @@ export const HIRING_MAP_STYLES: HiringMapStyleOption[] = [
     description: 'MapTiler dark data-visualization basemap',
     tone: 'dark',
     swatch: ['#17191d', '#34373d'],
+  },
+  {
+    id: 'dataviz',
+    label: 'Dataviz Color',
+    shortLabel: 'Dataviz Color',
+    description: 'MapTiler color data-visualization basemap',
+    tone: 'color',
+    swatch: ['#cbd5e1', '#dbeafe'],
+  },
+  {
+    id: 'dataviz-light',
+    label: 'Dataviz Light',
+    shortLabel: 'Dataviz Light',
+    description: 'MapTiler light data-visualization basemap',
+    tone: 'light',
+    swatch: ['#f8fafc', '#e5e7eb'],
   },
   {
     id: 'streets-v4',
