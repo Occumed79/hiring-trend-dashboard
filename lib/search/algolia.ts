@@ -1,4 +1,5 @@
 import { query } from '@/db/client';
+import { firstRuntimeEnv, RUNTIME_ENV } from '@/lib/runtimeEnv';
 
 const DEFAULT_INDEX = 'hiring_jobs';
 const BATCH_SIZE = 500;
@@ -21,13 +22,10 @@ export type AlgoliaSyncResult = {
 export async function syncEntityToAlgolia(entityId: string): Promise<AlgoliaSyncResult> {
   const config = getConfig();
   if (!config.appId || !config.writeKey) {
-    return { status: 'skipped', indexed: 0, deleted: 0, reason: 'ALGOLIA_APP_ID or ALGOLIA_WRITE_API_KEY missing' };
+    return { status: 'skipped', indexed: 0, deleted: 0, reason: 'Algolia application ID or write-capable API key missing' };
   }
 
   try {
-    // Active jobs are indexed. Recently changed inactive jobs are included only so
-    // their previously indexed records can be deleted. This keeps the free-tier
-    // record count aligned to the live hiring inventory instead of accumulating history.
     const rows = await query(
       `SELECT j.id, j.entity_id, j.title, j.department, j.role_category, j.location,
               j.city, j.state, j.country, j.source, j.external_id, j.is_remote,
@@ -68,7 +66,7 @@ export async function syncEntityToAlgolia(entityId: string): Promise<AlgoliaSync
 export async function purgeEntityFromAlgolia(entityId: string): Promise<AlgoliaSyncResult> {
   const config = getConfig();
   if (!config.appId || !config.writeKey) {
-    return { status: 'skipped', indexed: 0, deleted: 0, reason: 'ALGOLIA_APP_ID or ALGOLIA_WRITE_API_KEY missing' };
+    return { status: 'skipped', indexed: 0, deleted: 0, reason: 'Algolia application ID or write-capable API key missing' };
   }
 
   try {
@@ -114,7 +112,6 @@ export async function searchAlgoliaJobs(searchText: string, limit = 40) {
     };
   } catch (error) {
     const message = errorMessage(error);
-    // A brand-new Algolia app won't have the index until the first entity refresh.
     if (/index.*does not exist|not found|404/i.test(message)) {
       return { configured: true, hits: [], nbHits: 0, query: searchText, warming: true };
     }
@@ -185,11 +182,12 @@ function toAlgoliaRecord(row: any) {
 }
 
 function getConfig(): AlgoliaConfig {
+  const sharedApiKey = firstRuntimeEnv(['ALGOLIA_API_KEY']);
   return {
-    appId: String(process.env.ALGOLIA_APP_ID || '').trim(),
+    appId: firstRuntimeEnv([...RUNTIME_ENV.algoliaAppId]),
     indexName: String(process.env.ALGOLIA_INDEX_NAME || DEFAULT_INDEX).trim() || DEFAULT_INDEX,
-    writeKey: String(process.env.ALGOLIA_WRITE_API_KEY || '').trim() || undefined,
-    searchKey: String(process.env.ALGOLIA_SEARCH_API_KEY || '').trim() || undefined,
+    writeKey: firstRuntimeEnv(['ALGOLIA_WRITE_API_KEY']) || sharedApiKey || undefined,
+    searchKey: firstRuntimeEnv(['ALGOLIA_SEARCH_API_KEY']) || sharedApiKey || undefined,
   };
 }
 
