@@ -1,7 +1,17 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHiringBasemap } from './useHiringBasemap';
 import { getFallbackHiringBasemap } from './maptilerBasemap';
+import {
+  aggregateHiringBubbles,
+  createGradientBubbleIcon,
+  createHiringHeatmapLayer,
+  HIRING_DATA_VIZ_MODES,
+  readHiringDataVizMode,
+  subscribeToHiringDataVizMode,
+  writeHiringDataVizMode,
+  type HiringDataVizMode,
+} from './hiringDataViz';
 
 const MAP_FILTERS = [
   { id: 'all', label: 'All Jobs' },
@@ -27,17 +37,28 @@ type MapMeta = {
 
 export default function WorldMap({ entityId, portalId }: { entityId?: string; portalId?: string }) {
   const [filter, setFilter] = useState('all');
+  const [vizMode, setVizMode] = useState<HiringDataVizMode>('bubbles');
   const [mapData, setMapData] = useState<any[]>([]);
   const [mapMeta, setMapMeta] = useState<MapMeta | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [tileFailed, setTileFailed] = useState(false);
+  const [mapReady, setMapReady] = useState(0);
   const mapRef = useRef<any>(null);
   const mapShellRef = useRef<HTMLDivElement | null>(null);
   const BASEMAP = useHiringBasemap();
   const ACTIVE_BASEMAP = tileFailed ? getFallbackHiringBasemap(BASEMAP.styleId) : BASEMAP;
   const profileMode = Boolean(entityId);
+  const bubbles = useMemo(() => aggregateHiringBubbles(mapData), [mapData]);
+  const showHeatmap = vizMode === 'heatmap' || vizMode === 'hybrid';
+  const showBubbles = vizMode === 'bubbles' || vizMode === 'hybrid';
+  const showPoints = vizMode === 'points';
+
+  useEffect(() => {
+    setVizMode(readHiringDataVizMode());
+    return subscribeToHiringDataVizMode(setVizMode);
+  }, []);
 
   useEffect(() => { setTileFailed(false); }, [BASEMAP.url]);
 
@@ -63,6 +84,16 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
     const frame = window.requestAnimationFrame(() => mapRef.current?.attributionControl?.setPrefix?.(false));
     return () => window.cancelAnimationFrame(frame);
   }, [MapComponents]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !MapComponents?.L || !showHeatmap || !mapReady) return;
+    const heatLayer = createHiringHeatmapLayer(MapComponents.L, mapData);
+    heatLayer.addTo(map);
+    return () => {
+      try { map.removeLayer(heatLayer); } catch {}
+    };
+  }, [MapComponents, mapData, mapReady, showHeatmap]);
 
   useEffect(() => {
     if (!entityId && !portalId) return;
@@ -98,13 +129,18 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
 
   const mapped = mapMeta?.real_mapped_jobs ?? mapMeta?.mapped_jobs ?? mapData.length;
   const totalJobs = mapMeta?.total_jobs ?? 0;
-  const cities = mapMeta?.location_count ?? 0;
+  const cities = mapMeta?.location_count ?? bubbles.length;
 
   function resetMap() {
     const map = mapRef.current;
     if (!map) return;
     map.invalidateSize?.({ animate: false });
     map.setView(WORLD_CENTER, WORLD_ZOOM, { animate: true });
+  }
+
+  function selectViz(mode: HiringDataVizMode) {
+    setVizMode(mode);
+    writeHiringDataVizMode(mode);
   }
 
   return (
@@ -116,7 +152,7 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
             <span className="map-provider-badge">{ACTIVE_BASEMAP.provider === 'maptiler' ? `MapTiler · ${ACTIVE_BASEMAP.styleLabel}` : ACTIVE_BASEMAP.styleLabel}</span>
           </div>
           <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-            {mapped.toLocaleString()} individual job points{cities ? ` · ${cities.toLocaleString()} cities` : ''}{totalJobs ? ` · ${totalJobs.toLocaleString()} open roles checked` : ''}
+            {mapped.toLocaleString()} mapped jobs{cities ? ` · ${cities.toLocaleString()} hiring locations` : ''}{totalJobs ? ` · ${totalJobs.toLocaleString()} open roles checked` : ''}
             {mapMeta?.unmapped_jobs ? ` · ${mapMeta.unmapped_jobs.toLocaleString()} still need city-level coordinates` : ''}
           </p>
         </div>
@@ -127,8 +163,23 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
         </div>
       </div>
 
+      <div className="flex items-center gap-2 flex-wrap shrink-0 rounded-xl border border-white/[0.07] bg-black/10 px-2.5 py-2">
+        <span className="text-[9px] uppercase tracking-[0.14em] text-slate-600 mr-1">Data view</span>
+        {HIRING_DATA_VIZ_MODES.map(mode => (
+          <button
+            key={mode.id}
+            type="button"
+            title={mode.description}
+            onClick={() => selectViz(mode.id)}
+            className={`rounded-lg border px-2.5 py-1.5 text-[10px] transition-all ${vizMode === mode.id ? 'border-fuchsia-400/45 bg-fuchsia-500/15 text-fuchsia-100 shadow-[0_0_18px_rgba(217,70,239,.10)]' : 'border-white/[0.08] bg-white/[0.025] text-slate-500 hover:text-slate-200 hover:border-white/15'}`}
+          >
+            {mode.shortLabel}
+          </button>
+        ))}
+      </div>
+
       {error && <div className="rounded-xl border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-100 shrink-0">{error}</div>}
-      {tileFailed && <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.04] px-3 py-2 text-[10px] text-amber-100/70 shrink-0">MapTiler tiles could not be reached, so this view temporarily switched to the fallback basemap. Job points and every map interaction remain enabled.</div>}
+      {tileFailed && <div className="rounded-xl border border-amber-400/15 bg-amber-500/[0.04] px-3 py-2 text-[10px] text-amber-100/70 shrink-0">MapTiler tiles could not be reached, so this view temporarily switched to the fallback basemap. Data layers and every map interaction remain enabled.</div>}
 
       <div ref={mapShellRef} className="relative map-container flex-1" style={{ minHeight: profileMode ? 630 : 520 }}>
         <button onClick={resetMap} className="absolute right-3 top-3 z-[1000] rounded-lg border border-white/15 bg-[#0b1020]/85 px-2.5 py-1.5 text-[10px] font-medium text-slate-200 shadow-lg backdrop-blur hover:bg-[#111a30]" type="button">Reset view</button>
@@ -151,7 +202,10 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
             attributionControl={true}
             worldCopyJump={true}
             style={{ height: '100%', width: '100%', borderRadius: '12px', background: '#1b1d22' }}
-            whenReady={() => { window.setTimeout(() => mapRef.current?.invalidateSize?.({ animate: false }), 60); }}
+            whenReady={() => {
+              setMapReady(value => value + 1);
+              window.setTimeout(() => mapRef.current?.invalidateSize?.({ animate: false }), 60);
+            }}
           >
             <MapComponents.TileLayer
               key={ACTIVE_BASEMAP.url}
@@ -164,15 +218,34 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
               {...(ACTIVE_BASEMAP.tileSize ? { tileSize: ACTIVE_BASEMAP.tileSize } : {})}
               {...(ACTIVE_BASEMAP.zoomOffset !== undefined ? { zoomOffset: ACTIVE_BASEMAP.zoomOffset } : {})}
             />
-            {mapData.map((point: any, index: number) => {
+
+            {showBubbles && bubbles.map(bubble => (
+              <MapComponents.Marker
+                key={bubble.key}
+                position={[bubble.lat, bubble.lng]}
+                icon={createGradientBubbleIcon(MapComponents.L, bubble.count)}
+              >
+                <MapComponents.Popup>
+                  <div style={{ fontFamily: 'sans-serif', fontSize: 12, minWidth: 220 }}>
+                    <strong>{bubble.count.toLocaleString()} open role{bubble.count === 1 ? '' : 's'}</strong><br />
+                    <span style={{ color: '#a21caf' }}>{[bubble.city, bubble.state, countryLabel(bubble.country)].filter(Boolean).join(', ') || 'Mapped hiring location'}</span>
+                    {bubble.entityName && <><br /><span style={{ color: '#64748b' }}>{bubble.entityName}</span></>}
+                    {bubble.jobs.slice(0, 4).map((job, index) => <div key={job.job_id || index} style={{ marginTop: 5, color: '#475569', fontSize: 11 }}>• {job.title || 'Open role'}</div>)}
+                    {bubble.jobs.length > 4 && <div style={{ marginTop: 4, color: '#94a3b8', fontSize: 10 }}>+{bubble.jobs.length - 4} more roles</div>}
+                  </div>
+                </MapComponents.Popup>
+              </MapComponents.Marker>
+            ))}
+
+            {showPoints && mapData.map((point: any, index: number) => {
               const lat = Number(point.lat); const lng = Number(point.lng);
               if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
               return (
                 <MapComponents.CircleMarker
                   key={point.job_id || `${point.entity_name || ''}-${point.city || ''}-${index}`}
                   center={[lat, lng]}
-                  radius={2.7}
-                  pathOptions={{ color: '#c084fc', weight: 0.65, fillColor: '#9333ea', fillOpacity: 0.9, opacity: 0.9 }}
+                  radius={3.2}
+                  pathOptions={{ color: '#f0abfc', weight: 0.75, fillColor: '#a855f7', fillOpacity: 0.9, opacity: 0.95 }}
                 >
                   <MapComponents.Popup>
                     <div style={{ fontFamily: 'sans-serif', fontSize: 12, minWidth: 220 }}>
@@ -189,11 +262,18 @@ export default function WorldMap({ entityId, portalId }: { entityId?: string; po
       </div>
 
       <div className="flex items-center justify-between gap-3 text-[10px] text-slate-500 flex-wrap shrink-0">
-        <span>One point per mapped job. No clustering and no count-sized bubbles.</span>
-        <span className="text-[9px] text-slate-600">Drag · wheel/pinch zoom · double-click zoom · box zoom · keyboard · +/− controls are all enabled.</span>
+        <span>{vizDescription(vizMode)}</span>
+        <span className="text-[9px] text-slate-600">Drag · wheel/pinch zoom · double-click zoom · box zoom · keyboard · +/− controls.</span>
       </div>
     </div>
   );
+}
+
+function vizDescription(mode: HiringDataVizMode) {
+  if (mode === 'bubbles') return 'Gradient bubble diameter and glow increase with hiring volume at each location.';
+  if (mode === 'heatmap') return 'Blue → cyan → green → yellow shows increasing hiring density.';
+  if (mode === 'hybrid') return 'Density heat surface plus volume-scaled gradient hiring bubbles.';
+  return 'One small point per mapped job for maximum record-level detail.';
 }
 
 function countryLabel(value: unknown) {
