@@ -17,7 +17,11 @@ export async function fetchTinyFishJobs(entity: any): Promise<{ jobs: any[]; use
   if (!employer) return { jobs: [], used: [], skipped: ['tinyfish: employer name missing'] };
 
   const url = new URL(BASE);
-  url.searchParams.set('query', `"${employer.replace(/["“”]/g, '')}" jobs careers hiring`);
+  const assist = Array.isArray(entity?.discovery_queries)
+    ? entity.discovery_queries.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 2)
+    : [];
+  const baseQuery = `"${employer.replace(/["“”]/g, '')}" jobs careers hiring`;
+  url.searchParams.set('query', [baseQuery, ...assist].join(' OR '));
   url.searchParams.set('recency_minutes', String(RECENCY_MINUTES));
   url.searchParams.set('location', 'US');
   url.searchParams.set('language', 'en');
@@ -74,6 +78,7 @@ function normalizeResult(row: any, entity: any) {
       tinyfish_site_name: clean(row?.site_name),
       tinyfish_position: numberOrNull(row?.position),
       tinyfish_recency_minutes: RECENCY_MINUTES,
+      tinyfish_ai_query_expansions: Array.isArray(entity?.discovery_queries) ? entity.discovery_queries.slice(0, 2) : [],
       normalized_apply_url: resultUrl,
       normalized_employer: String(entity?.name || '').trim(),
       normalized_employer_source: `tinyfish:${evidence}`,
