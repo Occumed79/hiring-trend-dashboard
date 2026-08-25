@@ -77,7 +77,11 @@ async function discoverViaLangSearch(entity:any):Promise<DiscoveredHiringSource[
   return[];
 }
 
-function sitemapSource(url:string,root:string):DiscoveredHiringSource { return { source_key:`sitemap:${hashString(url)}`, source_type:'sitemap', source_url:url, ats_provider:null, board_id:null, source_class:'authoritative', lineage_root:`official-domain:${registrableHost(safeHost(root))}`, discovery_method:'robots/sitemap', metadata:{ structured_only:true } }; }
+// A sitemap is an official-domain discovery surface, but this parser intentionally
+// samples bounded job URLs and only accepts structured JobPosting JSON-LD. It is
+// therefore corroborating evidence, not proof that the employer's full inventory
+// was enumerated. Never let a zero sitemap sample masquerade as an authoritative zero.
+function sitemapSource(url:string,root:string):DiscoveredHiringSource { return { source_key:`sitemap:${hashString(url)}`, source_type:'sitemap', source_url:url, ats_provider:null, board_id:null, source_class:'verified', lineage_root:`official-domain:${registrableHost(safeHost(root))}`, discovery_method:'robots/sitemap', metadata:{ structured_only:true, enumeration_complete:false, bounded_sample:true } }; }
 function extractSitemaps(text:string,root:string){const out:string[]=[];const regex=/^\s*Sitemap:\s*(\S+)\s*$/gim;let match:RegExpExecArray|null;while((match=regex.exec(text))!==null){const url=normalizeUrl(match[1]);if(url)out.push(url);else try{out.push(new URL(match[1],root).toString());}catch{}}return out;}
 function safeOrigin(value:string){try{return new URL(value).origin;}catch{return null;}}
 
