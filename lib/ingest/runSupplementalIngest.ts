@@ -1,9 +1,10 @@
 import { query } from '@/db/client';
-import { enrichEntityOccupationalHealth } from '@/lib/ai/clarifaiOccupationalHealth';
+import { enrichEntityOccupationalHealth } from '@/lib/ai/occupationalHealthAi';
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
 import { fetchTheirStackJobs } from './theirStack';
 import { fetchKeenableJobs } from './keenable';
 import { fetchJobSpyJobs } from './jobSpy';
+import { fetchTinyFishJobs } from './tinyFishSearch';
 import { dedupeJobsAcrossSources, filterAllJobsForEntityEvidence } from './jobIdentity';
 import { assessJobQuality } from './jobQuality';
 import { upsertIngestedJob } from './upsertJob';
@@ -13,8 +14,9 @@ import type { CoverageCheck } from './neogovFeed';
 
 const THEIRSTACK_SOURCE = 'jobapi:theirstack';
 const KEENABLE_SOURCE = 'web:keenable';
+const TINYFISH_SOURCE = 'web:tinyfish';
 const JOBSPY_SOURCES = ['jobspy:indeed', 'jobspy:linkedin'];
-const SUPPLEMENTAL_URL_SOURCES = [THEIRSTACK_SOURCE, KEENABLE_SOURCE, ...JOBSPY_SOURCES];
+const SUPPLEMENTAL_URL_SOURCES = [THEIRSTACK_SOURCE, KEENABLE_SOURCE, TINYFISH_SOURCE, ...JOBSPY_SOURCES];
 
 export async function runSupplementalIngest(entityId?: string | null) {
   const entities = entityId
@@ -50,9 +52,9 @@ export async function runSupplementalIngest(entityId?: string | null) {
 }
 
 async function ingestSupplementalEntity(entity: any) {
-  // These sources are intentionally independent promises. A board scraper error,
-  // API failure, or rate-limit must never block the other supplemental sources.
-  const [theirStack, keenable, jobSpy] = await Promise.all([
+  // These sources are intentionally independent promises. A scraper, search API,
+  // rate-limit, or quota failure must never block the other supplemental sources.
+  const [theirStack, keenable, jobSpy, tinyFish] = await Promise.all([
     fetchTheirStackJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`theirstack: ${errorMessage(error)}`] })),
     fetchKeenableJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`keenable: ${errorMessage(error)}`] })),
     fetchJobSpyJobs(entity).catch(error => ({
@@ -62,9 +64,10 @@ async function ingestSupplementalEntity(entity: any) {
       site_results: [],
       trigger: { mode: 'error', run: false, reason: errorMessage(error), active_jobs: 0, theirstack_signal: 0 },
     })),
+    fetchTinyFishJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`tinyfish: ${errorMessage(error)}`] })),
   ]);
 
-  const discovered = [...theirStack.jobs, ...keenable.jobs, ...jobSpy.jobs];
+  const discovered = [...theirStack.jobs, ...keenable.jobs, ...jobSpy.jobs, ...tinyFish.jobs];
   const employerFiltered = filterAllJobsForEntityEvidence(discovered, entity);
   const qualityAccepted = employerFiltered.jobs.filter((job: any) => assessJobQuality(job).ok);
   const qualityRejected = employerFiltered.jobs.length - qualityAccepted.length;
@@ -80,9 +83,9 @@ async function ingestSupplementalEntity(entity: any) {
     ? await reconcileTheirStackInventory(entity.id, deduped.jobs.filter((job: any) => job.source === THEIRSTACK_SOURCE))
     : 0;
 
-  // Authoritative/official rows always beat a matching supplemental URL. JobSpy
-  // remains corroborating inventory and is never allowed to close an authoritative
-  // job or prove that an employer inventory is complete.
+  // Authoritative/official rows always beat matching supplemental URLs. JobSpy,
+  // TinyFish and other discovery sources can add corroborating inventory but can
+  // never prove that an employer inventory is complete or close official jobs.
   const duplicateClosures = await retireSupplementalUrlDuplicates(entity.id);
   const closedCount = inventoryClosures + duplicateClosures;
 
@@ -99,10 +102,10 @@ async function ingestSupplementalEntity(entity: any) {
   const algolia = await syncEntityToAlgolia(entity.id);
   if (algolia.status === 'error') console.warn(`Algolia sync failed for ${entity.name}: ${algolia.reason}`);
 
-  await persistSupplementalCoverage(entity.id, theirStack, keenable, jobSpy);
+  await persistSupplementalCoverage(entity.id, theirStack, keenable, jobSpy, tinyFish);
 
-  const sourcesUsed = Array.from(new Set([...theirStack.used, ...keenable.used, ...jobSpy.used]));
-  const sourcesSkipped = Array.from(new Set([...theirStack.skipped, ...keenable.skipped, ...jobSpy.skipped]));
+  const sourcesUsed = Array.from(new Set([...theirStack.used, ...keenable.used, ...jobSpy.used, ...tinyFish.used]));
+  const sourcesSkipped = Array.from(new Set([...theirStack.skipped, ...keenable.skipped, ...jobSpy.skipped, ...tinyFish.skipped]));
   const status = sourcesUsed.length || sourcesSkipped.length ? 'success' : 'partial';
 
   return {
@@ -121,6 +124,7 @@ async function ingestSupplementalEntity(entity: any) {
       sites: jobSpy.site_results,
       jobs: jobSpy.jobs.length,
     },
+    tinyfish: { jobs: tinyFish.jobs.length, used: tinyFish.used, skipped: tinyFish.skipped },
     occupational_health: occupationalHealth,
     algolia,
     sources_used: sourcesUsed,
@@ -129,7 +133,7 @@ async function ingestSupplementalEntity(entity: any) {
   };
 }
 
-async function persistSupplementalCoverage(entityId: string, theirStack: any, keenable: any, jobSpy: any) {
+async function persistSupplementalCoverage(entityId: string, theirStack: any, keenable: any, jobSpy: any, tinyFish: any) {
   const checks: CoverageCheck[] = [];
   const theirStackConfiguredForEntity = theirStack.used.length > 0 || theirStack.skipped.length > 0;
   if (theirStackConfiguredForEntity) {
@@ -150,6 +154,20 @@ async function persistSupplementalCoverage(entityId: string, theirStack: any, ke
     jobs_found: keenable.jobs.length,
     authoritative_zero: false,
     details: { lineage_root: 'keenable', skipped: keenable.skipped },
+  });
+
+  checks.push({
+    source: TINYFISH_SOURCE,
+    source_class: 'supplemental',
+    status: supplementalStatus(tinyFish, '0 employer-verified job-detail results'),
+    jobs_found: tinyFish.jobs.length,
+    authoritative_zero: false,
+    details: {
+      lineage_root: 'tinyfish-search',
+      skipped: tinyFish.skipped,
+      inventory_complete: false,
+      role: 'free live-web job discovery',
+    },
   });
 
   for (const site of Array.isArray(jobSpy?.site_results) ? jobSpy.site_results : []) {
@@ -247,9 +265,6 @@ async function retireSupplementalUrlDuplicates(entityId: string) {
      ) SELECT COUNT(*) AS cnt FROM closed`,
     [entityId, SUPPLEMENTAL_URL_SOURCES],
   ).catch(async () => {
-    // Keep the database schema free of helper SQL functions: if the rank expression
-    // is unavailable on an older deployment, still guarantee that authoritative
-    // rows beat all supplemental duplicates.
     return query(
       `WITH closed AS (
          UPDATE jobs AS supplemental
