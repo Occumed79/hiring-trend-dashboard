@@ -120,21 +120,7 @@ export async function searchAlgoliaJobs(searchText: string, limit = 40) {
 }
 
 function toAlgoliaRecord(row: any) {
-  const oh = row.raw_data?.clarifai_oh || {};
-  const ohTerms = [
-    oh.safety_sensitive && 'safety sensitive',
-    oh.likely_preplacement_exam && 'pre placement exam occupational physical',
-    oh.likely_drug_testing && 'drug testing',
-    oh.likely_hearing_conservation && 'hearing conservation audiogram',
-    oh.likely_respirator_use && 'respirator fit testing pulmonary',
-    oh.likely_medical_surveillance && 'medical surveillance',
-    oh.deployment_oconus && 'deployment oconus overseas',
-    oh.dot_cdl && 'DOT CDL driver',
-    oh.hazardous_exposure && 'hazardous exposure hazmat',
-    oh.clearance_security && 'clearance security',
-    String(oh.physical_demand || '').toLowerCase() === 'high' && 'high physical demand',
-  ].filter(Boolean) as string[];
-
+  const locationCategory = firstString(row.raw_data?.job_location_category) || deriveLocationCategory(row);
   const applyUrl = firstString(
     row.raw_data?.normalized_apply_url,
     row.raw_data?.final_url,
@@ -153,6 +139,7 @@ function toAlgoliaRecord(row: any) {
     title: row.title || '',
     department: row.department || '',
     role_category: row.role_category || 'other',
+    location_category: locationCategory,
     location: row.location || '',
     city: row.city || '',
     state: row.state || '',
@@ -164,21 +151,26 @@ function toAlgoliaRecord(row: any) {
     is_active: true,
     posted_at: row.posted_at ? new Date(row.posted_at).toISOString() : null,
     apply_url: applyUrl,
-    occupational_health_score: clamp(Math.round(Number(oh.opportunity_score) || 0), 0, 100),
-    occupational_health_signals: ohTerms,
-    occupational_health_reason: firstString(oh.reason),
     search_text: [
       row.entity_name,
       row.title,
       row.department,
       row.role_category,
+      locationCategory,
       row.location,
       row.city,
       row.state,
       row.country,
-      ...ohTerms,
     ].filter(Boolean).join(' '),
   };
+}
+
+function deriveLocationCategory(row: any) {
+  if (row.is_remote) return 'remote';
+  const country = String(row.country || '').trim().toUpperCase();
+  if (country === 'US') return 'domestic';
+  if (country) return 'overseas';
+  return 'unknown';
 }
 
 function getConfig(): AlgoliaConfig {
@@ -214,10 +206,6 @@ function firstString(...values: unknown[]) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function errorMessage(error: unknown) {
