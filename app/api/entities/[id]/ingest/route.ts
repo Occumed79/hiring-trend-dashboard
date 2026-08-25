@@ -41,6 +41,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const awaitingInitialIngest = !latest || lastRunAt < createdAt;
     const mapped = jobs.filter(hasRealMappedLocation);
     const geocoded = jobs.filter((job) => String(job.raw_data?.normalized_location_quality || '') === 'geocoded job location');
+
     const [theirStackMonitors, theirStackExportSecret, datasetAccess] = await Promise.all([
       monitorsForEntityLive(entity),
       getTheirStackExportSecret().catch(() => null),
@@ -52,22 +53,26 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         note: `Dataset entitlement check failed: ${error instanceof Error ? error.message : String(error)}`,
       })),
     ]);
+
     const configuredTheirStackMonitors = theirStackMonitors.filter(monitor => Boolean(String(process.env[monitor.envKey] || '').trim()));
     const liveTheirStackMonitors = theirStackMonitors.filter(monitor => monitor.source === 'live_list');
     const legacyTheirStack = ['1', 'true', 'yes', 'on'].includes(String(process.env.THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED || '').trim().toLowerCase());
 
     const algoliaAppEnv = detectedRuntimeEnvName(RUNTIME_ENV.algoliaAppId);
-    const algoliaKeyEnv = detectedRuntimeEnvName(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY']);
+    const algoliaKeyEnv = detectedRuntimeEnvName(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY', 'NEXT_PUBLIC_ALGOLIA_SEARCH_API_KEY']);
     const algoliaAppId = firstRuntimeEnv(RUNTIME_ENV.algoliaAppId);
-    const algoliaApiKey = firstRuntimeEnv(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY']);
+    const algoliaApiKey = firstRuntimeEnv(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY', 'NEXT_PUBLIC_ALGOLIA_SEARCH_API_KEY']);
     const keenableEnv = detectedRuntimeEnvName(RUNTIME_ENV.keenable);
     const tinyFishEnv = detectedRuntimeEnvName(RUNTIME_ENV.tinyfish);
     const geoapifyEnv = detectedRuntimeEnvName(RUNTIME_ENV.geoapify);
+    const mapTilerEnv = detectedRuntimeEnvName(RUNTIME_ENV.maptiler);
     const langSearch1Env = detectedRuntimeEnvName(RUNTIME_ENV.langSearch);
     const langSearch2Env = detectedRuntimeEnvName(RUNTIME_ENV.langSearch2);
     const langSearchEnv = langSearch1Env || langSearch2Env;
     const cosTokenEnv = detectedRuntimeEnvName(RUNTIME_ENV.careerOneStopToken);
     const cosUserEnv = detectedRuntimeEnvName(RUNTIME_ENV.careerOneStopUser);
+    const samEnv = detectedRuntimeEnvName(RUNTIME_ENV.sam);
+    const nlxEnv = detectedRuntimeEnvName(RUNTIME_ENV.nlx);
 
     const adzunaPairs = [
       [detectedRuntimeEnvName(RUNTIME_ENV.adzunaId1), detectedRuntimeEnvName(RUNTIME_ENV.adzunaKey1)],
@@ -93,12 +98,18 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         : datasetErrors > 0
           ? 'check error'
           : 'not configured';
+
     const jobSpyDisabled = ['0', 'false', 'no', 'off'].includes(String(process.env.JOBSPY_ENABLED || 'true').trim().toLowerCase())
       || String(process.env.JOBSPY_MODE || 'gap').trim().toLowerCase() === 'off';
     const jobSpyTargeted = ['current_clients', 'prospects', 'private_companies'].includes(String(entity.portal || ''));
     const jobSpyAvailable = !jobSpyDisabled && jobSpyTargeted;
     const jobSpyMode = String(process.env.JOBSPY_MODE || 'gap').trim().toLowerCase() || 'gap';
     const jobSpyHours = Math.max(1, Number(process.env.JOBSPY_HOURS_OLD || 240));
+
+    const displaySourceCoverage = sourceCoverage
+      .filter((row: any) => isVisibleHiringCoverage(row))
+      .map((row: any) => normalizeCoverageDisplay(row));
+    const displayIncidents = sourceIncidents.filter((row: any) => String(row?.source || '').toLowerCase() !== 'jobspy:linkedin');
 
     return NextResponse.json({
       status: awaitingInitialIngest ? 'queued' : latest.status,
@@ -117,11 +128,18 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         state: entity.government_state || null,
         fips: entity.government_fips || null,
       } : null,
-      source_coverage: sourceCoverage,
+      source_coverage: displaySourceCoverage,
       source_graph: sourceGraph,
       coverage_assessment: assessment,
-      source_incidents: sourceIncidents,
+      source_incidents: displayIncidents,
       integrations: {
+        maptiler: {
+          configured: Boolean(mapTilerEnv),
+          status: mapTilerEnv ? 'configured' : 'not configured',
+          mode: mapTilerEnv
+            ? `${mapTilerEnv} visible to web runtime · MapTiler Dataviz Dark is the default hiring-map basemap.`
+            : 'No MapTiler key alias is visible; maps will use the dark fallback until a MapTiler key is present.',
+        },
         theirstack: {
           monitored: theirStackMonitors.length > 0,
           configured: configuredTheirStackMonitors.length > 0,
@@ -147,7 +165,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
           configured: jobSpyAvailable,
           status: jobSpyAvailable ? 'available' : jobSpyTargeted ? 'not configured' : 'not targeted',
           mode: jobSpyAvailable
-            ? `Native Node JobSpy · Indeed + LinkedIn · ${jobSpyMode === 'gap' ? 'runs only when stored inventory is materially below the TheirStack signal' : `${jobSpyMode} mode`} · ${Math.round(jobSpyHours / 24)}-day recency window · no per-job API key.`
+            ? `Native Node JobSpy · Indeed only · LinkedIn removed · ${jobSpyMode === 'gap' ? 'runs only when stored inventory is materially below the TheirStack signal' : `${jobSpyMode} mode`} · ${Math.round(jobSpyHours / 24)}-day recency window · no per-job API key.`
             : jobSpyTargeted
               ? 'JobSpy is disabled by runtime configuration.'
               : 'JobSpy is intentionally limited to clients, prospects, and private companies.',
@@ -159,34 +177,54 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
             : 'No complete ADZUNA_APP_ID + ADZUNA_APP_KEY credential pair is visible to the web runtime.',
         },
         keenable: { configured: Boolean(keenableEnv), mode: keenableEnv ? `${keenableEnv} visible to web runtime.` : 'No supported Keenable key name is visible to the web runtime.' },
-        tinyfish: { configured: Boolean(tinyFishEnv), mode: tinyFishEnv ? `${tinyFishEnv} visible · free Search API is wired as supplemental live-web job discovery.` : 'TINYFISH_API_KEY is not visible to the web runtime.' },
+        tinyfish: { configured: Boolean(tinyFishEnv), mode: tinyFishEnv ? `${tinyFishEnv} visible · strict official/ATS job-detail gate is active.` : 'TINYFISH_API_KEY is not visible to the web runtime.' },
         geoapify: { configured: Boolean(geoapifyEnv), mode: geoapifyEnv ? `${geoapifyEnv} visible · used by the active location geocoder.` : 'GEOAPIFY_API_KEY is not visible to the web runtime.' },
         algolia: {
           configured: Boolean(algoliaAppId && algoliaApiKey),
+          status: algoliaAppId && algoliaApiKey ? 'configured' : 'not configured',
           mode: algoliaAppId && algoliaApiKey
             ? `${algoliaAppEnv} + ${algoliaKeyEnv} visible to web runtime.`
             : algoliaKeyEnv && !algoliaAppId
-              ? `${algoliaKeyEnv} is visible, but Algolia still needs ALGOLIA_APP_ID (or ALGOLIA_APPLICATION_ID).`
-              : 'Algolia application ID and API key are not both visible to the web runtime.',
+              ? `${algoliaKeyEnv} is visible, but no Algolia application ID is present. The application ID cannot be derived from an API key.`
+              : algoliaAppId && !algoliaApiKey
+                ? `${algoliaAppEnv} is visible, but no Algolia search/write key is present.`
+                : 'Neither a usable Algolia application ID nor API key pair is visible to the web runtime.',
         },
         job_intelligence_ai: {
           configured: configuredAiProviders.length > 0,
           status: configuredAiProviders.length ? 'available' : 'not configured',
           mode: configuredAiProviders.length
-            ? `${configuredAiProviders.length}/5 provider slot(s) visible: ${configuredAiProviders.map(provider => `${provider.label} (${provider.env})`).join(', ')}. Used for employer-specific discovery expansion plus role and location taxonomy; no occupational-health scoring.`
+            ? `${configuredAiProviders.length}/5 provider slot(s) visible: ${configuredAiProviders.map(provider => `${provider.label} (${provider.env})`).join(', ')}. Used for discovery expansion plus role and country/location normalization; no occupational-health scoring.`
             : 'No Groq, Cerebras, Fireworks, or OpenRouter credential is visible to the web runtime.',
         },
         langsearch: {
           configured: Boolean(langSearchEnv),
+          status: langSearchEnv ? 'configured' : 'not configured',
           mode: langSearchEnv
             ? `Visible aliases: ${[langSearch1Env, langSearch2Env].filter(Boolean).join(', ')}.`
-            : 'Expected LANGSEARCH_API_KEY / LANGSEARCH_API_KEY_2 or equivalent hyphen aliases; none are visible to the running web process.',
+            : 'No LangSearch key is visible under the supported runtime aliases. The connector cannot run until the web process actually has a LangSearch key.',
+        },
+        nlx: {
+          configured: Boolean(nlxEnv),
+          status: nlxEnv ? 'configured' : 'not configured',
+          mode: nlxEnv ? `${nlxEnv} visible · direct National Labor Exchange connector can run.` : 'NLX_API_KEY is not visible to the web runtime, so the direct NLx connector is not wired.',
         },
         careeronestop: {
           configured: Boolean(cosTokenEnv && cosUserEnv),
+          status: cosTokenEnv && cosUserEnv ? 'configured' : 'not configured',
           mode: cosTokenEnv && cosUserEnv
-            ? `${cosTokenEnv} + ${cosUserEnv} visible · CareerOneStop is the active NLx-resilience mirror.`
-            : `CareerOneStop needs both credentials in the web runtime (${cosTokenEnv || 'API token missing'}; ${cosUserEnv || 'user ID missing'}).`,
+            ? `${cosTokenEnv} + ${cosUserEnv} visible · CareerOneStop is the NLx-resilience mirror.`
+            : `CareerOneStop needs both credentials (${cosTokenEnv || 'API token missing'}; ${cosUserEnv || 'user ID missing'}).`,
+        },
+        sam_identity: {
+          configured: Boolean(samEnv),
+          status: samEnv ? 'configured' : 'not configured',
+          mode: samEnv ? `${samEnv} visible · SAM.gov is used for entity identity enrichment, not job inventory.` : 'SAM.gov identity enrichment is not wired because no SAM API key is visible. It is not a job source.',
+        },
+        usaspending_identity: {
+          configured: true,
+          status: 'available',
+          mode: 'USAspending recipient identity is a no-key identity service. A successful identity lookup does not represent a job count.',
         },
       },
       coverage: {
@@ -218,4 +256,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not refresh entity.' }, { status: 500 });
   }
+}
+
+function isVisibleHiringCoverage(row: any) {
+  const source = String(row?.source || '').toLowerCase();
+  if (source === 'jobspy:linkedin') return false;
+  if (source.startsWith('identity:')) return false;
+  if (source === 'registry:census_governments') return false;
+
+  const status = String(row?.status || '').toLowerCase();
+  const reason = String(row?.details?.reason || row?.details?.error || '').toLowerCase();
+  if (status === 'skipped' && (source === 'nlx' || source.includes('careeronestop')) && /(?:key|credential|token).*(?:missing|not configured)|not configured/.test(reason)) return false;
+  return true;
+}
+
+function normalizeCoverageDisplay(row: any) {
+  const source = String(row?.source || '').toLowerCase();
+  if (source.startsWith('sitemap:') && String(row?.status || '').toLowerCase() === 'zero') {
+    return {
+      ...row,
+      details: {
+        ...(row?.details || {}),
+        reason: 'Checked successfully; the official sitemap contained no job-detail URLs for this employer.',
+      },
+    };
+  }
+  return row;
 }
