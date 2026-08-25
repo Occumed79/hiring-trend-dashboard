@@ -38,19 +38,28 @@ test('metrics and profile UI expose role categories plus country breakdown and n
   assert.doesNotMatch(roleBreakdown, /Overseas \/ international|Occupational Health Signals|OH score|hearing conservation|respirator/i);
 });
 
-test('world map follows the MapTiler Dataviz point-cloud reference and keeps normal zoom controls', () => {
+test('world map exposes MapTiler-style bubbles heatmap hybrid and individual points with full controls', () => {
   const map = read('components/map/WorldMap.tsx');
   const basemap = read('components/map/maptilerBasemap.ts');
+  const viz = read('components/map/hiringDataViz.ts');
   const route = read('app/api/map/route.ts');
-  assert.match(map, /CircleMarker/);
-  assert.match(map, /radius=\{2\.7\}/);
+  for (const mode of ['bubbles','heatmap','hybrid','points']) assert.match(viz, new RegExp(`'${mode}'`));
+  assert.match(viz, /radial-gradient/);
+  assert.match(viz, /createHiringHeatmapLayer/);
+  assert.match(viz, /Blue → cyan → green → yellow|37, 99, 235/);
+  assert.match(map, /HIRING_DATA_VIZ_MODES/);
+  assert.match(map, /createGradientBubbleIcon/);
+  assert.match(map, /createHiringHeatmapLayer/);
   assert.match(map, /scrollWheelZoom=\{true\}/);
   assert.match(map, /doubleClickZoom=\{true\}/);
+  assert.match(map, /boxZoom=\{true\}/);
+  assert.match(map, /keyboard=\{true\}/);
   assert.match(map, /MapTiler/);
   assert.match(basemap, /DEFAULT_HIRING_MAP_STYLE: HiringMapStyleId = 'dataviz-dark'/);
+  assert.match(basemap, /'dataviz-light'/);
+  assert.match(basemap, /'dataviz'/);
   assert.match(basemap, /api\.maptiler\.com\/maps/);
   assert.match(route, /visualOffset/);
-  assert.doesNotMatch(route, /const buckets = new Map/);
 });
 
 test('source coverage and integrations live in a sidebar workspace instead of the company profile', () => {
