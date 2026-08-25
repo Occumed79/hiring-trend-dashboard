@@ -3,7 +3,7 @@ import { buildDiscoveryAssist, enrichEntityJobTaxonomy } from '@/lib/ai/jobIntel
 import { syncEntityToAlgolia } from '@/lib/search/algolia';
 import { fetchTheirStackJobs } from './theirStack';
 import { fetchKeenableJobs } from './keenable';
-import { fetchJobSpyJobs } from './jobSpy';
+import { fetchJobSpyJobs } from './jobSpyIndeed';
 import { fetchTinyFishJobs } from './tinyFishSearch';
 import { dedupeJobsAcrossSources, filterAllJobsForEntityEvidence } from './jobIdentity';
 import { assessJobQuality } from './jobQuality';
@@ -15,7 +15,7 @@ import type { CoverageCheck } from './neogovFeed';
 const THEIRSTACK_SOURCE = 'jobapi:theirstack';
 const KEENABLE_SOURCE = 'web:keenable';
 const TINYFISH_SOURCE = 'web:tinyfish';
-const JOBSPY_SOURCES = ['jobspy:indeed', 'jobspy:linkedin'];
+const JOBSPY_SOURCES = ['jobspy:indeed'];
 const SUPPLEMENTAL_URL_SOURCES = [THEIRSTACK_SOURCE, KEENABLE_SOURCE, TINYFISH_SOURCE, ...JOBSPY_SOURCES];
 
 export async function runSupplementalIngest(entityId?: string | null) {
@@ -52,9 +52,6 @@ export async function runSupplementalIngest(entityId?: string | null) {
 }
 
 async function ingestSupplementalEntity(entity: any) {
-  // One low-cost AI planning call may generate conservative employer-specific
-  // search phrases. They are query expansion only; all returned jobs still need
-  // the normal canonical employer-evidence checks before they can be stored.
   const discoveryAssist = await buildDiscoveryAssist(entity).catch(error => ({
     queries: [],
     provider: null,
@@ -63,8 +60,6 @@ async function ingestSupplementalEntity(entity: any) {
   }));
   const discoveryEntity = { ...entity, discovery_queries: discoveryAssist.queries };
 
-  // These sources are intentionally independent promises. A scraper, search API,
-  // rate-limit, quota failure, or AI-planning failure must never block the others.
   const [theirStack, keenable, jobSpy, tinyFish] = await Promise.all([
     fetchTheirStackJobs(entity).catch(error => ({ jobs: [], used: [], skipped: [`theirstack: ${errorMessage(error)}`] })),
     fetchKeenableJobs(discoveryEntity).catch(error => ({ jobs: [], used: [], skipped: [`keenable: ${errorMessage(error)}`] })),
@@ -94,15 +89,9 @@ async function ingestSupplementalEntity(entity: any) {
     ? await reconcileTheirStackInventory(entity.id, deduped.jobs.filter((job: any) => job.source === THEIRSTACK_SOURCE))
     : 0;
 
-  // Authoritative/official rows always beat matching supplemental URLs. JobSpy,
-  // TinyFish and other discovery sources can add corroborating inventory but can
-  // never prove that an employer inventory is complete or close official jobs.
   const duplicateClosures = await retireSupplementalUrlDuplicates(entity.id);
   const closedCount = inventoryClosures + duplicateClosures;
 
-  // The AI pool is deliberately limited to the two dashboard needs the user
-  // requested: functional role categories and location categories. It does not
-  // perform occupational-health inference.
   const jobTaxonomy = await enrichEntityJobTaxonomy(entity.id, entity.name).catch(error => ({
     status: 'error',
     analyzed: 0,
@@ -149,6 +138,10 @@ async function ingestSupplementalEntity(entity: any) {
 }
 
 async function persistSupplementalCoverage(entityId: string, theirStack: any, keenable: any, jobSpy: any, tinyFish: any) {
+  // LinkedIn was removed as a JobSpy source. Remove any stale row from earlier
+  // builds so it cannot continue surfacing an obsolete ERROR tile.
+  await query(`DELETE FROM entity_source_coverage WHERE entity_id = $1 AND source = 'jobspy:linkedin'`, [entityId]).catch(() => {});
+
   const checks: CoverageCheck[] = [];
   const theirStackConfiguredForEntity = theirStack.used.length > 0 || theirStack.skipped.length > 0;
   if (theirStackConfiguredForEntity) {
@@ -174,28 +167,28 @@ async function persistSupplementalCoverage(entityId: string, theirStack: any, ke
   checks.push({
     source: TINYFISH_SOURCE,
     source_class: 'supplemental',
-    status: supplementalStatus(tinyFish, '0 employer-verified job-detail results'),
+    status: supplementalStatus(tinyFish, '0 trusted employer/ATS job-detail results'),
     jobs_found: tinyFish.jobs.length,
     authoritative_zero: false,
     details: {
       lineage_root: 'tinyfish-search',
       skipped: tinyFish.skipped,
       inventory_complete: false,
-      role: 'free live-web job discovery',
+      role: 'strict official/ATS live-web job discovery',
     },
   });
 
   for (const site of Array.isArray(jobSpy?.site_results) ? jobSpy.site_results : []) {
-    if (!site?.attempted) continue;
+    if (!site?.attempted || site?.site !== 'indeed') continue;
     checks.push({
-      source: String(site.source),
+      source: 'jobspy:indeed',
       source_class: 'supplemental',
       status: site.status === 'success' ? 'success' : site.status === 'zero' ? 'zero' : 'error',
       jobs_found: Math.max(0, Number(site.jobs_found || 0)),
       authoritative_zero: false,
       details: {
-        lineage_root: String(site.source),
-        board: site.site,
+        lineage_root: 'jobspy:indeed',
+        board: 'indeed',
         native_node_jobspy: true,
         employer_rejected: Math.max(0, Number(site.employer_rejected || 0)),
         elapsed_ms: Math.max(0, Number(site.elapsed_ms || 0)),
