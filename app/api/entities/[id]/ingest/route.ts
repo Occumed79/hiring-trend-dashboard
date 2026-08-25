@@ -61,12 +61,30 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const algoliaAppId = firstRuntimeEnv(RUNTIME_ENV.algoliaAppId);
     const algoliaApiKey = firstRuntimeEnv(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY']);
     const keenableEnv = detectedRuntimeEnvName(RUNTIME_ENV.keenable);
-    const clarifaiEnv = detectedRuntimeEnvName(RUNTIME_ENV.clarifai);
-    const groqEnv = detectedRuntimeEnvName(RUNTIME_ENV.groq);
-    const langSearchEnv = detectedRuntimeEnvName([...RUNTIME_ENV.langSearch, ...RUNTIME_ENV.langSearch2]);
-    const nlxEnv = detectedRuntimeEnvName(RUNTIME_ENV.nlx);
+    const tinyFishEnv = detectedRuntimeEnvName(RUNTIME_ENV.tinyfish);
+    const geoapifyEnv = detectedRuntimeEnvName(RUNTIME_ENV.geoapify);
+    const langSearch1Env = detectedRuntimeEnvName(RUNTIME_ENV.langSearch);
+    const langSearch2Env = detectedRuntimeEnvName(RUNTIME_ENV.langSearch2);
+    const langSearchEnv = langSearch1Env || langSearch2Env;
     const cosTokenEnv = detectedRuntimeEnvName(RUNTIME_ENV.careerOneStopToken);
     const cosUserEnv = detectedRuntimeEnvName(RUNTIME_ENV.careerOneStopUser);
+
+    const adzunaPairs = [
+      [detectedRuntimeEnvName(RUNTIME_ENV.adzunaId1), detectedRuntimeEnvName(RUNTIME_ENV.adzunaKey1)],
+      [detectedRuntimeEnvName(RUNTIME_ENV.adzunaId2), detectedRuntimeEnvName(RUNTIME_ENV.adzunaKey2)],
+      [detectedRuntimeEnvName(RUNTIME_ENV.adzunaId3), detectedRuntimeEnvName(RUNTIME_ENV.adzunaKey3)],
+    ];
+    const configuredAdzunaPairs = adzunaPairs.filter(([id, key]) => Boolean(id && key));
+
+    const aiProviders = [
+      { label: 'Groq #1', env: detectedRuntimeEnvName(RUNTIME_ENV.groq1) },
+      { label: 'Groq #2', env: detectedRuntimeEnvName(RUNTIME_ENV.groq2) },
+      { label: 'Cerebras', env: detectedRuntimeEnvName(RUNTIME_ENV.cerebras) },
+      { label: 'Fireworks', env: detectedRuntimeEnvName(RUNTIME_ENV.fireworks) },
+      { label: 'OpenRouter', env: detectedRuntimeEnvName(RUNTIME_ENV.openRouter) },
+    ];
+    const configuredAiProviders = aiProviders.filter(provider => Boolean(provider.env));
+
     const datasetErrors = Array.isArray(datasetAccess.workspaces) ? datasetAccess.workspaces.filter((row:any) => row.status === 'error').length : 0;
     const datasetState = datasetAccess.any_accessible
       ? 'available'
@@ -134,7 +152,15 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
               ? 'JobSpy is disabled by runtime configuration.'
               : 'JobSpy is intentionally limited to clients, prospects, and private companies.',
         },
+        adzuna: {
+          configured: configuredAdzunaPairs.length > 0,
+          mode: configuredAdzunaPairs.length
+            ? `${configuredAdzunaPairs.length}/3 complete credential pair(s) visible · fallback rotation uses the next pair only when an earlier pair errors.`
+            : 'No complete ADZUNA_APP_ID + ADZUNA_APP_KEY credential pair is visible to the web runtime.',
+        },
         keenable: { configured: Boolean(keenableEnv), mode: keenableEnv ? `${keenableEnv} visible to web runtime.` : 'No supported Keenable key name is visible to the web runtime.' },
+        tinyfish: { configured: Boolean(tinyFishEnv), mode: tinyFishEnv ? `${tinyFishEnv} visible · free Search API is wired as supplemental live-web job discovery.` : 'TINYFISH_API_KEY is not visible to the web runtime.' },
+        geoapify: { configured: Boolean(geoapifyEnv), mode: geoapifyEnv ? `${geoapifyEnv} visible · used by the active location geocoder.` : 'GEOAPIFY_API_KEY is not visible to the web runtime.' },
         algolia: {
           configured: Boolean(algoliaAppId && algoliaApiKey),
           mode: algoliaAppId && algoliaApiKey
@@ -143,11 +169,25 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
               ? `${algoliaKeyEnv} is visible, but Algolia still needs ALGOLIA_APP_ID (or ALGOLIA_APPLICATION_ID).`
               : 'Algolia application ID and API key are not both visible to the web runtime.',
         },
-        clarifai: { configured: Boolean(clarifaiEnv), mode: clarifaiEnv ? `${clarifaiEnv} visible to web runtime.` : 'No Clarifai PAT/API-key alias is visible to the web runtime.' },
-        groq: { configured: Boolean(groqEnv), mode: groqEnv ? `${groqEnv} visible to web runtime.` : 'Neither GROQ_API_KEY nor GROQ_API_KEY_2 is visible to the web runtime.' },
-        langsearch: { configured: Boolean(langSearchEnv), mode: langSearchEnv ? `${langSearchEnv} visible to web runtime.` : 'No supported LangSearch key alias is visible to the web runtime.' },
-        nlx: { configured: Boolean(nlxEnv), mode: nlxEnv ? `${nlxEnv} visible to web runtime.` : 'NLX_API_KEY is not visible to the web runtime.' },
-        careeronestop: { configured: Boolean(cosTokenEnv && cosUserEnv), mode: cosTokenEnv && cosUserEnv ? `${cosTokenEnv} + ${cosUserEnv} visible to web runtime.` : 'CareerOneStop requires both API token and user ID in the web runtime.' },
+        occupational_ai: {
+          configured: configuredAiProviders.length > 0,
+          status: configuredAiProviders.length ? 'available' : 'not configured',
+          mode: configuredAiProviders.length
+            ? `${configuredAiProviders.length}/5 provider slot(s) visible: ${configuredAiProviders.map(provider => `${provider.label} (${provider.env})`).join(', ')}. Automatic per-run fallback pool; Clarifai is not required.`
+            : 'No Groq, Cerebras, Fireworks, or OpenRouter credential is visible to the web runtime.',
+        },
+        langsearch: {
+          configured: Boolean(langSearchEnv),
+          mode: langSearchEnv
+            ? `Visible aliases: ${[langSearch1Env, langSearch2Env].filter(Boolean).join(', ')}.`
+            : 'Expected LANGSEARCH_API_KEY / LANGSEARCH_API_KEY_2 or equivalent hyphen aliases; none are visible to the running web process.',
+        },
+        careeronestop: {
+          configured: Boolean(cosTokenEnv && cosUserEnv),
+          mode: cosTokenEnv && cosUserEnv
+            ? `${cosTokenEnv} + ${cosUserEnv} visible · CareerOneStop is the active NLx-resilience mirror.`
+            : `CareerOneStop needs both credentials in the web runtime (${cosTokenEnv || 'API token missing'}; ${cosUserEnv || 'user ID missing'}).`,
+        },
       },
       coverage: {
         active_jobs: jobs.length,
