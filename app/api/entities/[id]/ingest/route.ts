@@ -9,6 +9,7 @@ import { readEntityJobSources } from '@/lib/ingest/entityJobSources';
 import { readOpenSourceIncidents, refreshStaleSourceReliabilityOnRead } from '@/lib/ingest/sourceReliability';
 import { monitorsForEntityLive } from '@/lib/ingest/theirStackMonitors';
 import { getTheirStackExportSecret } from '@/lib/ingest/theirStackExportSecret';
+import { probeTheirStackJobDatasets } from '@/lib/ingest/theirStackDatasets';
 import { getVerifiedActiveJobs, hasRealMappedLocation } from '@/lib/verifiedJobs';
 import { firstRuntimeEnv, hasRuntimeEnv, RUNTIME_ENV } from '@/lib/runtimeEnv';
 
@@ -40,14 +41,31 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const awaitingInitialIngest = !latest || lastRunAt < createdAt;
     const mapped = jobs.filter(hasRealMappedLocation);
     const geocoded = jobs.filter((job) => String(job.raw_data?.normalized_location_quality || '') === 'geocoded job location');
-    const theirStackMonitors = await monitorsForEntityLive(entity);
+    const [theirStackMonitors, theirStackExportSecret, datasetAccess] = await Promise.all([
+      monitorsForEntityLive(entity),
+      getTheirStackExportSecret().catch(() => null),
+      probeTheirStackJobDatasets().catch(error => ({
+        checked: 0,
+        accessible_workspaces: 0,
+        any_accessible: false,
+        workspaces: [],
+        note: `Dataset entitlement check failed: ${error instanceof Error ? error.message : String(error)}`,
+      })),
+    ]);
     const configuredTheirStackMonitors = theirStackMonitors.filter(monitor => Boolean(String(process.env[monitor.envKey] || '').trim()));
     const liveTheirStackMonitors = theirStackMonitors.filter(monitor => monitor.source === 'live_list');
-    const theirStackExportSecret = await getTheirStackExportSecret().catch(() => null);
     const legacyTheirStack = ['1', 'true', 'yes', 'on'].includes(String(process.env.THEIRSTACK_LEGACY_JOB_SEARCH_ENABLED || '').trim().toLowerCase());
 
     const algoliaAppId = firstRuntimeEnv([...RUNTIME_ENV.algoliaAppId]);
     const algoliaApiKey = firstRuntimeEnv(['ALGOLIA_SEARCH_API_KEY', 'ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY']);
+    const datasetErrors = Array.isArray(datasetAccess.workspaces) ? datasetAccess.workspaces.filter((row:any) => row.status === 'error').length : 0;
+    const datasetState = datasetAccess.any_accessible
+      ? 'available'
+      : datasetAccess.checked > 0 && datasetErrors < datasetAccess.checked
+        ? 'not entitled'
+        : datasetErrors > 0
+          ? 'check error'
+          : 'not configured';
 
     return NextResponse.json({
       status: awaitingInitialIngest ? 'queued' : latest.status,
@@ -78,6 +96,14 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
             ? `${legacyTheirStack ? 'Full Job Search' : 'Credit-aware Company Search'} · ${configuredTheirStackMonitors.length}/${theirStackMonitors.length} workspace${theirStackMonitors.length === 1 ? '' : 's'} configured · ${liveTheirStackMonitors.length ? 'live saved-list sync' : 'bootstrap monitor fallback'}`
             : 'Not in the live TheirStack monitor assignments for this entity.',
         },
+        theirstack_dataset: {
+          configured: Boolean(datasetAccess.any_accessible),
+          status: datasetState,
+          mode: datasetAccess.any_accessible
+            ? `${datasetAccess.accessible_workspaces}/${datasetAccess.checked} configured TheirStack workspace(s) have Jobs Dataset access.`
+            : `${datasetAccess.checked}/5 workspace(s) checked · Jobs Dataset entitlement is separate from normal API-key access.`,
+          detail: datasetAccess.note,
+        },
         theirstack_export: {
           configured: Boolean(theirStackExportSecret?.secret),
           mode: theirStackExportSecret
@@ -87,9 +113,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         keenable: { configured: hasRuntimeEnv([...RUNTIME_ENV.keenable]), mode: 'Supplemental employer-specific web discovery.' },
         algolia: {
           configured: Boolean(algoliaAppId && algoliaApiKey),
-          mode: algoliaAppId
-            ? 'Global job index · live database fallback enabled.'
-            : 'API key detected only when present; Algolia still requires an application ID.',
+          mode: algoliaAppId ? 'Global job index · live database fallback enabled.' : 'API key detected only when present; Algolia still requires an application ID.',
         },
         clarifai: { configured: hasRuntimeEnv([...RUNTIME_ENV.clarifai]), mode: 'Primary occupational-health enrichment.' },
         groq: { configured: hasRuntimeEnv([...RUNTIME_ENV.groq]), mode: 'Occupational-health fallback model · primary/secondary key aliases supported.' },
@@ -103,7 +127,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         geocoded_jobs: geocoded.length,
         unmapped_jobs: jobs.length - mapped.length,
       },
-    });
+    }, { headers: { 'Cache-Control': 'no-store, max-age=0' } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Could not load ingest status.' }, { status: 500 });
   }
