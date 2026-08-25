@@ -12,7 +12,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       getEntityLocationBreakdown(params.id),
       getEntityMapData(params.id),
     ]);
-    return NextResponse.json({ metrics, roles, locations, mapData });
+    return NextResponse.json({ metrics, roles: { ...roles, __locations: locations }, locations, mapData });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error';
     return NextResponse.json({ error: message }, { status: 500 });
