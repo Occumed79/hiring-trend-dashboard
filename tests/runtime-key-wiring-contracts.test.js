@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const env = fs.readFileSync('lib/runtimeEnv.ts', 'utf8');
 const adzuna = fs.readFileSync('lib/ingest/adzuna.ts', 'utf8');
 const tinyfish = fs.readFileSync('lib/ingest/tinyFishSearch.ts', 'utf8');
-const oh = fs.readFileSync('lib/ai/occupationalHealthAi.ts', 'utf8');
+const ai = fs.readFileSync('lib/ai/jobIntelligenceAi.ts', 'utf8');
 const route = fs.readFileSync('app/api/entities/[id]/ingest/route.ts', 'utf8');
 const panel = fs.readFileSync('components/portal/IntegrationStatusPanel.tsx', 'utf8');
 const supplemental = fs.readFileSync('lib/ingest/runSupplementalIngest.ts', 'utf8');
@@ -29,26 +29,27 @@ test('all three Adzuna credential pairs are operational fallback slots', () => {
   assert.match(adzuna, /successful[\s\S]*zero-result response[\s\S]*stops the chain/i);
 });
 
-test('TinyFish Search is a real supplemental ingest source and uses its free Search endpoint contract', () => {
+test('TinyFish Search is a real supplemental ingest source and accepts discovery expansion', () => {
   assert.match(tinyfish, /https:\/\/api\.search\.tinyfish\.ai/);
   assert.match(tinyfish, /'X-API-Key'/);
   assert.match(tinyfish, /TINYFISH_API_KEY/);
   assert.match(tinyfish, /web:tinyfish/);
+  assert.match(tinyfish, /discovery_queries/);
   assert.match(tinyfish, /employerEvidence/);
   assert.match(supplemental, /fetchTinyFishJobs/);
-  assert.match(supplemental, /TINYFISH_SOURCE/);
 });
 
-test('OH AI uses the available Groq Cerebras Fireworks and OpenRouter keys without Clarifai dependency', () => {
+test('AI job intelligence uses Groq Cerebras Fireworks and OpenRouter without Clarifai dependency', () => {
   for (const name of ['GROQ_API_KEY','GROQ_API_KEY_2','CEREBRAS_API_KEY','FIREWORKS_AI_API_KEY','OPEN_ROUTER_API_KEY']) {
-    assert.match(oh, new RegExp(name));
+    assert.match(ai, new RegExp(name));
   }
-  assert.doesNotMatch(oh, /CLARIFAI_PAT|api\.clarifai\.com/);
-  assert.match(oh, /analyzeWithProviderPool/);
+  assert.doesNotMatch(ai, /CLARIFAI_PAT|api\.clarifai\.com/);
+  assert.match(ai, /buildDiscoveryAssist/);
+  assert.match(ai, /enrichEntityJobTaxonomy/);
 });
 
-test('integration panel exposes the actual stack and removes dead Clarifai/NLX cards', () => {
-  for (const id of ['adzuna','tinyfish','geoapify','occupational_ai','langsearch','careeronestop']) assert.match(panel, new RegExp(id));
+test('integration panel exposes job intelligence and does not advertise Clarifai or direct NLX', () => {
+  for (const id of ['adzuna','tinyfish','geoapify','job_intelligence_ai','langsearch','careeronestop']) assert.match(panel, new RegExp(id));
   assert.doesNotMatch(panel, /Clarifai/);
   assert.doesNotMatch(panel, /National Labor Exchange/);
   assert.match(route, /configuredAdzunaPairs/);
