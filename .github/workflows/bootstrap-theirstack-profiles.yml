@@ -1,0 +1,33 @@
+name: Bootstrap TheirStack Profiles
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/bootstrap/theirstack-profiles-run-20260825.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hydrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Hydrate empty TheirStack tracker profiles
+        env:
+          APP_URL: https://hiring-trend-dashboard-mt68.onrender.com
+          BOOTSTRAP_ONLY_EMPTY: 'true'
+          BOOTSTRAP_CONCURRENCY: '2'
+          BOOTSTRAP_REQUEST_TIMEOUT_MS: '180000'
+          BOOTSTRAP_READY_TIMEOUT_MS: '1200000'
+        run: node scripts/bootstrap-theirstack-profiles.js
