@@ -53,8 +53,7 @@ export const RUNTIME_ENV = {
   algoliaWriteKey: ['ALGOLIA_WRITE_API_KEY', 'ALGOLIA_API_KEY'],
   careerOneStopToken: ['CAREERONESTOP_API_TOKEN'],
   careerOneStopUser: ['CAREERONESTOP_USER_ID'],
-  // Kept for dormant direct-NLx connector compatibility. The Integration panel
-  // intentionally uses CareerOneStop as the visible NLx-resilience path instead.
+  // Dormant direct-NLx connector compatibility. CareerOneStop is the visible
+  // resilience path and direct NLX is not surfaced as a required integration.
   nlx: ['NLX_API_KEY'],
-  clarifai: ['CLARIFAI_PAT', 'CLARIFAI_API_KEY'],
 } as const;
