@@ -287,16 +287,34 @@ function employerMatch(company: unknown, entity: any): string | null {
 function parseLocation(value: string | null) {
   if (!value || /^remote$/i.test(value)) return { city: null, state: null, country: null };
   const parts = value.split(',').map(part => part.trim()).filter(Boolean);
-  let country = normalizeCountry(parts[parts.length - 1]);
-  let state: string | null = null;
-  let city: string | null = parts[0] || null;
-  const stateCandidate = parts.length >= 2 ? parts[parts.length - (country ? 2 : 1)] : null;
-  if (stateCandidate && /^[A-Za-z]{2}$/.test(stateCandidate) && US_STATE_CODES.has(stateCandidate.toUpperCase())) {
-    state = stateCandidate.toUpperCase();
-    country = 'US';
+  if (!parts.length) return { city: null, state: null, country: null };
+
+  // A US state abbreviation is stronger evidence than a two-letter country guess.
+  // This prevents values such as "New York, NY" or "Chantilly, VA" from becoming
+  // country NY/VA. Country normalization below intentionally accepts only known
+  // country names/codes instead of arbitrary two-letter strings.
+  const last = parts[parts.length - 1];
+  if (/^[A-Za-z]{2}$/.test(last) && US_STATE_CODES.has(last.toUpperCase())) {
+    return {
+      city: parts.length >= 2 ? parts[0] || null : null,
+      state: last.toUpperCase(),
+      country: 'US',
+    };
   }
-  if (parts.length === 1 && state) city = null;
-  return { city, state, country };
+
+  const country = normalizeCountry(last);
+  if (country === 'US' && parts.length >= 2) {
+    const stateCandidate = parts[parts.length - 2];
+    if (/^[A-Za-z]{2}$/.test(stateCandidate) && US_STATE_CODES.has(stateCandidate.toUpperCase())) {
+      return { city: parts.length >= 3 ? parts[0] || null : null, state: stateCandidate.toUpperCase(), country: 'US' };
+    }
+  }
+
+  return {
+    city: parts.length === 1 && country ? null : parts[0] || null,
+    state: null,
+    country,
+  };
 }
 
 function normalizeCountry(value: unknown) {
@@ -310,8 +328,7 @@ function normalizeCountry(value: unknown) {
     mx: 'MX', mexico: 'MX', ae: 'AE', uae: 'AE', 'united arab emirates': 'AE',
     sa: 'SA', 'saudi arabia': 'SA', es: 'ES', spain: 'ES', fr: 'FR', france: 'FR',
   };
-  if (map[text]) return map[text];
-  return /^[a-z]{2}$/i.test(text) ? text.toUpperCase() : null;
+  return map[text] || null;
 }
 
 function quotedEmployerSearch(value: unknown) {
