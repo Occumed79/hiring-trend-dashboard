@@ -4,6 +4,7 @@ type EntityLike = {
   career_page_url?: string | null;
   industry?: string | null;
   category?: string | null;
+  discovery_queries?: string[] | null;
 };
 
 type KeenableResult = { jobs: any[]; used: string[]; skipped: string[] };
@@ -54,7 +55,11 @@ export async function fetchKeenableJobs(entity: EntityLike): Promise<KeenableRes
 function buildQuery(entity: EntityLike) {
   const aliases = Array.isArray(entity.aliases) ? entity.aliases.slice(0, 2) : [];
   const names = [entity.name, ...aliases].filter(Boolean).map(name => `"${String(name)}"`).join(' OR ');
-  return `${names} current open jobs careers job openings apply`;
+  const assisted = Array.isArray(entity.discovery_queries)
+    ? entity.discovery_queries.map(value => String(value || '').trim()).filter(Boolean).slice(0, 2)
+    : [];
+  const base = `${names} current open jobs careers job openings apply`;
+  return assisted.length ? `${base} OR ${assisted.join(' OR ')}` : base;
 }
 
 function normalizeResult(row: any, entity: EntityLike, query: string) {
@@ -94,6 +99,7 @@ function normalizeResult(row: any, entity: EntityLike, query: string) {
       keenable_snippet: snippet,
       keenable_published_at: row?.published_at || null,
       keenable_acquired_at: row?.acquired_at || null,
+      keenable_ai_query_expansions: Array.isArray(entity.discovery_queries) ? entity.discovery_queries.slice(0, 2) : [],
       search_query: query,
       url,
       source_graph_lineage: 'keenable',
