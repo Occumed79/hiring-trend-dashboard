@@ -1,0 +1,6 @@
+Bootstrap the 101 TheirStack tracker employer profiles already seeded in production Neon.
+
+Run mode: empty profiles only
+TheirStack Company Search: intentionally skipped during bootstrap
+Population sources: official/ATS + verified supplemental ingest
+Requested: 2026-08-25
