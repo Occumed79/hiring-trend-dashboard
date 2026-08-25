@@ -169,11 +169,11 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
               ? `${algoliaKeyEnv} is visible, but Algolia still needs ALGOLIA_APP_ID (or ALGOLIA_APPLICATION_ID).`
               : 'Algolia application ID and API key are not both visible to the web runtime.',
         },
-        occupational_ai: {
+        job_intelligence_ai: {
           configured: configuredAiProviders.length > 0,
           status: configuredAiProviders.length ? 'available' : 'not configured',
           mode: configuredAiProviders.length
-            ? `${configuredAiProviders.length}/5 provider slot(s) visible: ${configuredAiProviders.map(provider => `${provider.label} (${provider.env})`).join(', ')}. Automatic per-run fallback pool; Clarifai is not required.`
+            ? `${configuredAiProviders.length}/5 provider slot(s) visible: ${configuredAiProviders.map(provider => `${provider.label} (${provider.env})`).join(', ')}. Used for employer-specific discovery expansion plus role and location taxonomy; no occupational-health scoring.`
             : 'No Groq, Cerebras, Fireworks, or OpenRouter credential is visible to the web runtime.',
         },
         langsearch: {
