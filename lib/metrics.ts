@@ -52,56 +52,32 @@ export async function getEntityRoleBreakdown(entityId: string) {
   const jobs = await getVerifiedActiveJobs(entityId);
   const result: Record<string, number> = {};
   for (const job of jobs) {
-    const role = String(job.role_category || 'other');
+    const stored = String(job.role_category || 'other').toLowerCase();
+    const role = stored === 'remote' || stored === 'overseas' ? 'other' : stored;
     result[role] = (result[role] || 0) + 1;
   }
   return result;
 }
 
-export async function getEntityOccupationalHealthSignals(entityId: string) {
+export async function getEntityLocationBreakdown(entityId: string) {
   const jobs = await getVerifiedActiveJobs(entityId);
-  const enriched = jobs.filter(job => job.raw_data?.occupational_health_ai || job.raw_data?.clarifai_oh);
-  const signals: Record<string, number> = {
-    preplacement_exam: 0,
-    drug_testing: 0,
-    hearing_conservation: 0,
-    respirator_use: 0,
-    medical_surveillance: 0,
-    deployment_oconus: 0,
-    dot_cdl: 0,
-    hazardous_exposure: 0,
-    safety_sensitive: 0,
-    clearance_security: 0,
-    high_physical_demand: 0,
-    high_opportunity: 0,
-  };
+  const result: Record<string, number> = { domestic: 0, overseas: 0, remote: 0, unresolved: 0 };
+  for (const job of jobs) {
+    const stored = String(job.raw_data?.job_location_category || '').trim().toLowerCase();
+    if (stored === 'remote') { result.remote++; continue; }
+    if (stored === 'domestic') { result.domestic++; continue; }
+    if (stored === 'overseas') { result.overseas++; continue; }
 
-  let scoreTotal = 0;
-  for (const job of enriched) {
-    const oh = job.raw_data.occupational_health_ai || job.raw_data.clarifai_oh || {};
-    if (oh.likely_preplacement_exam) signals.preplacement_exam++;
-    if (oh.likely_drug_testing) signals.drug_testing++;
-    if (oh.likely_hearing_conservation) signals.hearing_conservation++;
-    if (oh.likely_respirator_use) signals.respirator_use++;
-    if (oh.likely_medical_surveillance) signals.medical_surveillance++;
-    if (oh.deployment_oconus) signals.deployment_oconus++;
-    if (oh.dot_cdl) signals.dot_cdl++;
-    if (oh.hazardous_exposure) signals.hazardous_exposure++;
-    if (oh.safety_sensitive) signals.safety_sensitive++;
-    if (oh.clearance_security) signals.clearance_security++;
-    if (String(oh.physical_demand).toLowerCase() === 'high') signals.high_physical_demand++;
-    const score = Number(oh.opportunity_score || 0);
-    if (score >= 70) signals.high_opportunity++;
-    scoreTotal += Number.isFinite(score) ? score : 0;
+    if (Boolean(job.is_remote) || /\b(remote|virtual|work from home|wfh)\b/i.test(String(job.location || ''))) {
+      result.remote++;
+      continue;
+    }
+    const country = String(job.country || '').trim().toUpperCase();
+    if (country === 'US') result.domestic++;
+    else if (country) result.overseas++;
+    else result.unresolved++;
   }
-
-  return {
-    enrichedJobs: enriched.length,
-    totalJobs: jobs.length,
-    coveragePct: jobs.length ? Math.round((enriched.length / jobs.length) * 100) : 0,
-    averageOpportunityScore: enriched.length ? Math.round(scoreTotal / enriched.length) : 0,
-    signals,
-  };
+  return result;
 }
 
 export async function getEntityMapData(entityId: string) {
