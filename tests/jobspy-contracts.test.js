@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const jobspy = fs.readFileSync('lib/ingest/jobSpy.ts', 'utf8');
+const indeedOnly = fs.readFileSync('lib/ingest/jobSpyIndeed.ts', 'utf8');
+const supplemental = fs.readFileSync('lib/ingest/runSupplementalIngest.ts', 'utf8');
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const nextConfig = fs.readFileSync('next.config.js', 'utf8');
 const migration = fs.readFileSync('db/jobspy_runtime.sql', 'utf8');
@@ -27,12 +29,13 @@ test('JobSpy is gap-triggered and does not blindly scrape every tracked employer
   assert.match(jobspy, /ERROR_RETRY_HOURS/);
 });
 
-test('Indeed and LinkedIn are isolated so one board failure does not discard the other', () => {
-  assert.match(jobspy, /type JobSpySite = 'indeed' \| 'linkedin'/);
-  assert.match(jobspy, /for \(const site of SITES\)/);
-  assert.match(jobspy, /withTimeout/);
-  assert.match(jobspy, /isRateLimitOrForbidden/);
-  assert.match(jobspy, /respecting prior board backoff/);
+test('active Hiring Insights flow forces JobSpy to Indeed only and removes LinkedIn results', () => {
+  assert.match(indeedOnly, /process\.env\.JOBSPY_SITES = 'indeed'/);
+  assert.match(indeedOnly, /source.*jobspy:indeed/);
+  assert.match(indeedOnly, /site.*indeed/);
+  assert.match(supplemental, /from '\.\/jobSpyIndeed'/);
+  assert.match(supplemental, /JOBSPY_SOURCES = \['jobspy:indeed'\]/);
+  assert.match(supplemental, /DELETE FROM entity_source_coverage WHERE entity_id = \$1 AND source = 'jobspy:linkedin'/);
 });
 
 test('JobSpy requires returned company identity evidence before a job can enter shared dedupe', () => {
@@ -63,8 +66,9 @@ test('supplemental ranking migration is applied before app runtime', () => {
   assert.match(migrate, /jobspy_runtime\.sql/);
 });
 
-test('JobSpy appears in the entity integration panel without requiring an API key', () => {
-  assert.match(entityRoute, /jobspy:/);
+test('JobSpy appears as Indeed-only in the entity integration panel without requiring an API key', () => {
   assert.match(entityRoute, /Native Node JobSpy/);
-  assert.match(integrationPanel, /JobSpy Boards/);
+  assert.match(entityRoute, /Indeed only/);
+  assert.match(entityRoute, /LinkedIn removed/);
+  assert.match(integrationPanel, /JobSpy Indeed/);
 });
