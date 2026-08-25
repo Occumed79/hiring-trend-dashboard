@@ -20,12 +20,19 @@ test('supplemental source health does not shadow the main ingest log', () => {
   assert.doesNotMatch(supplemental, /INSERT INTO ingest_log/);
 });
 
-test('JobSpy participates in shared dedupe but failures are isolated from other sources', () => {
-  assert.match(supplemental, /fetchJobSpyJobs/);
+test('JobSpy participates in shared dedupe with AI-assisted queries while failures stay isolated', () => {
+  assert.match(supplemental, /buildDiscoveryAssist/);
+  assert.match(supplemental, /discovery_queries/);
+  assert.match(supplemental, /fetchJobSpyJobs\(discoveryEntity\)\.catch/);
   assert.match(supplemental, /Promise\.all/);
-  assert.match(supplemental, /fetchJobSpyJobs\(entity\)\.catch/);
   assert.match(supplemental, /\.\.\.jobSpy\.jobs/);
   assert.match(supplemental, /inventory_complete:\s*false/);
+});
+
+test('TinyFish and Keenable receive the same conservative discovery expansion', () => {
+  assert.match(supplemental, /fetchKeenableJobs\(discoveryEntity\)/);
+  assert.match(supplemental, /fetchTinyFishJobs\(discoveryEntity\)/);
+  assert.match(supplemental, /employerFiltered = filterAllJobsForEntityEvidence/);
 });
 
 test('supplemental duplicate URLs defer to higher-preference or canonical sources', () => {
