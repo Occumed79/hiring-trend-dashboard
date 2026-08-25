@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, ExternalLink, Activity, Building2 } from 'lucide-react';
 
 const QUICK_SEARCHES = [
-  'respirator fit testing',
-  'hearing conservation',
-  'deployment OCONUS',
-  'DOT CDL',
-  'medical surveillance',
-  'safety sensitive',
+  'engineering',
+  'security',
+  'aviation',
+  'logistics',
+  'overseas',
+  'remote',
 ];
 
 export default function GlobalJobSearch({ onOpenEntity }: { onOpenEntity?: (entity: any) => void }) {
@@ -60,7 +60,6 @@ export default function GlobalJobSearch({ onOpenEntity }: { onOpenEntity?: (enti
     <div className="min-h-full p-5 lg:p-6 max-w-[1500px] mx-auto space-y-5">
       <section className="glass-card-hero luminous-panel relative overflow-hidden p-5 lg:p-6">
         <div className="shimmer-top" />
-        <div className="aurora-sweep" />
         <div className="relative z-10">
           <div className="flex items-start justify-between gap-5 flex-wrap">
             <div>
@@ -69,7 +68,7 @@ export default function GlobalJobSearch({ onOpenEntity }: { onOpenEntity?: (enti
                 <h1 className="text-[26px] lg:text-[30px] font-semibold text-white tracking-tight">Global Hiring Search</h1>
               </div>
               <p className="text-xs text-slate-500 mt-2 max-w-2xl">
-                Search every tracked employer, open role, location, role category, and occupational-health signal from one place.
+                Search every tracked employer, open role, functional role category, and normalized job location from one place.
               </p>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/[0.035] px-3.5 py-3 min-w-[170px]">
@@ -84,7 +83,7 @@ export default function GlobalJobSearch({ onOpenEntity }: { onOpenEntity?: (enti
             <input
               value={query}
               onChange={event => setQuery(event.target.value)}
-              placeholder="Search Amentum, Boeing mechanics, Kuwait, respirator fit testing, CDL, audiograms..."
+              placeholder="Search Amentum, Boeing mechanics, Kuwait, engineering, remote, overseas..."
               className="w-full rounded-2xl border border-white/12 bg-[#07101f]/70 pl-11 pr-4 py-4 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-blue-400/45 focus:ring-2 focus:ring-blue-500/10 transition-all"
               autoFocus
             />
@@ -114,7 +113,7 @@ export default function GlobalJobSearch({ onOpenEntity }: { onOpenEntity?: (enti
             <div>
               <h2 className="text-sm font-semibold text-slate-200">Search the intelligence layer, not just job titles</h2>
               <p className="text-xs text-slate-500 mt-1.5 max-w-3xl leading-relaxed">
-                Searches include the tracked employer registry even when an employer has zero indexed roles, plus live jobs, locations, existing role categories, and occupational-health concepts such as hearing conservation, respirator use, DOT/CDL, deployment, medical surveillance, drug testing, and safety-sensitive work.
+                Searches include the tracked employer registry even when an employer has zero indexed roles, plus live jobs, locations, functional role categories, and normalized location categories such as United States, overseas, and remote.
               </p>
             </div>
           </div>
@@ -183,9 +182,8 @@ export default function GlobalJobSearch({ onOpenEntity }: { onOpenEntity?: (enti
 }
 
 function SearchResultCard({ hit }: { hit: any }) {
-  const signals = Array.isArray(hit.occupational_health_signals) ? hit.occupational_health_signals.slice(0, 3) : [];
-  const score = Number(hit.occupational_health_score || 0);
   const location = [hit.city, hit.state, hit.country].filter(Boolean).join(', ') || hit.location || 'Location not listed';
+  const locationCategory = String(hit.location_category || (hit.is_remote ? 'remote' : hit.is_overseas ? 'overseas' : '')).trim();
 
   return (
     <article className="glass-card luminous-panel p-4.5 border border-white/[0.08] hover:border-blue-400/20 transition-all">
@@ -195,26 +193,13 @@ function SearchResultCard({ hit }: { hit: any }) {
           <h3 className="text-sm font-semibold text-slate-100 mt-1.5 leading-snug">{hit.title || 'Untitled role'}</h3>
           <p className="text-[11px] text-slate-500 mt-1.5">{location}</p>
         </div>
-        {score > 0 && (
-          <div className="shrink-0 rounded-xl border border-blue-400/20 bg-blue-500/8 px-2.5 py-2 text-center min-w-[58px]">
-            <p className="text-base font-semibold text-blue-100">{score}</p>
-            <p className="text-[8px] uppercase tracking-[0.1em] text-slate-600">OH score</p>
-          </div>
-        )}
       </div>
 
       <div className="flex items-center gap-1.5 flex-wrap mt-3">
         {hit.role_category && <Tag>{String(hit.role_category).replace(/_/g, ' ')}</Tag>}
+        {locationCategory && <Tag>{locationCategory.replace(/_/g, ' ')}</Tag>}
         {hit.portal && <Tag>{formatPortal(hit.portal)}</Tag>}
-        {hit.is_remote && <Tag>remote</Tag>}
-        {hit.is_overseas && <Tag>overseas</Tag>}
       </div>
-
-      {signals.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
-          {signals.map((signal: string) => <span key={signal} className="text-[9px] px-2 py-1 rounded-full border border-emerald-400/15 bg-emerald-500/7 text-emerald-200/80">{signal}</span>)}
-        </div>
-      )}
 
       <div className="flex items-center justify-between gap-3 mt-3.5 pt-3 border-t border-white/[0.07]">
         <p className="text-[9px] text-slate-700 truncate">{hit.source || 'source unavailable'}</p>
