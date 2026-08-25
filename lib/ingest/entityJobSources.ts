@@ -23,6 +23,10 @@ const DISCOVERY_MARKER_KEY = 'discovery:surface-scan';
 
 export async function prepareEntityJobSources(entity: any, detected?: any | null): Promise<EntityJobSource[]> {
   if (!entity?.id) return [];
+  // Older releases incorrectly promoted bounded structured sitemap samples to
+  // authoritative inventory. Correct persisted rows before the graph is read so
+  // a zero sitemap sample can no longer create false authoritative-health alerts.
+  await demoteLegacySitemaps(entity.id);
   const existingBeforeSeeds = await readEntityJobSources(entity.id);
   const runDiscovery = shouldDiscover(existingBeforeSeeds);
   const seeds: EntityJobSource[] = [];
@@ -143,6 +147,8 @@ async function fetchOne(entity: any, source: EntityJobSource) {
           shared_inventory: shared,
           employer_verification_required: requiresEmployerVerification,
           off_target_rejected: rejected,
+          enumeration_complete: source.metadata?.enumeration_complete === true,
+          bounded_sample: source.metadata?.bounded_sample === true,
         },
       } as CoverageCheck,
     };
@@ -170,7 +176,11 @@ async function upsertEntitySource(entityId: string, source: EntityJobSource | Di
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,true,NOW(),CASE WHEN $11 THEN NOW() ELSE NULL END,NOW())
      ON CONFLICT (entity_id, source_key) DO UPDATE SET
        source_type=EXCLUDED.source_type,
-       source_class=CASE WHEN entity_job_sources.source_class='authoritative' THEN 'authoritative' ELSE EXCLUDED.source_class END,
+       source_class=CASE
+         WHEN EXCLUDED.source_type='sitemap' THEN EXCLUDED.source_class
+         WHEN entity_job_sources.source_class='authoritative' THEN 'authoritative'
+         ELSE EXCLUDED.source_class
+       END,
        lineage_root=EXCLUDED.lineage_root,
        source_url=COALESCE(EXCLUDED.source_url,entity_job_sources.source_url),
        ats_provider=COALESCE(EXCLUDED.ats_provider,entity_job_sources.ats_provider),
@@ -183,6 +193,17 @@ async function upsertEntitySource(entityId: string, source: EntityJobSource | Di
        last_verified_at=CASE WHEN EXCLUDED.is_verified THEN NOW() ELSE entity_job_sources.last_verified_at END,
        updated_at=NOW()`,
     [entityId,source.source_key,source.source_type,source.source_class,source.lineage_root,source.source_url||null,source.ats_provider||null,source.board_id||null,(source as any).state_code||null,(source as any).discovery_method||null,Boolean((source as any).is_verified || source.source_class==='authoritative'),JSON.stringify(source.metadata||{})],
+  ).catch(() => {});
+}
+
+async function demoteLegacySitemaps(entityId: string) {
+  await query(
+    `UPDATE entity_job_sources
+     SET source_class='verified',
+         metadata=COALESCE(metadata,'{}'::jsonb) || '{"enumeration_complete":false,"bounded_sample":true}'::jsonb,
+         updated_at=NOW()
+     WHERE entity_id=$1 AND source_type='sitemap' AND source_class='authoritative'`,
+    [entityId],
   ).catch(() => {});
 }
 
