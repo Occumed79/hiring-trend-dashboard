@@ -16,6 +16,13 @@ test('bulk export prep uses the supported TheirStack App URL endpoint and a pref
   assert.doesNotMatch(route, /\/v1\/jobs\/search/);
 });
 
+test('manual TheirStack export handoff defaults to a separate 10-day window', () => {
+  assert.match(route, /THEIRSTACK_EXPORT_LOOKBACK_DAYS',\s*10/);
+  assert.doesNotMatch(route, /THEIRSTACK_COMPANY_SWEEP_LOOKBACK_DAYS/);
+  assert.match(route, /lookback_days:\s*LOOKBACK_DAYS/);
+  assert.match(route, /export_cap_per_company:\s*200/);
+});
+
 test('bulk export prep uses live monitor assignments and an auto-provisionable export receiver token', () => {
   assert.match(route, /monitorsForEntityLive/);
   assert.match(route, /getTheirStackExportSecret/);
