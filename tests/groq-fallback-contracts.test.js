@@ -18,12 +18,14 @@ test('Groq is the automatic OH fallback behind Clarifai', () => {
   assert.match(source, /fallback: 'groq'/);
 });
 
-test('missing Clarifai PAT routes enrichment to Groq instead of skipping when Groq is configured', () => {
+test('missing Clarifai credential routes enrichment to Groq instead of skipping when Groq is configured', () => {
   const source = read('lib/ai/clarifaiOccupationalHealth.ts');
+  assert.match(source, /process\.env\.CLARIFAI_PAT \|\| process\.env\.CLARIFAI_API_KEY/);
+  assert.match(source, /process\.env\.GROQ_API_KEY \|\| process\.env\.GROQ_API_KEY_2/);
   assert.match(source, /if \(!clarifaiPat && !groqApiKey\)/);
   assert.doesNotMatch(source, /if \(!pat\) return \{ status: 'skipped'/);
   assert.match(source, /clarifaiCircuitOpen: !clarifaiPat/);
-  assert.match(source, /CLARIFAI_PAT missing/);
+  assert.match(source, /Clarifai credential missing/);
 });
 
 test('Clarifai availability failures open a circuit and bounded Groq fallback prevents runaway free-tier usage', () => {
@@ -59,5 +61,5 @@ test('OH UI identifies Clarifai primary and Groq fallback without changing role 
   assert.match(roleBreakdown, /Role Breakdown/);
   assert.match(roleBreakdown, /Occupational Health Signals/);
   assert.match(roleBreakdown, /Clarifai primary \/ Groq fallback/);
-  assert.match(roleBreakdown, /CLARIFAI_PAT or GROQ_API_KEY/);
+  assert.match(roleBreakdown, /No occupational-health enrichment has been persisted/);
 });
