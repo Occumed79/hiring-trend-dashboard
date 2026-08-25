@@ -1,7 +1,6 @@
 @tailwind base;
 @tailwind utilities;
 
-/* ─── Design tokens ────────────────────────────────────────────────────────── */
 :root {
   --glass-bg:        rgba(255, 255, 255, 0.055);
   --glass-border:    rgba(255, 255, 255, 0.13);
@@ -12,9 +11,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
 html { height: 100%; }
-
 body {
   background: #03060e;
   color: #e2e8f0;
@@ -23,46 +20,12 @@ body {
   min-height: 100%;
 }
 
-/* ─── Background orbs ──────────────────────────────────────────────────────── */
-.orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(100px);
-  pointer-events: none;
-  z-index: 0;
-}
-.orb-1 {
-  width: 800px; height: 800px;
-  background: radial-gradient(circle, rgba(56,100,255,0.28) 0%, transparent 65%);
-  top: -300px; left: -200px;
-  animation: orbFloat 12s ease-in-out infinite;
-}
-.orb-2 {
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(99, 80, 220, 0.2) 0%, transparent 65%);
-  top: 35%; right: -200px;
-  animation: orbFloat 15s ease-in-out infinite 3s;
-}
-.orb-3 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(100, 160, 230, 0.14) 0%, transparent 65%);
-  bottom: -150px; left: 25%;
-  animation: orbFloat 10s ease-in-out infinite 6s;
-}
-.orb-4 {
-  width: 350px; height: 350px;
-  background: radial-gradient(circle, rgba(30, 180, 255, 0.16) 0%, transparent 65%);
-  top: 20%; left: 45%;
-  animation: orbFloat 9s ease-in-out infinite 2s;
-}
-@keyframes orbFloat {
-  0%,100% { transform: translateY(0) scale(1); }
-  50%      { transform: translateY(-30px) scale(1.05); }
-}
+.orb { position: fixed; border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 0; }
+.orb-1 { width: 800px; height: 800px; background: radial-gradient(circle, rgba(56,100,255,0.22) 0%, transparent 65%); top: -300px; left: -200px; }
+.orb-2 { width: 600px; height: 600px; background: radial-gradient(circle, rgba(99, 80, 220, 0.16) 0%, transparent 65%); top: 35%; right: -200px; }
+.orb-3 { width: 500px; height: 500px; background: radial-gradient(circle, rgba(100, 160, 230, 0.11) 0%, transparent 65%); bottom: -150px; left: 25%; }
+.orb-4 { width: 350px; height: 350px; background: radial-gradient(circle, rgba(30, 180, 255, 0.12) 0%, transparent 65%); top: 20%; left: 45%; }
 
-/* ─── Luminous glass system ────────────────────────────────────────────────── */
-
-/* Sidebar base */
 .glass {
   background: rgba(8, 14, 30, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -70,115 +33,59 @@ body {
   -webkit-backdrop-filter: blur(32px) saturate(180%);
 }
 
-/* Standard card */
 .glass-card {
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.075) 0%,
-    rgba(255, 255, 255, 0.03) 100%
-  );
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0.03) 100%);
   border: 1px solid rgba(255, 255, 255, 0.11);
-  border-top-color: rgba(255, 255, 255, 0.22);   /* top highlight */
-  border-left-color: rgba(255, 255, 255, 0.16);  /* left highlight */
+  border-top-color: rgba(255, 255, 255, 0.22);
+  border-left-color: rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.06) inset,          /* inner top glow */
-    0 -1px 0 rgba(0,0,0,0.3) inset,                /* inner bottom shadow */
-    0 12px 40px rgba(0, 0, 0, 0.45),               /* drop shadow */
-    0 0 0 0.5px rgba(255,255,255,0.07);             /* outer edge */
+  box-shadow: 0 2px 0 rgba(255,255,255,0.06) inset, 0 -1px 0 rgba(0,0,0,0.3) inset, 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255,255,255,0.07);
   border-radius: 18px;
 }
 
-/* Hero / elevated card */
 .glass-card-hero {
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    rgba(255, 255, 255, 0.035) 60%,
-    rgba(255, 255, 255, 0.02) 100%
-  );
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.035) 60%, rgba(255, 255, 255, 0.02) 100%);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-top-color: rgba(255, 255, 255, 0.28);
   border-left-color: rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(36px) saturate(200%);
   -webkit-backdrop-filter: blur(36px) saturate(200%);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.10) inset,
-    0 -1px 0 rgba(0,0,0,0.25) inset,
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 0.5px rgba(255,255,255,0.08);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.10) inset, 0 -1px 0 rgba(0,0,0,0.25) inset, 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255,255,255,0.08);
   border-radius: 22px;
 }
 
-/* Metric card — lighter, more luminous */
 .glass-card-metric {
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    rgba(255, 255, 255, 0.04) 100%
-  );
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.04) 100%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-top-color: rgba(255, 255, 255, 0.26);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.10) inset,
-    0 8px 28px rgba(0, 0, 0, 0.38);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.10) inset, 0 8px 28px rgba(0, 0, 0, 0.38);
   border-radius: 16px;
-  transition: all 0.25s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 .glass-card-metric:hover {
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.13) 0%,
-    rgba(255, 255, 255, 0.06) 100%
-  );
-  border-top-color: rgba(255, 255, 255, 0.35);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.14) inset,
-    0 12px 36px rgba(59, 130, 246, 0.12),
-    0 4px 16px rgba(0, 0, 0, 0.4);
-  transform: translateY(-2px);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.105) 0%, rgba(255, 255, 255, 0.045) 100%);
+  border-top-color: rgba(255, 255, 255, 0.29);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.11) inset, 0 9px 30px rgba(0, 0, 0, 0.40);
 }
 
-/* Map card — same glass but with defined height */
 .map-glass-card {
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(255, 255, 255, 0.025) 100%
-  );
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.025) 100%);
   border: 1px solid rgba(255, 255, 255, 0.11);
   border-top-color: rgba(255, 255, 255, 0.20);
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.07) inset,
-    0 12px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.07) inset, 0 12px 40px rgba(0, 0, 0, 0.45);
   border-radius: 18px;
   padding: 20px;
 }
 
-/* ─── Map container — CRITICAL: must have explicit height, no overflow-hidden ─ */
-.map-container {
-  height: 340px;
-  width: 100%;
-  border-radius: 12px;
-  background: #080d1a;
-  /* NO overflow:hidden here — it clips Leaflet tiles */
-}
-/* The leaflet root div itself gets the border-radius */
-.map-container .leaflet-container {
-  border-radius: 12px !important;
-  height: 100% !important;
-  width: 100% !important;
-}
+.map-container { height: 340px; width: 100%; border-radius: 12px; background: #080d1a; }
+.map-container .leaflet-container { border-radius: 12px !important; height: 100% !important; width: 100% !important; }
 
-/* ─── Leaflet dark overrides ───────────────────────────────────────────────── */
-.leaflet-container {
-  background: #080d1a !important;
-}
+.leaflet-container { background: #080d1a !important; }
 .leaflet-popup-content-wrapper {
   background: rgba(8, 14, 30, 0.95) !important;
   border: 1px solid rgba(255,255,255,0.14) !important;
@@ -188,61 +95,50 @@ body {
   color: #e2e8f0 !important;
 }
 .leaflet-popup-tip-container { display: none; }
-.leaflet-control-zoom {
-  border: none !important;
-  box-shadow: none !important;
-}
+.leaflet-control-zoom { border: none !important; box-shadow: none !important; }
 .leaflet-control-zoom a {
   background: rgba(8, 14, 30, 0.85) !important;
   border: 1px solid rgba(255,255,255,0.12) !important;
   color: #94a3b8 !important;
   backdrop-filter: blur(8px) !important;
 }
-.leaflet-control-zoom a:hover {
-  background: rgba(20, 30, 60, 0.9) !important;
-  color: #e2e8f0 !important;
-}
+.leaflet-control-zoom a:hover { background: rgba(20, 30, 60, 0.9) !important; color: #e2e8f0 !important; }
 .leaflet-bar { border: none !important; }
 .leaflet-attribution-flag { display: none !important; }
 
-/* ─── Nav pills ────────────────────────────────────────────────────────────── */
 .nav-pill {
   border: 1px solid transparent;
   background: transparent;
   color: #64748b;
-  transition: all 0.2s ease;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
   border-radius: 12px;
 }
-.nav-pill:hover {
-  background: rgba(255,255,255,0.06);
-  color: #cbd5e1;
-  border-color: rgba(255,255,255,0.10);
-}
+.nav-pill:hover { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.10); }
 .nav-pill.active {
   background: linear-gradient(135deg, rgba(59,130,246,0.22) 0%, rgba(99,102,241,0.12) 100%);
   border-color: rgba(96, 165, 250, 0.35);
   color: #93c5fd;
-  box-shadow:
-    0 0 20px rgba(59,130,246,0.18),
-    inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow: 0 0 20px rgba(59,130,246,0.18), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
-/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
 .scrollbar-glass::-webkit-scrollbar { width: 4px; }
 .scrollbar-glass::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-glass::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.09);
-  border-radius: 10px;
-}
-.scrollbar-glass::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.16);
-}
+.scrollbar-glass::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 10px; }
+.scrollbar-glass::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
 
-/* ─── Utility ──────────────────────────────────────────────────────────────── */
 .shimmer-top {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.28) 50%, transparent 100%);
   pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
